@@ -1,0 +1,12 @@
+---
+import SettingsView from '../components/react/SettingsView';
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+---
+
+<OrchestrationLayout title="Settings">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <SettingsView client:load />
+  </div>
+</OrchestrationLayout>

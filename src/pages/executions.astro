@@ -1,0 +1,16 @@
+---
+import ExecutionsListView from '../components/react/ExecutionsListView';
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+---
+
+<OrchestrationLayout
+  title="Workflow Runs"
+  description="Business Runtime execution history."
+  projectName="Business Runtime"
+>
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <ExecutionsListView client:load />
+  </div>
+</OrchestrationLayout>

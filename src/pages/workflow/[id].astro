@@ -1,0 +1,14 @@
+---
+import WorkflowView from '../../components/react/WorkflowView';
+import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const workflowId = id ?? '';
+const title = workflowId ? `Workflow — ${workflowId}` : 'Workflow';
+---
+
+<OrchestrationLayout title={title}>
+  <WorkflowView client:load workflowId={workflowId} />
+</OrchestrationLayout>

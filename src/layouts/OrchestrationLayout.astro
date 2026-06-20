@@ -1,0 +1,37 @@
+---
+import RuntimeShell from '../components/react/RuntimeShell';
+
+interface Props {
+  title: string;
+  description?: string;
+  projectName?: string;
+  seedArtifactE2e?: boolean;
+}
+
+const {
+  title,
+  description,
+  projectName = 'Business Runtime',
+  seedArtifactE2e = false,
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title} · Business Runtime</title>
+    {description ? <meta name="description" content={description} /> : null}
+  </head>
+  <body class="bg-primary text-gray-900">
+    <RuntimeShell client:load projectName={projectName} initialPathname={Astro.url.pathname} seedArtifactE2e={seedArtifactE2e}>
+      <slot />
+    </RuntimeShell>
+  </body>
+</html>
+
+<style is:global>
+  @import "../styles/global.css";
+</style>

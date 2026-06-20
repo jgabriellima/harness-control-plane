@@ -1,0 +1,61 @@
+{
+  "name": "@jambu/control-plane",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain-neutral harness control plane — Astro SSR, Tauri desktop, workspace binding (ADR-039)",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/astro-cli.mjs dev",
+    "build": "astro build",
+    "preview": "node scripts/astro-cli.mjs preview",
+    "astro": "astro",
+    "test:e2e": "playwright test",
+    "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts",
+    "desktop:sidecar": "node desktop-sidecar/build.mjs",
+    "desktop:sync-version": "node scripts/sync-desktop-version.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "npm run build && node desktop-sidecar/build.mjs && tauri build"
+  },
+  "dependencies": {
+    "@astrojs/node": "^10.1.1",
+    "@astrojs/react": "^5.0.6",
+    "@cursor/sdk": "^1.0.18",
+    "@dagrejs/dagre": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.5",
+    "@radix-ui/react-tooltip": "^1.2.9",
+    "@sentry/astro": "^10.32.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@xyflow/react": "^12.11.0",
+    "astro": "^6.3.5",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.0",
+    "use-stick-to-bottom": "^1.1.6",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/cli": "^2.11.2",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "vite": "^7.3.5"
+  }
+}

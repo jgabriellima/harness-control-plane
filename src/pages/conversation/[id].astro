@@ -1,0 +1,22 @@
+---
+import RuntimeConsole from '../../components/react/RuntimeConsole';
+import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+
+if (!id) {
+  return Astro.redirect('/');
+}
+---
+
+<OrchestrationLayout
+  title="Runtime Console"
+  description="Chat session with the business runtime."
+  projectName="Business Runtime"
+>
+  <div class="h-full min-h-0">
+    <RuntimeConsole transition:persist="runtime-console" client:load conversationId={id} />
+  </div>
+</OrchestrationLayout>

@@ -1,0 +1,12 @@
+---
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+const seedArtifactE2e = Astro.url.searchParams.get('artifact-e2e') === '1';
+---
+
+<OrchestrationLayout
+  title="Runtime Console"
+  description="Chat with the business runtime via Cursor SDK."
+  projectName="Business Runtime"
+  seedArtifactE2e={seedArtifactE2e}
+/>

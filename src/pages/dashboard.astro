@@ -1,0 +1,10 @@
+---
+import DashboardView from '../components/react/DashboardView';
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+---
+
+<OrchestrationLayout title="Observability Dashboard">
+  <DashboardView client:load />
+</OrchestrationLayout>

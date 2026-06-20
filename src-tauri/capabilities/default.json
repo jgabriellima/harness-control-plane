@@ -1,0 +1,28 @@
+{
+  "identifier": "default",
+  "description": "Business Runtime desktop capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/business-server",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/business-server",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}

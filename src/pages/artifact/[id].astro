@@ -1,0 +1,14 @@
+---
+import ArtifactView from '../../components/react/ArtifactView';
+import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const artifactId = id ?? '';
+const title = artifactId ? `Artifact — ${artifactId}` : 'Artifact';
+---
+
+<OrchestrationLayout title={title}>
+  <ArtifactView client:load artifactId={artifactId} />
+</OrchestrationLayout>

@@ -1,0 +1,20 @@
+---
+import ProjectDetailView from '../../components/react/ProjectDetailView';
+import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+
+if (!id) {
+  return Astro.redirect('/projects');
+}
+---
+
+<OrchestrationLayout
+  title={`Project ${id}`}
+  description="Business Runtime project detail."
+  projectName="Business Runtime"
+>
+  <ProjectDetailView client:load projectId={id} />
+</OrchestrationLayout>

@@ -1,0 +1,14 @@
+---
+import ProjectsListView from '../components/react/ProjectsListView';
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+---
+
+<OrchestrationLayout
+  title="Projects"
+  description="Business Runtime project scopes."
+  projectName="Business Runtime"
+>
+  <ProjectsListView client:load />
+</OrchestrationLayout>
