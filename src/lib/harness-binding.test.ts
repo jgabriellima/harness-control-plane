@@ -53,6 +53,18 @@ describe('harness-binding runtime stamp', () => {
     assert.ok(binding.dslPath.endsWith('.sdlc/sdlc.yaml'));
   });
 
+  it('resolves paths when projectRoot is injected', async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'binding-project-root-'));
+    await mkdir(join(tempRoot, '.cursor'), { recursive: true });
+    await mkdir(join(tempRoot, '.sdlc', 'bin'), { recursive: true });
+    await writeFile(join(tempRoot, '.cursor', 'runtime-binding.yaml'), SAMPLE_STAMP, 'utf8');
+
+    const binding = await resolveHarnessBinding({ projectRoot: tempRoot });
+    assert.equal(binding.source, 'runtime-binding');
+    assert.equal(binding.workspaceRoot, tempRoot);
+    assert.equal(binding.harnessRoot, join(tempRoot, '.sdlc'));
+  });
+
   it('fails fast when stamp is missing', async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'binding-missing-'));
     await assert.rejects(

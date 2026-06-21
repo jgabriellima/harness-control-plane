@@ -39,7 +39,9 @@ async function loadRuntimeBindingStamp(workspaceRoot: string): Promise<RuntimeBi
 }
 
 export interface ResolveHarnessBindingOptions {
-  /** When omitted, uses platform app root from resolvePlatformAppRoot(). */
+  /** Preferred ADR-040 root input. */
+  projectRoot?: string;
+  /** Backward-compatible alias for projectRoot. */
   workspaceRoot?: string;
 }
 
@@ -50,7 +52,10 @@ export interface ResolveHarnessBindingOptions {
 export async function resolveHarnessBinding(
   options: ResolveHarnessBindingOptions = {},
 ): Promise<HarnessBinding> {
-  const workspaceRoot = options.workspaceRoot?.trim() || resolvePlatformAppRoot();
+  const workspaceRoot =
+    options.workspaceRoot?.trim() ||
+    options.projectRoot?.trim() ||
+    resolvePlatformAppRoot(options.projectRoot);
 
   if (!hasRuntimeBindingStamp(workspaceRoot)) {
     throw new Error(

@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "Domain-neutral harness control plane — Astro SSR, Tauri desktop, workspace binding (ADR-039)",
+  "bin": {
+    "hcp": "./cli/index.mjs",
+    "control-plane": "./cli/index.mjs"
+  },
   "engines": {
     "node": ">=22.12.0"
   },

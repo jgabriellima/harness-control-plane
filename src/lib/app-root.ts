@@ -8,7 +8,7 @@ import { resolvePlatformAppRoot } from './repo-root';
  * Resolve the platform orchestration app root (SSR shell under `app/`).
  * For per-project harness paths use `resolveActiveWorkspaceRoot()` from workspace-manager.
  */
-export function resolveAppRoot(): string {
+export function resolveAppRoot(projectRoot?: string): string {
   const candidates = [
     process.cwd(),
     join(process.cwd(), '..'),
@@ -22,7 +22,7 @@ export function resolveAppRoot(): string {
     }
   }
 
-  return resolvePlatformAppRoot();
+  return resolvePlatformAppRoot(projectRoot);
 }
 
 /**

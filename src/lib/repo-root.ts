@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { resolveProjectRoot } from './project-root';
+
 function walkCandidates(): string[] {
   return [
     process.cwd(),
@@ -32,13 +34,24 @@ export function resolveHostRepoRoot(): string {
 }
 
 /**
- * Platform workspace root — directory containing `.cursor/runtime-binding.yaml`.
- * Set `CONTROL_PLANE_PLATFORM_ROOT` when the shell runs outside the bound workspace.
+ * Platform workspace root (ADR-040 `projectRoot`) — directory containing
+ * `.cursor/runtime-binding.yaml`.
+ *
+ * Primary source is the injected/root-resolved project root.
+ * `CONTROL_PLANE_PLATFORM_ROOT` is kept only as a legacy fallback.
  */
-export function resolvePlatformAppRoot(): string {
-  const override = process.env.CONTROL_PLANE_PLATFORM_ROOT?.trim();
-  if (override) {
-    return resolve(override);
+export function resolvePlatformAppRoot(projectRoot?: string): string {
+  const resolvedProjectRoot = resolveProjectRoot({ projectRoot });
+  if (existsSync(join(resolvedProjectRoot, '.cursor', 'runtime-binding.yaml'))) {
+    return resolvedProjectRoot;
+  }
+
+  const legacyOverride = process.env.CONTROL_PLANE_PLATFORM_ROOT?.trim();
+  if (legacyOverride) {
+    const legacyRoot = resolve(legacyOverride);
+    if (existsSync(join(legacyRoot, '.cursor', 'runtime-binding.yaml'))) {
+      return legacyRoot;
+    }
   }
 
   for (const candidate of walkCandidates()) {
@@ -47,13 +60,8 @@ export function resolvePlatformAppRoot(): string {
     }
   }
 
-  const siblingDogfood = resolve(process.cwd(), '../business-workflow/app');
-  if (existsSync(join(siblingDogfood, '.cursor', 'runtime-binding.yaml'))) {
-    return siblingDogfood;
-  }
-
   throw new Error(
-    'Platform workspace not found. Set CONTROL_PLANE_PLATFORM_ROOT to a directory with .cursor/runtime-binding.yaml',
+    `Platform workspace not found for projectRoot ${resolvedProjectRoot}: missing .cursor/runtime-binding.yaml`,
   );
 }
 
