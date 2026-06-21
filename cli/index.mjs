@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import 'tsx/esm/api';
 import { parse as parseYaml } from 'yaml';
 
 function parseArgs(argv) {
@@ -32,65 +33,43 @@ function parseArgs(argv) {
   return { positional, projectRoot, passthrough };
 }
 
-function resolveProjectRoot(projectRootArg) {
-  if (projectRootArg && projectRootArg.trim().length > 0) {
-    return resolve(projectRootArg.trim());
-  }
-  const envRoot = process.env.CONTROL_PLANE_PROJECT_ROOT?.trim();
-  if (envRoot) {
-    return resolve(envRoot);
-  }
-  return resolve(process.cwd());
-}
+async function loadCoreModules() {
+  const [projectRootModule, uiConfigModule] = await Promise.all([
+    import('../src/lib/project-root.ts'),
+    import('../src/lib/ui-config.ts'),
+  ]);
 
-function loadYaml(filePath) {
-  return parseYaml(readFileSync(filePath, 'utf8'));
+  return {
+    resolveProjectRoot: projectRootModule.resolveProjectRoot,
+    loadUIConfig: uiConfigModule.loadUIConfig,
+    uiConfigPath: uiConfigModule.uiConfigPath,
+  };
 }
 
 function assertRuntimeBinding(projectRoot) {
-  const runtimeBindingPath = join(projectRoot, '.cursor', 'runtime-binding.yaml');
-  if (!existsSync(runtimeBindingPath)) {
-    throw new Error(`Missing ${runtimeBindingPath}`);
+  const bindingPath = join(projectRoot, '.cursor', 'runtime-binding.yaml');
+  if (!existsSync(bindingPath)) {
+    throw new Error(`Missing ${bindingPath}`);
   }
-  const doc = loadYaml(runtimeBindingPath);
+
+  const doc = parseYaml(readFileSync(bindingPath, 'utf8'));
   if (doc?.apiVersion !== 'proc.jambu/v1' || doc?.kind !== 'RuntimeBinding') {
     throw new Error('runtime-binding.yaml must be proc.jambu/v1 RuntimeBinding');
   }
+
   const harnessDir = doc?.active_pack?.harness_dir;
   if (typeof harnessDir !== 'string' || harnessDir.trim().length === 0) {
     throw new Error('runtime-binding.yaml active_pack.harness_dir must be defined');
   }
-  const resolvedHarnessRoot = resolve(projectRoot, harnessDir);
-  if (!existsSync(resolvedHarnessRoot)) {
-    throw new Error(`Harness directory not found: ${resolvedHarnessRoot}`);
-  }
-  return {
-    runtimeBindingPath,
-    harnessRoot: resolvedHarnessRoot,
-  };
-}
 
-function assertUiConfig(projectRoot) {
-  const uiConfigPath = join(projectRoot, 'ui.config.yaml');
-  if (!existsSync(uiConfigPath)) {
-    throw new Error(`Missing ${uiConfigPath}`);
+  const harnessRoot = resolve(projectRoot, harnessDir);
+  if (!existsSync(harnessRoot)) {
+    throw new Error(`Harness directory not found: ${harnessRoot}`);
   }
-  const doc = loadYaml(uiConfigPath);
-  if (doc?.apiVersion !== 'proc.jambu/v1' || doc?.kind !== 'ControlPlaneUI') {
-    throw new Error('ui.config.yaml must be proc.jambu/v1 ControlPlaneUI');
-  }
-  const surface = doc?.distribution?.surface;
-  if (
-    surface !== undefined &&
-    surface !== 'web' &&
-    surface !== 'desktop' &&
-    surface !== 'embedded'
-  ) {
-    throw new Error('ui.config.yaml distribution.surface must be web|desktop|embedded');
-  }
+
   return {
-    uiConfigPath,
-    surface: surface ?? 'embedded',
+    runtimeBindingPath: bindingPath,
+    harnessRoot,
   };
 }
 
@@ -120,21 +99,23 @@ function cliUsage() {
 }
 
 async function commandDoctor(projectRootArg) {
-  const projectRoot = resolveProjectRoot(projectRootArg);
+  const core = await loadCoreModules();
+  const projectRoot = core.resolveProjectRoot({ projectRoot: projectRootArg });
+  const [uiConfig] = await Promise.all([core.loadUIConfig(projectRoot)]);
   const runtime = assertRuntimeBinding(projectRoot);
-  const ui = assertUiConfig(projectRoot);
 
   console.log(`projectRoot: ${projectRoot}`);
   console.log(`runtimeBinding: ${runtime.runtimeBindingPath}`);
   console.log(`harnessRoot: ${runtime.harnessRoot}`);
-  console.log(`uiConfig: ${ui.uiConfigPath}`);
-  console.log(`surface: ${ui.surface}`);
+  console.log(`uiConfig: ${core.uiConfigPath(projectRoot)}`);
+  console.log(`surface: ${uiConfig.distribution?.surface ?? 'embedded'}`);
   console.log('doctor: ok');
 }
 
 async function commandStart(projectRootArg, passthroughArgs) {
-  const projectRoot = resolveProjectRoot(projectRootArg);
-  const ui = assertUiConfig(projectRoot);
+  const core = await loadCoreModules();
+  const projectRoot = core.resolveProjectRoot({ projectRoot: projectRootArg });
+  const [uiConfig] = await Promise.all([core.loadUIConfig(projectRoot)]);
   assertRuntimeBinding(projectRoot);
 
   const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -143,7 +124,7 @@ async function commandStart(projectRootArg, passthroughArgs) {
     CONTROL_PLANE_PROJECT_ROOT: projectRoot,
   };
 
-  if (ui.surface === 'desktop') {
+  if (uiConfig.distribution?.surface === 'desktop') {
     const exitCode = await runCommand('npm', ['run', 'tauri:dev', ...passthroughArgs], {
       cwd: repoRoot,
       env,
