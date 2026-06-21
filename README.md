@@ -40,6 +40,15 @@ npm run build
 npx playwright test e2e/platform-complete.spec.ts
 ```
 
+## Docker (web smoke)
+
+Build and run the SSR web surface with project root mounted at `/project`:
+
+```bash
+docker build -t jambu-control-plane:web .
+docker run --rm -p 4321:4321 jambu-control-plane:web
+```
+
 ## Environment
 
 | Variable | Purpose |
@@ -58,6 +67,8 @@ npm run tauri:build
 Domain harness packs are **not** bundled in the installer (ADR-039 Phase 2). Bind a workspace after install.
 
 See `DESKTOP.md`.
+
+Desktop release CI workflow: `.github/workflows/desktop-release.yml` (tag trigger `v*` + manual dispatch).
 
 ## Related
 
