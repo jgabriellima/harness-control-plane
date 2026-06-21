@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import 'tsx/esm/api';
 import { parse as parseYaml } from 'yaml';
@@ -73,23 +71,6 @@ function assertRuntimeBinding(projectRoot) {
   };
 }
 
-function runCommand(command, args, options = {}) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      stdio: 'inherit',
-      ...options,
-    });
-    child.on('error', rejectPromise);
-    child.on('exit', (code, signal) => {
-      if (signal) {
-        rejectPromise(new Error(`Process terminated by signal ${signal}`));
-        return;
-      }
-      resolvePromise(code ?? 0);
-    });
-  });
-}
-
 function cliUsage() {
   return [
     'Usage:',
@@ -113,28 +94,11 @@ async function commandDoctor(projectRootArg) {
 }
 
 async function commandStart(projectRootArg, passthroughArgs) {
-  const core = await loadCoreModules();
-  const projectRoot = core.resolveProjectRoot({ projectRoot: projectRootArg });
-  const [uiConfig] = await Promise.all([core.loadUIConfig(projectRoot)]);
-  assertRuntimeBinding(projectRoot);
-
-  const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-  const env = {
-    ...process.env,
-    CONTROL_PLANE_PROJECT_ROOT: projectRoot,
-  };
-
-  if (uiConfig.distribution?.surface === 'desktop') {
-    const exitCode = await runCommand('npm', ['run', 'tauri:dev', ...passthroughArgs], {
-      cwd: repoRoot,
-      env,
-    });
-    process.exit(exitCode);
-  }
-
-  const exitCode = await runCommand('npm', ['run', 'dev', '--', ...passthroughArgs], {
-    cwd: repoRoot,
-    env,
+  const { createHarnessUI } = await import('../embed/index.mjs');
+  const ui = await createHarnessUI({ projectRoot: projectRootArg });
+  const exitCode = await ui.start({
+    surface: ui.uiConfig.distribution?.surface ?? 'web',
+    passthroughArgs,
   });
   process.exit(exitCode);
 }

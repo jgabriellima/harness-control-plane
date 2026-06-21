@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
-import { resolveBindingFromStamp } from './harness-binding-stamp';
+import { resolveBindingFromStamp } from './harness-binding-stamp.ts';
 import type { HarnessBinding, RuntimeBindingStamp } from './harness-binding-types';
 import { resolvePlatformAppRoot } from './repo-root';
 

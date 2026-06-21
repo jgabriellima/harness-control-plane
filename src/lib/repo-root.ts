@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { resolveProjectRoot } from './project-root';
+import { resolveProjectRoot } from './project-root.ts';
 
 function walkCandidates(): string[] {
   return [
