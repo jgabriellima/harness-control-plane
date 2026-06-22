@@ -1,0 +1,6 @@
+# Merged when slots.incident = github-issues-human-hitl (ADR-029)
+# No extra secrets — incident flow runs in IDE via /sdlc:incident only
+incident:
+  agent_runtime: human-in-loop
+  execution: local-dispatch
+  materialize_workflow: false

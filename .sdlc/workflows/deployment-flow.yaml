@@ -1,0 +1,156 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: deployment-flow
+  name: Deployment Flow
+  description: Full deployment pipeline from staging validation to production release.
+  version: "1.1.0"
+  trigger: /sdlc:deploy
+  command: .cursor/commands/sdlc-deploy.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:deploy
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  preConditions:
+    - qa_evidence_exists
+    - active_p1_incidents false
+    - main_branch_green
+    - changelog_updated
+
+  nodes:
+    - id: build-validation
+      name: Build Validation
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/deploy:build-validation
+          command: bash
+          args:
+            - -c
+            - "cd ${TARGET_ROOT:-app} && npm run build && npx tsc --noEmit"
+        objective: Confirm clean build and TypeScript check before deploy
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: version-bump
+      name: Version Bump
+      dependsOn: [build-validation]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/deployer.md
+        objective: Bump semver in package.json and create git tag
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: staging-deploy
+      name: Staging Deploy
+      dependsOn: [version-bump]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:deploy
+        objective: Deploy to staging via GitHub Actions deploy workflow
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/ci-target-aligned.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: staging-validation
+      name: Staging Smoke and E2E
+      dependsOn: [staging-deploy]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/qa.md
+        objective: Smoke and visual validation on staging URL
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: production-deploy
+      name: Production Deploy
+      dependsOn: [staging-validation]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/deployer.md
+        objective: Deploy to production with explicit operator consent
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/ci-target-aligned.pass
+      control:
+        blocking: true
+        onFailure: trigger_rollback
+
+    - id: post-deploy-validation
+      name: Post-Deploy Validation
+      dependsOn: [production-deploy]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:post-deployment
+        objective: Version audit, browser smoke, observability check, evidence manifest
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/manifest-stage.pass
+      control:
+        blocking: true
+        onFailure: trigger_rollback
+
+    - id: delivery-complete
+      name: Release Delivery
+      dependsOn: [post-deploy-validation]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Register release in observability and emit deployment summary
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: true
+
+  rollbackProcedure:
+    trigger: post-deploy-validation failure
+    steps:
+      - operator_consent required
+      - vercel rollback optional
+      - wrangler pages deployment rollback optional
+      - invoke /sdlc:incident on consent
+
+  failureBehavior:
+    - abort before production on staging failure
+    - operator-gated rollback on post-deploy failure

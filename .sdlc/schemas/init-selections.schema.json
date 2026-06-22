@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/sdlc/init-selections.schema.json",
+  "title": "SDLC Init Selections",
+  "description": "Confirmed user choices from /sdlc:init questionnaire. Required before integration-mutator batch apply.",
+  "type": "object",
+  "required": ["version", "confirmed_at", "workspace", "delivery", "slots"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "confirmed_at": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "required": ["target_root", "profile", "mode"],
+      "properties": {
+        "target_root": { "type": "string", "minLength": 1 },
+        "profile": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["bind", "compose", "resume"] }
+      },
+      "additionalProperties": false
+    },
+    "delivery": {
+      "type": "object",
+      "required": ["default_closure", "surfaces"],
+      "properties": {
+        "default_closure": {
+          "enum": [
+            "local-validated",
+            "preview-validated",
+            "staging-validated",
+            "production-validated"
+          ]
+        },
+        "surfaces": {
+          "type": "object",
+          "properties": {
+            "local": { "type": "boolean" },
+            "preview": { "type": "boolean" },
+            "staging": { "type": "boolean" },
+            "production": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "slots": {
+      "type": "object",
+      "required": ["work_items", "source_control"],
+      "properties": {
+        "work_items": { "type": "string", "minLength": 1 },
+        "source_control": { "type": "string" },
+        "ci": { "type": "string" },
+        "qa": { "type": "string" },
+        "observability": { "type": "string" },
+        "deploy": { "type": "string" },
+        "post_deploy": { "type": "string" },
+        "incident": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "incident": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/incidentConfig" }]
+    }
+  },
+  "$defs": {
+    "incidentConfig": {
+      "type": "object",
+      "required": ["provider_token", "agent_runtime", "trigger", "execution", "auto_merge"],
+      "additionalProperties": false,
+      "properties": {
+        "provider_token": {
+          "enum": [
+            "github-issues-human-hitl",
+            "github-issues-cursor-sdk",
+            "github-issues-claude",
+            "pagerduty-webhook"
+          ]
+        },
+        "agent_runtime": {
+          "enum": ["human-in-loop", "cursor-sdk", "claude-code", "opencode"]
+        },
+        "trigger": {
+          "enum": ["github-issue-label", "observability-webhook", "workflow-dispatch"]
+        },
+        "execution": { "enum": ["ci", "local-dispatch", "cloud-agent"] },
+        "auto_merge": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sdlc.jambu/schemas/gate-dsl",
+  "title": "GateDSL",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "sdlc.jambu/v1" },
+    "kind": { "const": "Gate" },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.(pass|pending|check)$"
+        },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["description", "outcomes", "check"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "inputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "outcomes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        },
+        "check": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "schema",
+                "script",
+                "doctor",
+                "manifest",
+                "file",
+                "http",
+                "resolve",
+                "filesystem",
+                "adapter",
+                "assert",
+                "ref"
+              ]
+            },
+            "adapter": { "type": "string" },
+            "schema": { "type": "string" },
+            "script": { "type": "string" },
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "path": { "type": "string" },
+            "manifestField": { "type": "string" },
+            "content_refs": { "enum": ["all_nodes"] },
+            "asserts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string" },
+                  "eq": {},
+                  "neq": {},
+                  "gte": { "type": "number" },
+                  "lte": { "type": "number" },
+                  "exists": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

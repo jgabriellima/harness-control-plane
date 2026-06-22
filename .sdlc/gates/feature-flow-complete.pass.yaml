@@ -1,0 +1,20 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: feature-flow-complete.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Each vertical-slice ticket has a child feature-flow run (child_run_id) with
+    manifest status completed. FAIL on dispatch-only, empty feature_flow_stages bypass,
+    or feature_flow_complete true while child run is still in_progress.
+  inputs:
+    - ticketId
+    - runId
+  outcomes:
+    PASS: all child feature-flow manifests status completed
+    FAIL: missing child run, child in_progress, or false-complete without stages
+  requires_delegation: true
+  check:
+    type: adapter
+    adapter: feature-flow-complete

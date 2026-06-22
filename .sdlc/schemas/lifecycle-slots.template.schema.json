@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/lifecycle-slots.template.schema.json",
+  "title": "Lifecycle Slot Catalog Template",
+  "description": "MS-3: Extensible slot catalog for domain packs. Domain defines slot IDs and provider enums — not the generic harness skeleton.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/slotEntry"
+  },
+  "$defs": {
+    "slotId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Domain-defined slot identifier"
+    },
+    "providerToken": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "slotEntry": {
+      "type": "object",
+      "required": ["selected", "required"],
+      "additionalProperties": false,
+      "properties": {
+        "selected": {
+          "oneOf": [
+            { "const": "none" },
+            { "$ref": "#/$defs/providerToken" }
+          ]
+        },
+        "required": { "type": "boolean" },
+        "description": { "type": "string" },
+        "phase": { "type": "string" }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "description": "Reference catalog of supported providers per slot — domain pack ships this",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/providerToken" }
+      }
+    }
+  }
+}

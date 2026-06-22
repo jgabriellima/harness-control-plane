@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/harness-pack-registry.schema.json",
+  "title": "Harness Pack Registry",
+  "description": "MS-9 (ADR-032): Installed pack catalog and singular active pack block in harness.yaml (or kernel DSL before activation). Products such as SDLC do not appear in packs.installed — separate distribution contract.",
+  "type": "object",
+  "required": ["installed", "active"],
+  "additionalProperties": false,
+  "properties": {
+    "installed": {
+      "type": "array",
+      "description": "Registered pack artifacts — inactive until harness activate",
+      "items": {
+        "$ref": "#/$defs/installedPack"
+      },
+      "uniqueItems": true
+    },
+    "active": {
+      "$ref": "#/$defs/activePack"
+    }
+  },
+  "$defs": {
+    "packId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "examples": ["energy-admin", "energy-goal", "capex-procedures"]
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "harnessDir": {
+      "type": "string",
+      "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+      "examples": [".energy/", ".energy-goal/"]
+    },
+    "dslFile": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]*\\.yaml$",
+      "examples": ["energy.yaml", "energy-goal.yaml"]
+    },
+    "installedPack": {
+      "type": "object",
+      "required": ["id", "artifact", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/packId"
+        },
+        "artifact": {
+          "type": "string",
+          "description": "Path to domain-pack manifest or pack bundle descriptor",
+          "minLength": 1,
+          "examples": [".harness/packs/energy-admin-1.0.0.domain-pack.yaml"]
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "installed_at": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "source": {
+          "type": "string",
+          "description": "Provenance of the installed artifact",
+          "enum": ["local", "npm", "tarball", "git", "export"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Optional unpacked pack tree relative to repo root",
+          "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+          "examples": [".harness/packs/energy-admin/"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Registry entry state — active runtime identity is packs.active, not this field",
+          "enum": ["installed", "disabled"]
+        }
+      }
+    },
+    "activePack": {
+      "type": "object",
+      "description": "Singular active specialized harness — null fields when uninitialized",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "oneOf": [
+            { "$ref": "#/$defs/packId" },
+            { "type": "null" }
+          ],
+          "description": "Active pack id; null when no pack is activated"
+        },
+        "activated_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/isoDateTime" },
+            { "type": "null" }
+          ]
+        },
+        "harness_dir": {
+          "oneOf": [
+            { "$ref": "#/$defs/harnessDir" },
+            { "type": "null" }
+          ],
+          "description": "Materialized specialized harness root after activate"
+        },
+        "dsl_file": {
+          "oneOf": [
+            { "$ref": "#/$defs/dslFile" },
+            { "type": "null" }
+          ]
+        },
+        "cli_prefix": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "deactivated_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/isoDateTime" },
+            { "type": "null" }
+          ],
+          "description": "Set when harness deactivate completes (future)"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "installed": [
+        {
+          "id": "energy-admin",
+          "artifact": ".harness/packs/energy-admin-1.0.0.domain-pack.yaml",
+          "version": "1.0.0",
+          "installed_at": "2026-06-12T00:00:00Z",
+          "source": "local",
+          "status": "installed"
+        }
+      ],
+      "active": {
+        "id": "energy-admin",
+        "activated_at": "2026-06-12T01:00:00Z",
+        "harness_dir": ".energy/",
+        "dsl_file": "energy.yaml",
+        "cli_prefix": "energy"
+      }
+    },
+    {
+      "installed": [],
+      "active": {
+        "id": null,
+        "activated_at": null,
+        "harness_dir": null,
+        "dsl_file": null
+      }
+    }
+  ]
+}

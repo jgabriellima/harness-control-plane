@@ -1,0 +1,191 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: feature-flow
+  name: Feature Flow
+  description: End-to-end feature implementation pipeline from requirement to merged PR.
+  version: "1.1.0"
+  trigger: /sdlc:implement
+  command: .cursor/commands/sdlc-implement.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:implement
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  nodes:
+    - id: context-hydration
+      name: Context Hydration
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:hydrate
+        objective: Load architecture, operational context, business rules, and sdlc.yaml
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: planning
+      name: Feature Planning
+      dependsOn: [context-hydration]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: Decompose requirements into implementable plan with E2E scenarios
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: implementation
+      name: Implementation
+      dependsOn: [planning]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/implementer.md
+        objective: Implement plan with TypeScript strict and build passing
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: return_to_planning
+
+    - id: review
+      name: Code Review
+      dependsOn: [implementation]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/reviewer.md
+        objective: Validate implementation against architecture rules and plan
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: return_to_implementation
+
+    - id: qa
+      name: QA Validation
+      dependsOn: [review]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/qa.md
+        objective: Ticket-scoped validation — browser Playwright when qa_surface=browser; headless checks from ticket.validation_checks when qa_surface=headless
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/visual-evidence.pass
+          - ref: gates/library-evidence.pass
+          - ref: gates/shell-tier-checklist.pass
+          - ref: gates/playwright-report.pass
+      control:
+        blocking: true
+        onFailure: return_to_implementation
+
+    - id: pr-creation
+      name: Pull Request
+      dependsOn: [qa]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:implement
+        objective: Create PR with QA summary; classify risk level
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: false
+
+    - id: work-item-in-review
+      name: Work Item In Review Sync
+      dependsOn: [pr-creation]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/work_items_sync.py:ready_for_review
+          command: python3
+          args:
+            - .sdlc/bin/work_items_sync.py
+            - transition
+            - --ticket
+            - "{ticket_id}"
+            - --run-id
+            - "{run_id}"
+            - --manifest-status
+            - ready_for_review
+        objective: Move ticket to in_review via active work_items provider
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: work-item-closure
+      name: Work Item Ticket Closure
+      dependsOn: [work-item-in-review]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/work_items_sync.py:done
+          command: python3
+          args:
+            - .sdlc/bin/work_items_sync.py
+            - transition
+            - --ticket
+            - "{ticket_id}"
+            - --run-id
+            - "{run_id}"
+            - --manifest-status
+            - done
+        objective: Post-merge Done state via active work_items provider
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: true
+        onFailure: warn_and_continue
+
+  successCriteria:
+    - review structured.review_status == APPROVED
+    - qa structured.qa_status == PASS
+    - pr-creation outputs pr_url
+    - work-item-in-review outputs ticket_state In Review
+    - work-item-closure outputs ticket_state Done
+
+  failureBehavior:
+    - log to operational-context memory
+    - do not merge on QA or review failure
+    - surface failure stage and reason

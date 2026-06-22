@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: pr-registered.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Every vertical-slice ticket on the workflow-run manifest has a GitHub pull request URL
+    recorded (created via sdlc_workflow_pr.py or register-ticket --pr-url). Required before integration.
+  inputs:
+    - runId
+  outcomes:
+    PASS: all slice tickets have https://github.com/.../pull/N
+    FAIL: missing pr_url or invalid URL
+  check:
+    type: adapter
+    adapter: pr-registered

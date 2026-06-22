@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: visual-evidence.pass
+  version: "1.0.0"
+spec:
+  description: >
+    QA evidence bundle exists — manifest.md plus viewport PNG captures in evidence_dir.
+    FAIL if files missing or below minimum size. Cognition cannot substitute file presence.
+  inputs:
+    - evidenceDir
+    - runId
+  outcomes:
+    PASS: manifest.md and required viewport PNGs exist with non-trivial size
+    FAIL: missing evidence artifacts
+  check:
+    type: adapter
+    adapter: visual-evidence

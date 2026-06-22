@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: deploy-target-declared.pass
+  version: "1.0.0"
+spec:
+  description: manifest.target.deploy_target enum declared before wave planning.
+  inputs:
+    - runId
+    - target.deploy_target
+  outcomes:
+    PASS: deploy_target in allowed enum
+    FAIL: deploy_target missing or invalid
+  check:
+    type: adapter
+    adapter: deploy-target-declared

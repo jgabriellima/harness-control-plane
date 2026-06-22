@@ -1,0 +1,14 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: delivery-complete.pass
+  version: "1.0.0"
+spec:
+  description: Workflow output bundle contains manifest and consolidated deliverables.
+  inputs:
+    - outputPath
+  outcomes:
+    PASS: manifest.yaml and required artifacts present
+    FAIL: incomplete delivery bundle
+  check:
+    type: file

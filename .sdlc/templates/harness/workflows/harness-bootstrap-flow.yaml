@@ -1,0 +1,151 @@
+apiVersion: proc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: harness-bootstrap-flow
+  name: Harness Bootstrap Flow
+  description: >
+    Domain-neutral harness bootstrap. Validates skeleton, confirms domain pack,
+    runs structural doctor, delegates domain init, initializes baseline, sets operational.
+    MUST NOT install application stack dependencies or assume SDLC lifecycle slots.
+  version: "1.0.0"
+  trigger: "/harness:init"
+  command: .cursor/commands/harness-init.md
+
+spec:
+  triggers:
+    - type: command
+      command: "/harness:init"
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  bootstrapCheck:
+    triggerCondition: "identity.domain_pack is null OR status == 'uninitialized'"
+    message: >
+      Harness not specialized. Run /harness:init with domain pack intent,
+      or harness specialize --pack <id>.
+
+  nodes:
+    - id: environment-audit
+      name: Environment Audit
+      function:
+        invoke:
+          type: subprocess
+          ref: .harness/bootstrap:environment-audit
+          command: bash
+          args:
+            - -c
+            - "node -v && test -f ${HARNESS_DIR:-.harness/}${DSL_FILE:-harness.yaml}"
+        objective: Verify Node toolchain and harness DSL present
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: identity-confirm
+      name: Identity and Domain Pack Confirm
+      dependsOn: [environment-audit]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          Read identity block and domain pack manifest. Confirm or select domain pack.
+          Write identity.domain_pack when user confirms. Do not collect secrets.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+      control:
+        blocking: true
+
+    - id: structural-doctor
+      name: Structural Doctor (Kernel)
+      dependsOn: [identity-confirm]
+      function:
+        invoke:
+          type: subprocess
+          ref: .harness/bootstrap:structural-doctor
+          command: bash
+          args:
+            - -c
+            - "cd ${HARNESS_DIR:-.harness} && npm run doctor:structural --if-present || true"
+        objective: Run kernel doctor groups 0-3 only
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: domain-init-delegate
+      name: Domain Init Delegate
+      dependsOn: [structural-doctor]
+      function:
+        invoke:
+          type: skill
+          ref: domain-init
+        objective: >
+          Invoke domain pack init command (e.g. /sdlc:init for SDLC pack).
+          Slot walk, integration materialization, and secrets belong to domain init — not this flow.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+      control:
+        blocking: true
+
+    - id: baseline-init
+      name: Baseline Init
+      dependsOn: [domain-init-delegate]
+      function:
+        invoke:
+          type: subprocess
+          ref: .harness/bootstrap:baseline-init
+          command: python3
+          args:
+            - bin/harness_baseline.py
+            - init
+            - --if-missing
+        objective: Create first downstream harness baseline tag when operational
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: false
+
+    - id: operational-doctor
+      name: Operational Doctor
+      dependsOn: [baseline-init]
+      function:
+        invoke:
+          type: subprocess
+          ref: .harness/bootstrap:operational-doctor
+          command: bash
+          args:
+            - -c
+            - "cd ${HARNESS_DIR:-.harness} && npm run doctor --if-present || true"
+        objective: Kernel + domain doctor when status operational
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+  successCriteria:
+    - status set to operational in DSL
+    - identity.domain_pack set
+    - harness_baseline_tag initialized when doctor requires
+
+  failureBehavior:
+    - abort on structural-doctor hard fail
+    - handoff partial progress for resume

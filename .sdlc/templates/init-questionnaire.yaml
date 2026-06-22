@@ -1,0 +1,145 @@
+# Init questionnaire — normative conversation contract for /sdlc:init (ADR-029)
+# Agent reads this file during Phase C. Output: .sdlc/pipeline/.init-selections.json
+
+version: "1.0"
+schema: .sdlc/schemas/init-selections.schema.json
+
+waves:
+  - id: workspace
+    required: true
+    questions:
+      - id: target_root
+        prompt: "Where is application code relative to repo root?"
+        default: "."
+        type: path
+      - id: mode
+        prompt: "Init mode"
+        options: [bind, compose, resume]
+        default: auto_detect
+      - id: profile
+        prompt: "Stack profile (confirm auto-detect)"
+        default: auto
+
+  - id: delivery
+    required: true
+    questions:
+      - id: default_closure
+        prompt: "Where should /sdlc:goal consider work complete?"
+        options:
+          - local-validated
+          - preview-validated
+          - staging-validated
+          - production-validated
+        default: local-validated
+      - id: surfaces
+        prompt: "Enable remote delivery surfaces?"
+        multi: true
+        options: [preview, staging, production]
+        default: []
+
+  - id: mandatory_slots
+    required: true
+    questions:
+      - id: work_items
+        slot: work_items
+        prompt: "Work item / ticket provider?"
+        options: [local-work-items, plane, linear, jira, github-issues]
+        default: local-work-items
+        allow_none: false
+      - id: source_control
+        slot: source_control
+        prompt: "Source control remote?"
+        options: [github, gitlab, bitbucket, none]
+        default: auto_detect
+
+  - id: optional_slots
+    required: false
+    skip_default: none
+    questions:
+      - id: ci
+        slot: ci
+        prompt: "Configure CI integration now?"
+        gate: "skip unless user confirms"
+        options: [github-actions, gitlab-ci, circleci, none]
+        default: none
+      - id: qa
+        slot: qa
+        prompt: "Configure QA tooling?"
+        options: [playwright, cypress, maestro, pytest-only, none]
+        default: none
+      - id: observability
+        slot: observability
+        prompt: "Configure observability?"
+        options: [posthog, sentry, datadog, none]
+        default: none
+      - id: deploy
+        slot: deploy
+        prompt: "Configure deploy provider?"
+        options: [cloudflare-pages, vercel, railway, fly.io, pypi, none]
+        default: none
+      - id: post_deploy
+        slot: post_deploy
+        prompt: "Configure post-deploy smoke?"
+        options: [browser-user, vercel, railway, fly.io, none]
+        default: none
+
+  - id: incident
+    required: false
+    skip_default: none
+    root_prompt: "Enable autonomous incident response pipeline (CI agent)? Skip = IDE-only /sdlc:incident."
+    when_skip:
+      slots.incident: none
+      incident: null
+    when_yes:
+      questions:
+        - id: provider_token
+          prompt: "Incident provider token"
+          options:
+            - github-issues-human-hitl
+            - github-issues-cursor-sdk
+            - github-issues-claude
+            - pagerduty-webhook
+        - id: agent_runtime
+          prompt: "Agent runtime for autonomous fix (if not human-in-loop)"
+          options: [human-in-loop, cursor-sdk, claude-code, opencode]
+          default: human-in-loop
+        - id: trigger
+          prompt: "Incident trigger"
+          options: [github-issue-label, observability-webhook, workflow-dispatch]
+          default: github-issue-label
+        - id: execution
+          prompt: "Where autonomous agent runs"
+          options: [ci, local-dispatch, cloud-agent]
+          default: ci
+        - id: auto_merge
+          prompt: "Allow auto-merge on incident fix PR?"
+          type: boolean
+          default: false
+
+  - id: runtime_confirm
+    required: true
+    questions:
+      - id: specialization_runtime
+        prompt: "Confirm IDE runtime from install"
+        source: .sdlc/sdlc.yaml runtime.engine
+      - id: mcps
+        prompt: "MCP servers derived from active slots"
+        derived: true
+
+  - id: confirmation_gate
+    required: true
+    blocking: true
+    output: .sdlc/pipeline/.init-selections.json
+    fields: [confirmed_at]
+
+defaults_on_skip:
+  work_items: local-work-items
+  delivery.default_closure: local-validated
+  delivery.surfaces: { local: true, preview: false, staging: false, production: false }
+  incident: null
+
+closure_constraints:
+  staging-validated:
+    requires_slots: [deploy]
+  production-validated:
+    requires_slots: [deploy, post_deploy]

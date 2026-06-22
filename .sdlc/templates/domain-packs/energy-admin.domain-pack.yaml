@@ -1,0 +1,109 @@
+apiVersion: proc.jambu/v1
+kind: DomainPack
+
+metadata:
+  id: energy-admin
+  name: Energy Sector Administrative Procedures (stub)
+  version: "0.1.0"
+  description: >
+    Reference stub for a non-SDLC domain pack. Demonstrates slot vocabulary and
+    workflow shape for corporate administrative / regulatory procedures.
+    Not operational — template for domain authors.
+
+spec:
+  extends:
+    kernel: "@jambu/harness"
+    min_version: "0.1.0"
+
+  identity:
+    id: energy-admin
+    harness_dir: .energy-admin/
+    dsl_file: energy-admin.yaml
+    cli_prefix: energy
+    command_namespace:
+      lifecycle: "/energy:"
+      capabilities: "/run:"
+    api_version: proc.jambu/v1
+    package: "@jambu/domain-energy-admin"
+    domain_pack: energy-admin
+
+  provides:
+    lifecycle_slots_schema: schemas/lifecycle-slots.energy-admin.schema.json
+    init:
+      command: "/energy:init"
+      command_file: .cursor/commands/energy-init.md
+    workflows:
+      - id: capex-approval
+        definition: .harness/workflows/capex-approval-flow.yaml
+        trigger: "/energy:capex"
+      - id: regulatory-filing
+        definition: .harness/workflows/regulatory-filing-flow.yaml
+        trigger: "/energy:file"
+    commands:
+      - "/energy:init"
+      - "/energy:capex"
+      - "/energy:file"
+      - "/energy:doctor"
+      - "/energy:handoff"
+    agents:
+      - procedure-analyst
+      - compliance-reviewer
+      - dossier-assembler
+    skills:
+      - handoff
+      - procedure-ticket
+      - evidence-bundle
+    playbook_domains:
+      - governance
+      - regulatory
+      - procurement
+    integrations_catalog: templates/integrations/energy-admin/
+    gates:
+      - gates/four-eyes.pass.yaml
+      - gates/budget-threshold.pass.yaml
+      - gates/dossier-complete.pass.yaml
+    constraints:
+      handoff_required_on_completion: true
+      index_must_be_updated: true
+      segregation_of_duties: true
+    source_of_truth_extensions:
+      work_items: local-work-items
+      regulatory_register: .harness/context/regulatory/
+
+  overlays:
+    workflows: deep-merge
+    constraints: deep-merge
+    source_of_truth: deep-merge
+    runtime: deep-merge
+    gates: append
+    integrations: preserve-local
+
+  composition:
+    layers:
+      playbooks:
+        lazy: true
+        catalog: playbooks/PLAYBOOKS.md
+        domains_dir: playbooks/domains/
+      skills:
+        dir: "{specialization_layer}/skills/"
+      commands:
+        dir: "{specialization_layer}/commands/"
+        namespace: "/energy:"
+      workflows:
+        dir: .harness/workflows/
+      agents:
+        dir: "{specialization_layer}/agents/"
+        isolation: session
+      gates:
+        enforcement: deterministic
+    hydration:
+      index_sections:
+        - ACTIVE_PROCEDURES
+        - ADRS
+        - RUNTIME.COMMANDS
+        - ENTRY_POINTS
+      forbidden_on_session_start:
+        - playbooks/domains/**
+
+  paradigm:
+    contract: contracts/paradigm-invariants.yaml

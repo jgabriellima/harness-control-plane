@@ -1,0 +1,184 @@
+integration: plane
+version: "1.0"
+status: active  # API key confirmed working 2026-05-19
+
+# ── Secrets Required ──────────────────────────────────────────────────────────
+secrets_required:
+  - env_var: PLANE_API_KEY
+    scope: both
+    required: true
+    description: Plane API key — needed locally for agent ticket operations and in CI for state sync
+
+# ── Live Configuration ────────────────────────────────────────────────────────
+connection:
+  api_key_env: PLANE_API_KEY     # export PLANE_API_KEY=plane_api_c031f226...
+  workspace_slug: jambuai
+  workspace_url: https://app.plane.so/jambuai/
+  project_id: 5341a48e-1c49-4165-950a-75d34a5e699d
+  project_identifier: JAMBU
+  project_url: https://app.plane.so/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/issues/
+  base_url: https://api.plane.so/api/v1
+
+# ── States (live UUIDs from workspace) ───────────────────────────────────────
+states:
+  backlog:
+    id: "3095c293-971b-43d8-9091-e6bd158d0585"
+    name: Backlog
+    group: backlog
+  todo:
+    id: "8f6c0c24-e4c8-49a0-9e01-ed90e79e5d13"
+    name: Todo
+    group: unstarted
+  in_progress:
+    id: "08fe0d8a-88a6-4f73-a375-6059b21bb6b0"
+    name: In Progress
+    group: started
+  in_review:
+    id: "347a804e-6938-47f0-8b96-f91fde3815b2"
+    name: In Review
+    group: started
+  done:
+    id: "6225a1fd-225e-4ed7-a975-ca32a0d576c3"
+    name: Done
+    group: completed
+  cancelled:
+    id: "c4393832-7c30-482f-ae86-026774aa9dbc"
+    name: Cancelled
+    group: cancelled
+
+# ── Ticket Structure ──────────────────────────────────────────────────────────
+# Enforced by the plane-ticket skill and spec-writer skill.
+# Template: .sdlc/templates/plane-ticket.md
+ticket_structure:
+  title_format: "Imperative verb phrase — max 80 chars"
+  required_sections:
+    - objective
+    - background
+    - acceptance_criteria  # Given/When/Then format
+    - technical_notes
+    - qa_requirements
+    - references
+  acceptance_criteria_format: given_when_then
+  out_of_scope_required: true
+
+# ── Manifest sync (E2E orchestrator → Plane state) ─────────────────────────────
+# Maps manifest ticket status (sdlc.yaml manifest_tickets.statuses) to Plane state keys.
+runtime:
+  ticket_skill_ref: .cursor/skills/plane-ticket/SKILL.md
+  board_surface: provider_api
+
+manifest_sync:
+  status_map:
+    in_progress: in_progress
+    in_review: in_review
+    ready_for_review: in_review
+    completed: done
+    done: done
+  post_comment_on:
+    - ready_for_review
+  harness_fields:
+    - harness_run_id
+    - harness_parent_run_id
+    - harness_workflow_id
+    - harness_node_id
+    - continuity_status
+  harness_comment_marker: "<!-- sdlc-harness-index -->"
+
+# ── Lifecycle Automation ──────────────────────────────────────────────────────
+# What triggers automatic Plane updates from the SDLC
+lifecycle:
+  on_spec_create:
+    action: create_issue
+    initial_state: todo
+  on_worktree_create:
+    action: update_state
+    state: in_progress
+  on_pr_open:
+    action: update_state
+    state: in_review
+    note: "Mandatory — PR open means implementation finished; ticket awaits human merge"
+  on_pr_merge:
+    action: update_state
+    state: done
+  on_incident_detected:
+    action: create_issue
+    priority: based_on_severity
+    initial_state: in_progress
+  on_handoff_complete:
+    action: add_comment
+    content: "Session handoff recorded — {timestamp}"
+
+# ── Evidence Attachment Policy ────────────────────────────────────────────────
+# Evidence artifacts (screenshots, videos) are NEVER committed to git.
+# They are uploaded to the Plane ticket as attachments and summarized in a comment.
+# This behavior is controlled by sdlc.yaml qa.evidence_upload_to_plane (default: true).
+#
+# Supported MIME types (Plane cloud allowlist):
+#   image/png, image/jpeg, image/gif, video/webm, video/mp4, application/pdf, text/plain
+# IMPORTANT: .md files must be sent as type text/plain — Plane rejects text/markdown.
+# NOTE: issue-attachments/ endpoint returns "Page not found" — use work-items/ instead.
+evidence_attachment:
+  enabled_by: "sdlc.yaml qa.evidence_upload_to_plane"
+  default: true
+  endpoint_note: "Use /work-items/{issue-uuid}/attachments/ NOT /issues/{uuid}/issue-attachments/"
+  size_limit_mb: 5
+  upload_flow: "3-step presigned URL (get-credentials → S3 upload → complete)"
+
+# ── Cursor CLI Ticket Operations ──────────────────────────────────────────────
+# Reference commands for agents to use directly
+api_examples:
+  create_issue: |
+    curl -s -X POST \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      -H "Content-Type: application/json" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/issues/" \
+      -d '{"name": "<title>", "description_html": "<html>", "priority": "medium", "state": "8f6c0c24-e4c8-49a0-9e01-ed90e79e5d13"}'
+
+  update_state: |
+    curl -s -X PATCH \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      -H "Content-Type: application/json" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/issues/<issue-uuid>/" \
+      -d '{"state": "<state-uuid>"}'
+
+  list_issues: |
+    curl -s \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/issues/"
+
+  post_comment: |
+    curl -s -X POST \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      -H "Content-Type: application/json" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/issues/<issue-uuid>/comments/" \
+      -d '{"comment_html": "<h2>...</h2><p>...</p>"}'
+
+  # Evidence upload — 3-step presigned URL flow
+  # IMPORTANT: endpoint is /work-items/, NOT /issues/issue-attachments/
+  attach_evidence_step1_get_credentials: |
+    # Returns: { asset_id, upload_data: { url, fields: { key, policy, x-amz-signature, ... } } }
+    curl -s -X POST \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      -H "Content-Type: application/json" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/work-items/<issue-uuid>/attachments/" \
+      -d '{"name": "screenshot.png", "type": "image/png", "size": <bytes>}'
+
+  attach_evidence_step2_upload_s3: |
+    # Use fields from step 1. file must be last form field.
+    curl -s -o /dev/null -w "%{http_code}" -X POST "https://planefs-uploads.s3.amazonaws.com/" \
+      -F "Content-Type=image/png" \
+      -F "key=<key-from-step1>" \
+      -F "x-amz-algorithm=AWS4-HMAC-SHA256" \
+      -F "x-amz-credential=<credential-from-step1>" \
+      -F "x-amz-date=<date-from-step1>" \
+      -F "policy=<policy-from-step1>" \
+      -F "x-amz-signature=<signature-from-step1>" \
+      -F "file=@./screenshot.png;type=image/png"
+    # Expected response: HTTP 204
+
+  attach_evidence_step3_complete: |
+    curl -s -X PATCH \
+      -H "X-API-Key: $PLANE_API_KEY" \
+      -H "Content-Type: application/json" \
+      "https://api.plane.so/api/v1/workspaces/jambuai/projects/5341a48e-1c49-4165-950a-75d34a5e699d/work-items/<issue-uuid>/attachments/<asset-id>/" \
+      -d '{"is_uploaded": true}'

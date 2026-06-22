@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sdlc.jambu/schemas/cognitive-output",
+  "title": "CognitiveOutput",
+  "description": "Structured output contract for every cognitive workflow node. Cognition never advances without this shape.",
+  "type": "object",
+  "required": ["nodeId", "runId", "recordedAt", "outcome", "confidence", "artifacts"],
+  "additionalProperties": false,
+  "properties": {
+    "nodeId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "partial", "blocked", "failed"]
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "summary": { "type": "string" },
+    "structured": {
+      "type": "object",
+      "description": "Node-specific payload validated by outputSchema when declared"
+    },
+    "cognitiveSteps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "detail"],
+        "properties": {
+          "label": { "type": "string" },
+          "detail": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "uri", "kind"],
+        "properties": {
+          "name": { "type": "string" },
+          "uri": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["research", "draft", "manifest", "asset", "log", "report"]
+          }
+        }
+      }
+    },
+    "gateInput": {
+      "type": "object",
+      "description": "Fields consumed by the paired deterministic gate"
+    }
+  }
+}

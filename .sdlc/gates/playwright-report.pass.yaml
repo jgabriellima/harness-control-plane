@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: playwright-report.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Playwright test run recorded exit 0 in evidence manifest or playwright-report.json.
+    FAIL if report missing or lastRun.exitCode != 0.
+  inputs:
+    - evidenceDir
+    - runId
+  outcomes:
+    PASS: playwright report exists with exitCode 0
+    FAIL: missing report or non-zero exit
+  check:
+    type: adapter
+    adapter: playwright-report

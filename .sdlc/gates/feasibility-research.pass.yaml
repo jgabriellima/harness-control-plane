@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: feasibility-research.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Runtime/control-plane intents require feasibility-report.md and deploy_target.
+    Visual-clone intents pass N/A.
+  inputs:
+    - runId
+    - intent
+  outcomes:
+    PASS: feasibility report + deploy_target when required; N/A otherwise
+    FAIL: runtime intent without feasibility artifacts
+  check:
+    type: adapter
+    adapter: feasibility-research

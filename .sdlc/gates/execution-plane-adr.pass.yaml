@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: execution-plane-adr.pass
+  version: "1.0.0"
+spec:
+  description: Subprocess/spawn execution plane requires ADR reference on manifest or output.
+  inputs:
+    - runId
+    - target.execution_plane
+  outcomes:
+    PASS: ADR recorded when subprocess plane declared; N/A for in-process
+    FAIL: subprocess plane without ADR
+  check:
+    type: adapter
+    adapter: execution-plane-adr

@@ -1,0 +1,86 @@
+integration: local-work-items
+version: "1.0"
+status: active
+
+# Zero-credential filesystem work_items provider (ADR-025).
+# Materialized when /sdlc:init selects local board or no external provider.
+
+secrets_required: []
+
+storage:
+  root: work-items
+  tickets_subdir: tickets
+  board_index: INDEX.md
+
+connection:
+  id_prefix: PROJ
+  board_title: Local Work Items Board
+
+runtime:
+  ticket_skill_ref: .cursor/skills/local-ticket/SKILL.md
+  board_surface: provider_filesystem_mirror
+
+states:
+  backlog:
+    name: Backlog
+    group: backlog
+  todo:
+    name: Todo
+    group: unstarted
+  in_progress:
+    name: In Progress
+    group: started
+  in_review:
+    name: In Review
+    group: started
+  done:
+    name: Done
+    group: completed
+  cancelled:
+    name: Cancelled
+    group: cancelled
+
+ticket_structure:
+  title_format: "Imperative verb phrase — max 80 chars"
+  required_sections:
+    - objective
+    - background
+    - acceptance_criteria
+    - technical_notes
+    - qa_requirements
+    - references
+  acceptance_criteria_format: given_when_then
+  out_of_scope_required: true
+
+manifest_sync:
+  status_map:
+    in_progress: in_progress
+    ready_for_review: in_review
+    done: done
+  post_comment_on:
+    - ready_for_review
+  harness_fields:
+    - harness_run_id
+    - harness_parent_run_id
+    - harness_workflow_id
+    - harness_node_id
+    - continuity_status
+
+lifecycle:
+  on_spec_create:
+    action: create_ticket
+    initial_state: todo
+  on_worktree_create:
+    action: update_state
+    state: in_progress
+  on_pr_open:
+    action: update_state
+    state: in_review
+  on_pr_merge:
+    action: update_state
+    state: done
+
+evidence_attachment:
+  enabled_by: "sdlc.yaml qa.evidence_upload_to_work_items"
+  default: true
+  storage: ticket_yaml_evidence_list

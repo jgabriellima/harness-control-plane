@@ -1,0 +1,138 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: e2e-flow
+  name: E2E Flow
+  description: Standalone E2E validation pipeline with evidence generation.
+  version: "1.1.0"
+  trigger: /run:e2e
+  command: .cursor/commands/run-e2e.md
+
+spec:
+  triggers:
+    - type: command
+      command: /run:e2e
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  scopes:
+    smoke:
+      files: [e2e/smoke.spec.ts]
+      description: Core page availability
+      max_duration: 60s
+    full:
+      files: [e2e/**/*.spec.ts]
+      description: Complete user journey validation
+      max_duration: 300s
+    accessibility:
+      files: [e2e/accessibility.spec.ts]
+      description: WCAG 2.1 AA via axe-playwright
+      max_duration: 120s
+    visual:
+      files: [e2e/visual.spec.ts]
+      description: Screenshot regression testing
+      max_duration: 180s
+
+  nodes:
+    - id: environment-check
+      name: Environment Check
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/e2e:environment-check
+          command: bash
+          args:
+            - -c
+            - "npx playwright install chromium --dry-run"
+        objective: Verify Playwright installed and server reachable
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: playwright-run
+      name: Playwright Test Execution
+      dependsOn: [environment-check]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/e2e:playwright-run
+          command: bash
+          args:
+            - -c
+            - "cd ${TARGET_ROOT:-app} && npx playwright test --reporter=html,json"
+        objective: Run scoped Playwright suite and capture JSON/HTML reports
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: browser-validation
+      name: Live Browser Validation
+      dependsOn: [playwright-run]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/qa.md
+        objective: Visual validation at desktop and mobile viewports with screenshots
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: false
+
+    - id: accessibility-scan
+      name: Accessibility Scan
+      dependsOn: [playwright-run]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/e2e:accessibility-scan
+          command: bash
+          args:
+            - -c
+            - "cd ${TARGET_ROOT:-app} && npx playwright test e2e/accessibility.spec.ts"
+        objective: WCAG 2.1 AA scan on key routes
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: evidence-collection
+      name: Evidence Collection
+      dependsOn: [browser-validation, accessibility-scan]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Collect manifest, reports, and screenshots under .sdlc/evidence/
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: false
+
+  successCriteria:
+    - playwright-run fail_count == 0
+    - accessibility-scan violations empty
+    - evidence-collection manifest exists
+
+  failureBehavior:
+    - fail pipeline on accessibility violations
+    - record evidence path even on partial failure

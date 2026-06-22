@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: ticket-qa-contract.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Active work-item ticket declares a valid ADR-029 QA contract: qa_surface in
+    {browser, headless}; headless requires non-empty validation_checks with
+    {name, cmd} shape. Enforced at spec-flow ticket creation and register-ticket.
+  inputs:
+    - runId
+    - ticketId
+  outcomes:
+    PASS: ticket qa_surface and validation_checks satisfy ADR-029 contract
+    FAIL: qa_surface missing, invalid, or headless without validation_checks
+  check:
+    type: adapter
+    adapter: ticket-qa-contract

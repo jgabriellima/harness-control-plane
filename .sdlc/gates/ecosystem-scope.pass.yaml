@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: ecosystem-scope.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Ecosystem ops scope report exists and verdict is PASS — no forbidden app scaffold
+    paths in child repo; child sdlc.yaml not prematurely operational.
+  inputs:
+    - outputPath
+    - cognitiveOutput
+  outcomes:
+    PASS: scope-report.md present; structured verdict is PASS; zero forbidden path violations
+    FAIL: missing report, verdict FAIL, or forbidden paths documented in violations
+  check:
+    type: file
+    path: "{outputPath}/scope-report.md"
+    mustExist: true

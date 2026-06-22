@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: legacy-run-migrated.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Legacy .sdlc/runs/ manifests must migrate to workflow-runs before mutation
+    (ADR-027 FM-8). Read-only access unchanged.
+  inputs:
+    - runId
+  outcomes:
+    PASS: workflow manifest exists or legacy run archived
+    FAIL: in-progress legacy run — run sdlc_workflow_migrate.py migrate
+  check:
+    type: adapter
+    adapter: legacy-run-migrated

@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: spec-reconciliation.pass
+  version: "1.0.0"
+spec:
+  description: spec-reconciliation.md exists with zero unresolved P0 conflicts.
+  inputs:
+    - runId
+    - outputDir
+  outcomes:
+    PASS: reconciliation table complete
+    FAIL: missing report or unresolved P0 rows
+  check:
+    type: adapter
+    adapter: spec-reconciliation

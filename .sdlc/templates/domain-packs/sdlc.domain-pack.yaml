@@ -1,0 +1,185 @@
+apiVersion: proc.jambu/v1
+kind: DomainPack
+
+metadata:
+  id: sdlc
+  name: AI-Native SDLC Domain Pack
+  version: "1.0.0"
+  description: >
+    Software delivery cognitive orchestration — first reference domain pack on the generic harness kernel.
+    Maps legacy .sdlc/ layout and @jambu/ai-native-sdlc combined install.
+
+spec:
+  extends:
+    kernel: "@jambu/harness"
+    min_version: "0.1.0"
+
+  identity:
+    id: sdlc
+    harness_dir: .sdlc/
+    dsl_file: sdlc.yaml
+    cli_prefix: sdlc
+    command_namespace:
+      lifecycle: "/sdlc:"
+      capabilities: "/run:"
+    api_version: sdlc.jambu/v1
+    package: "@jambu/ai-native-sdlc"
+    domain_pack: sdlc
+
+  provides:
+    lifecycle_slots_schema: schemas/lifecycle-slots.schema.json
+    bootstrap_workflow: .sdlc/workflows/bootstrap-flow.yaml
+    init:
+      command: "/sdlc:init"
+      command_file: .cursor/commands/sdlc-init.md
+    workflows:
+      - id: bootstrap
+        definition: .sdlc/workflows/bootstrap-flow.yaml
+        trigger: "/sdlc:init"
+      - id: spec
+        definition: .sdlc/workflows/spec-flow.yaml
+        trigger: "/sdlc:spec"
+      - id: goal
+        definition: .sdlc/workflows/goal-flow.yaml
+        trigger: "/sdlc:goal"
+      - id: feature
+        definition: .sdlc/workflows/feature-flow.yaml
+        trigger: "/sdlc:implement"
+      - id: deployment
+        definition: .sdlc/workflows/deployment-flow.yaml
+        trigger: "/sdlc:deploy"
+      - id: e2e
+        definition: .sdlc/workflows/e2e-flow.yaml
+        trigger: "/run:e2e"
+      - id: incident
+        definition: .sdlc/workflows/incident-flow.yaml
+        trigger: "/sdlc:incident"
+    commands:
+      - "/sdlc:init"
+      - "/sdlc:discovery"
+      - "/sdlc:goal"
+      - "/sdlc:engspec"
+      - "/sdlc:spec"
+      - "/sdlc:plan"
+      - "/sdlc:feature"
+      - "/sdlc:implement"
+      - "/sdlc:deploy"
+      - "/sdlc:incident"
+      - "/sdlc:hydrate"
+      - "/sdlc:doctor"
+      - "/sdlc:baseline"
+      - "/sdlc:reflect"
+      - "/sdlc:post-deployment"
+      - "/sdlc:token-health"
+      - "/sdlc:learn"
+      - "/sdlc:config"
+      - "/sdlc:handoff"
+      - "/sdlc:reset"
+    agents:
+      - planner
+      - spec-writer
+      - implementer
+      - reviewer
+      - qa
+      - deployer
+      - incident-resolver
+    skills:
+      - handoff
+      - qa-recording
+      - plane-ticket
+      - work-items-ticket
+      - local-ticket
+      - worktree
+      - spec-writer
+      - browser-user
+      - canvas
+      - engspec
+      - playbook-capability
+      - write-docs
+    playbook_domains:
+      - compose
+      - harvest
+      - webdesign
+      - documents
+      - slides
+      - gsap
+      - motion
+      - svg
+      - sdlc
+    integrations_catalog: templates/integrations/
+    gates:
+      - gates/worktree-registered.pass.yaml
+      - gates/worktree-committed.pass.yaml
+      - gates/feature-flow-complete.pass.yaml
+      - gates/pr-registered.pass.yaml
+      - gates/ticket-qa-contract.pass.yaml
+    bin_domain:
+      - sdlc_workflow_pr.py
+      - sdlc_e2e_execution.py
+      - sdlc_e2e_manifest.py
+      - sdlc_delivery.py
+      - sdlc_workspace_rebind.py
+      - sdlc_profile.py
+      - sdlc_workflow_validate_local.py
+      - work_items_sync.py
+      - plane_ticket_state.py
+      - local_ticket_state.py
+      - sdlc_plane_create.py
+      - sdlc_plane_labels.py
+      - upload_plane_evidence.py
+      - visual_fidelity_check.py
+      - sdlc_token_health.py
+      - token_health_artifacts.py
+    doctor_extensions:
+      - doctor/runtime-alignment.ts
+    constraints:
+      worktrees_mandatory: true
+      no_direct_commits_to_main: true
+      handoff_required_on_completion: true
+      index_must_be_updated: true
+    source_of_truth_extensions:
+      work_items: plane
+      architecture: .cursor/memories/architecture.md
+
+  overlays:
+    workflows: deep-merge
+    constraints: deep-merge
+    source_of_truth: deep-merge
+    runtime: deep-merge
+    gates: deep-merge
+    integrations: preserve-local
+
+  composition:
+    layers:
+      playbooks:
+        lazy: true
+        catalog: playbooks/PLAYBOOKS.md
+        domains_dir: playbooks/domains/
+      skills:
+        dir: "{specialization_layer}/skills/"
+      commands:
+        dir: "{specialization_layer}/commands/"
+        namespace: "/sdlc:"
+      workflows:
+        dir: .sdlc/workflows/
+      agents:
+        dir: "{specialization_layer}/agents/"
+        isolation: worktree
+      gates:
+        enforcement: deterministic
+    hydration:
+      index_sections:
+        - ACTIVE_WORK
+        - ACTIVE_WORKTREES
+        - SPECS
+        - ADRS
+        - RUNTIME.COMMANDS
+        - RUNTIME.SKILLS
+        - ENTRY_POINTS
+      forbidden_on_session_start:
+        - playbooks/domains/**
+        - playbooks/.research/**
+        - playbooks/PLAYBOOKS.md
+
+  paradigm:
+    contract: contracts/paradigm-invariants.yaml

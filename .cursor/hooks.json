@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/session-start.sh",
+        "timeout": 15
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 90,
+        "matcher": "UserPromptSubmit"
+      },
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 10,
+        "matcher": "Write|StrReplace|Delete|EditNotebook",
+        "failClosed": true
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 15,
+        "matcher": "Shell"
+      },
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterAgentThought": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 10,
+        "failClosed": true
+      },
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 10
+      },
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "beforeTabFileRead": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "afterTabFileEdit": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 .cursor/hooks/sdlc_runtime_guard.py",
+        "timeout": 15,
+        "loop_limit": 5
+      },
+      {
+        "command": ".cursor/hooks/session-stop.sh",
+        "timeout": 10
+      },
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      },
+      {
+        "type": "prompt",
+        "prompt": "The agent has finished. Before closing the session, perform two steps in order:\n\n1. MEMORY CONSOLIDATION — Review what was done this session. For each memory file below, update it if and only if the corresponding condition is true. Do not rewrite sections that did not change. Append or modify only the affected sections.\n   - .cursor/memories/architecture.md → update if: a new dependency was added, a stack change was made, a structural directory change occurred, or a new ADR was decided\n   - .cursor/memories/business-rules.md → update if: a new domain constraint, content rule, or editorial policy was discovered or codified\n   - .cursor/memories/incidents.md → update if: an incident was opened, escalated, or resolved\n   - .cursor/memories/operational-context.md → update if: sprint state changed, a feature moved to a new phase, or active worktrees changed\n\n2. HANDOFF — Call the /sdlc:handoff command to record the session state in .sdlc/handoffs/. This is mandatory if any significant work was completed.",
+        "timeout": 30,
+        "loop_limit": 1
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ],
+    "subagentStop": [
+      {
+        "command": "python3 .cursor/hooks/hook_handler.py",
+        "timeout": 10
+      }
+    ]
+  }
+}

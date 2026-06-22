@@ -1,0 +1,44 @@
+integration: github
+version: "1.0"
+status: active
+serves_slots: [source_control, ci]
+
+repository:
+  url: https://github.com/jgabriellima/harness-control-plane
+  default_branch: main
+  protected_branches: [main]
+  branch_naming:
+    feature: "feat/{ticket_id}-{slug}"
+    fix: "fix/{ticket_id}-{slug}"
+    chore: "chore/{ticket_id}-{slug}"
+
+secrets_required:
+  - env_var: GITHUB_PERSONAL_ACCESS_TOKEN
+    scope: local
+    required: true
+    description: GitHub PAT for MCP server and gh CLI — scopes repo, workflow
+
+auth:
+  token: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+  cli: gh
+
+pull_requests:
+  require_checks_before_merge: true
+  required_checks: []
+  delete_branch_on_merge: true
+  merge_strategy: squash
+
+actions:
+  workflows:
+    desktop_release: .github/workflows/desktop-release.yml
+
+gate_contract:
+  version: "1.0"
+  gates:
+    ci-target-aligned:
+      checks: []
+  workspace_rebind:
+    patches: []
+  protocol_guard:
+    deploy_stage:
+      static_paths: []

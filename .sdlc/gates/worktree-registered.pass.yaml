@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: worktree-registered.pass
+  version: "1.0.0"
+spec:
+  description: >
+    At least one vertical-slice ticket on the workflow-run manifest has a registered
+    worktree path that exists and is a git worktree (ADR-009). Enforced when qa.worktree_gate is true.
+  inputs:
+    - runId
+  outcomes:
+    PASS: slice ticket(s) registered with valid worktree paths
+    FAIL: missing tickets, worktree path, or path is not a git worktree
+  check:
+    type: adapter
+    adapter: worktree-registered

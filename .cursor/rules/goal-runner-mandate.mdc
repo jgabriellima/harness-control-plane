@@ -1,0 +1,30 @@
+---
+description: Goal-flow runner authority — enforced by sdlc_runtime_guard.py hooks + DSL agentPolicy
+globs:
+alwaysApply: true
+---
+
+# Goal runner mandate (ADR-022)
+
+When the user invokes `/sdlc:goal` or `/sdlc:e2e`, the workflow DSL `spec.agentPolicy` in `.sdlc/workflows/goal-flow.yaml` is **normative**. This rule reinforces the hook-injected contract.
+
+## Required sequence
+
+1. `python3 .sdlc/bin/sdlc_continuity_resolve.py resolve --command /sdlc:goal --intent "<intent>" --json`
+2. `python3 .sdlc/bin/sdlc_workflow_run.py run --workflow goal-flow --intent "<intent>" --mode agent` (or `resume` / `step` if run exists)
+3. Loop: `step --mode agent` → exit 42 → execute node → `submit`
+4. After `execution`: `sdlc_workflow_pr.py create --run-id <id>` (node `pr-creation`)
+5. On run complete: execute `continuity.required_actions` from `status --json` (includes `/sdlc:handoff`)
+
+## Forbidden
+
+- Implementing code under `workspace.target_root` in the orchestrator session (delegate `feature-flow` per ticket in registered worktrees)
+- Asking the operator to choose worktree vs PR vs local review
+- Ending with conversational deferrals ("say the word", "preferes rever localmente?")
+- Skipping the runner because the task "looks like UI work"
+
+## Source of truth
+
+- Manifest: `.sdlc/workflow-runs/{run_id}/manifest.yaml`
+- Command: `.cursor/commands/sdlc-goal.md`
+- Guard: `.sdlc/bin/sdlc_protocol_guard.py`

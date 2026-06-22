@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: harness-parity.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Python and TypeScript harness read paths satisfy harness-parity.contract.yaml
+    invariants when both implementations exist (ADR-027 FM-7).
+  inputs: []
+  outcomes:
+    PASS: contract satisfied or N/A
+    FAIL: TS/Python harness invariant mismatch
+  check:
+    type: adapter
+    adapter: harness-parity

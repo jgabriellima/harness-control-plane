@@ -20,3 +20,12 @@ test-results/
 .DS_Store
 .vscode/
 *.log
+
+# SDLC runtime state (not committed)
+.sdlc/**/__pycache__/
+.sdlc/evidence/
+.sdlc/workflow-runs/
+.sdlc/trace/
+.sdlc/runs/
+.sync-backup/
+output/

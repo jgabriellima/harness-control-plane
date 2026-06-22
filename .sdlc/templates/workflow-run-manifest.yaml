@@ -1,0 +1,52 @@
+# Workflow Run Manifest — SDLC harness control plane
+# Path: .sdlc/workflow-runs/{run_id}/manifest.yaml
+# Managed by: sdlc_workflow_manifest.py
+#
+# Idempotency: nodes with status completed|skipped are not re-executed on resume.
+
+apiVersion: sdlc.jambu/v1
+kind: WorkflowRunManifest
+
+metadata:
+  run_id: "{run_id}"
+  workflow_id: "{workflow_id}"
+  recorded_at: "{ISO8601}"
+  updated_at: "{ISO8601}"
+
+status: pending
+intent: |
+  {intent}
+
+execution:
+  mode: stub
+  idempotency_key: null
+  resume_from_node: null
+
+workflow:
+  command: "{trigger_command}"
+  dsl_path: .sdlc/workflows/{workflow_id}.yaml
+
+paths:
+  output_dir: .sdlc/workflow-runs/output/{workflow_id}/{run_id}
+  trace_path: .sdlc/workflow-runs/traces/{run_id}.yaml
+  state_path: .sdlc/workflow-runs/{run_id}/workflow-state.yaml
+
+nodes: {}
+# Per-node runtime (ADR-020), e.g.:
+#   nodes.<id>.status: pending | running | completed | skipped | failed | retry
+#     | awaiting_input | awaiting_approval | awaiting_external
+#   nodes.<id>.artifacts: { pr_url, spec_path, worktree_path, ... }
+#   nodes.<id>.hitl: { kind, since, prompt }
+
+continuity:
+  phase: null
+  awaiting: none
+  blocked_by_node: null
+  required_actions: []
+  resume_hints: []
+  conflict_policy: ask
+  last_resolution: null
+
+definition_of_done:
+  all_nodes_completed: false
+  delivery_bundle_written: false

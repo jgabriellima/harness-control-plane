@@ -1,0 +1,553 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: goal-flow
+  name: Goal Flow
+  description: >
+    Top-level goal orchestration from raw intent to closure-validated, board-synced delivery.
+    Composer only — delegates to feature-flow per ticket. Does not implement app code.
+  version: "1.5.0"
+  trigger: /sdlc:goal
+  command: .cursor/commands/sdlc-goal.md
+  aliases:
+    - e2e-orchestration-flow
+    - /sdlc:e2e
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:goal
+    - type: command
+      command: /sdlc:e2e
+
+  agentPolicy:
+    controlPlane: .sdlc/bin/sdlc_workflow_run.py
+    conflictPolicy: reuse
+    completionPolicy: deterministic
+    maxStepDepth: 64
+    maxFanoutRetries: 12
+    subprocessTimeoutSeconds: 300
+    mandatoryFirstCommands:
+      - python3 .sdlc/bin/sdlc_continuity_resolve.py resolve --command /sdlc:goal --intent "{intent}" --json
+      - python3 .sdlc/bin/sdlc_workflow_run.py run --workflow goal-flow --intent "{intent}" --mode agent
+    stepLoop:
+      - python3 .sdlc/bin/sdlc_workflow_run.py step --run-id {run_id} --mode agent
+      - on_exit_42_execute_node_objective
+      - python3 .sdlc/bin/sdlc_workflow_run.py submit --run-id {run_id} --node {node_id} --cognitive {path}
+    forbiddenAgentBehaviors:
+      - implement_app_code_in_orchestrator_session
+      - edit_target_root_without_registered_worktree
+      - write_cognitive_json_without_step_exit_42
+      - conversational_branching_at_end_of_turn
+      - ask_operator_worktree_vs_pr_vs_local_review
+      - skip_pr_creation_node
+      - treat_goal_as_documentation_chat
+      - text_only_discovery_without_pngs_or_waiver
+      - decomposition_without_reference_ui_confirmed
+    referenceUiPolicy: >
+      When reference images exist (intent attachment, reference-screenshots/, reference_url),
+      on-disk PNGs are the authoritative target UI — not prose specs or model training.
+      Discovery cannot complete in 0s without PNGs or signed reference-waiver-adr.md (ADR-027).
+    onCompleteRequiredActions:
+      - id: verify-manifest
+        type: command
+        command: python3 .sdlc/bin/sdlc_workflow_run.py status --run-id {run_id}
+        description: Confirm manifest.status completed and definition_of_done
+      - id: handoff
+        type: command
+        command: /sdlc:handoff
+        description: Mandatory reflect node artifact — no conversational deferral
+    orchestratorRole: composer_only
+    implementationDelegate: feature-flow.yaml
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  orchestration:
+    composition:
+      index: .sdlc/workflows/README.md
+      per_ticket_pipeline: feature-flow.yaml
+      per_ticket_command: /sdlc:implement
+      per_ticket_agents: [planner, implementer, reviewer, qa]
+    manifest:
+      storage: .sdlc/workflow-runs/{run_id}/manifest.yaml
+      control_script: .sdlc/bin/sdlc_workflow_run.py
+      active_pointer: .sdlc/workflow-runs/ACTIVE
+      legacy_runs_archive: .sdlc/runs/
+      legacy_note: >
+        sdlc_e2e_manifest.py is read-only archive (ADR-018). In-progress legacy runs MUST
+        migrate via sdlc_workflow_migrate.py before stage-complete. Do not mutate .sdlc/runs/
+        for active orchestration when workflow-runs/ACTIVE is set.
+    modes:
+      greenfield:
+        description: New product or major route from scratch
+        stages_skipped: []
+      feature:
+        description: Vertical feature within existing product
+        stages_skipped: []
+      fix:
+        description: Correction to existing behavior
+        stages_skipped: [discovery, decomposition, plane-hierarchy, architecture, wave-planning, integration]
+        entry_command: /sdlc:incident
+    idempotency:
+      resume: /sdlc:goal --resume {run_id}
+      force_stage: /sdlc:goal --force-stage {stage_id} --run-id {run_id}
+    definition_of_done:
+      - implementation_working
+      - closure_satisfied
+      - all_tickets_done
+      - all_evidence_uploaded
+      - board_fully_updated
+      - handoff_recorded
+      # all_prs_merged — only when delivery.default_closure >= preview-validated and source_control active
+
+  nodes:
+    - id: hydrate
+      name: Context Hydration
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:hydrate
+        objective: Load INDEX, handoff, sdlc.yaml, memories, ADRs
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: preflight
+      name: Workspace Preflight
+      dependsOn: [hydrate]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/sdlc_workflow_preflight.py
+          command: python3
+          args: [.sdlc/bin/sdlc_workflow_preflight.py]
+        objective: >
+          Fail fast on doctor structural (MCP, hooks, integrations) and CI target_root
+          alignment before planning or implementation spend.
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/doctor-pass.pass
+          - ref: gates/ci-target-aligned.pass
+      control:
+        blocking: true
+
+    - id: classify
+      name: Mode Classification
+      dependsOn: [preflight]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: Classify run mode greenfield, feature, or fix
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: reference-detect
+      name: Reference UI Detection
+      dependsOn: [classify]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          Scan intent, attachments, manifest paths, and repo reference dirs.
+          Emit reference-inventory.json listing detected reference UI sources.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: discovery
+      name: Reference Discovery
+      dependsOn: [reference-detect]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          Browser research and reference screenshot capture into
+          {output_dir}/reference-screenshots/. Text-only discovery is FAIL.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/reference-ui-ready.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: reference-confirm
+      name: Reference UI Confirmation
+      dependsOn: [discovery]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          Confirm detected reference images are the target UI. HITL when implicit;
+          auto-pass when intent explicitly names image paths. Write reference-confirmation.md.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/reference-confirmed.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: feasibility-research
+      name: Runtime Feasibility Research
+      dependsOn: [reference-confirm]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          For runtime/control-plane intents: deploy compatibility matrix, execution plane model,
+          spec authority resolution. Emit feasibility-report.md and spec-reconciliation.md.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/feasibility-research.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: decomposition
+      name: Vertical Slice Decomposition
+      dependsOn: [feasibility-research]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:plan
+        objective: Decompose intent into vertical end-to-end deployable slices
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: plane-hierarchy
+      name: Work Item Epic and Ticket Hierarchy
+      dependsOn: [decomposition]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:spec
+        objective: Create epic, child tickets, specs, and worktrees per slice
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/worktree-registered.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: architecture
+      name: Architecture and ADRs
+      dependsOn: [plane-hierarchy]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:plan
+        objective: Master spec, data model, routes, observability, ADR drafts
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/spec-reconciliation.pass
+          - ref: gates/deploy-target-declared.pass
+          - ref: gates/execution-plane-adr.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: workspace-rebind
+      name: Workspace Rebind
+      dependsOn: [architecture]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/sdlc_workspace_rebind.py
+          command: python3
+          args:
+            - .sdlc/bin/sdlc_workspace_rebind.py
+            - --workflow-run-id
+            - "{run_id}"
+            - verify
+        objective: Patch CI, integrations, memories when target_root changes
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [content, fix]
+
+    - id: wave-planning
+      name: Dependency Wave Planning
+      dependsOn: [workspace-rebind]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: Order slices into dependency waves for parallel execution
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [fix]
+
+    - id: execution
+      name: Vertical Slice Execution
+      dependsOn: [wave-planning]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/sdlc_e2e_execution.py:dispatch
+          command: python3
+          args:
+            - .sdlc/bin/sdlc_e2e_execution.py
+            - dispatch
+            - --workflow-run-id
+            - "{run_id}"
+            - --parallel
+            - "4"
+        objective: >
+          Fan-out feature-flow workflow runs per ticket in parallel; orchestrator dispatches
+          subagents via step/submit loop — no manifest auto-certification.
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/worktree-registered.pass
+          - ref: gates/worktree-committed.pass
+          - ref: gates/feature-flow-complete.pass
+      control:
+        blocking: true
+        onFailure: abort
+      workflowRef: feature-flow.yaml
+      protocolGates:
+        - subagent_dispatched
+        - feature_flow_complete
+        - one_worktree_per_ticket
+        - one_pr_per_ticket
+
+    - id: validate-local
+      name: Local Validation
+      dependsOn: [execution]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/sdlc_workflow_validate_local.py
+          command: python3
+          args:
+            - .sdlc/bin/sdlc_workflow_validate_local.py
+            - --run-id
+            - "{run_id}"
+        objective: >
+          Build, typecheck, and record local-validated closure tier from feature-flow evidence.
+          Default goal-flow completion surface (ADR-028).
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/local-validation-recorded.pass
+          - ref: gates/feature-flow-complete.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: pr-creation
+      name: Pull Request Creation and Registration
+      dependsOn: [validate-local]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/sdlc_workflow_pr.py:create
+          command: python3
+          args:
+            - .sdlc/bin/sdlc_workflow_pr.py
+            - create
+            - --run-id
+            - "{run_id}"
+        objective: >
+          Push each slice branch and create GitHub PR via gh; record pr_url on workflow manifest.
+          Skip when pr_url already set. Agent fallback: gh pr create then sdlc_workflow_pr.py register.
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/pr-registered.pass
+      emits:
+        - key: pr_url
+          from: $node.output.structured.pr_urls[0].pr_url
+      control:
+        blocking: true
+        skipInModes: [content, fix]
+        skipUnlessClosureAtLeast: preview-validated
+        skipUnlessSourceControl: true
+        hitl:
+          kind: approval
+          reason: PRs registered; human must review and merge before integration wave
+          resumeGate: gates/pr-merged.pass
+
+    - id: integration
+      name: Integration Merge and Joint Validation
+      dependsOn: [pr-creation]
+      function:
+        invoke:
+          type: command
+          ref: /run:e2e
+        objective: Merge wave PRs and run joint E2E suite
+      preCondition:
+        target: $node.output
+        checks:
+          - ref: gates/pr-merged.pass
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/pr-registered.pass
+          - ref: gates/integration-report.pass
+          - ref: gates/harness-parity.pass
+      control:
+        blocking: true
+        skipInModes: [fix, content]
+        skipUnlessClosureAtLeast: preview-validated
+        skipUnlessSourceControl: true
+        hitl:
+          kind: approval
+          reason: Wave PRs must be merged; operator confirms before joint E2E
+          resumeGate: gates/integration-report.pass
+
+    - id: deploy
+      name: Remote Delivery
+      dependsOn: [integration]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:deploy
+        objective: >
+          Optional remote promotion via /sdlc:deploy when staging/production surfaces enabled.
+          Not required for local-validated default closure (ADR-028).
+      preCondition:
+        target: $node.output
+        checks:
+          - ref: gates/integration-report.pass
+          - ref: gates/open-integration-run.pass
+          - ref: gates/e2e-deploy-target.pass
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/deploy-recorded.pass
+      control:
+        blocking: true
+        skipInModes: [content, fix]
+        skipUnlessClosureAtLeast: staging-validated
+        skipUnlessSurfacesEnabled: [staging, production]
+
+    - id: post-deploy
+      name: Post-Delivery Validation
+      dependsOn: [deploy]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:post-deployment
+        objective: >
+          Optional post-delivery smoke when production surface enabled.
+          Version audit, browser smoke, evidence manifest.
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/post-deploy-recorded.pass
+      control:
+        blocking: true
+        skipInModes: [content, fix]
+        skipUnlessClosureAtLeast: production-validated
+        skipUnlessSurfacesEnabled: [production]
+
+    - id: board-sync
+      name: Board Sync
+      dependsOn: [validate-local, post-deploy]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Verify workflow manifest tickets done; sync work items when configured
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/board-sync-ready.pass
+      control:
+        blocking: true
+
+    - id: reflect
+      name: Reflect and Handoff
+      dependsOn: [board-sync]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Mandatory artifact audit, handoff record, mark run complete
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+          - ref: gates/closure-satisfied.pass
+          - ref: gates/memory-consistency.pass
+      control:
+        blocking: true
+
+  successCriteria:
+    - manifest.status == completed
+    - all definition_of_done flags true
+    - execution protocolGates satisfied
+
+  failureBehavior:
+    - mark stage failed in manifest
+    - set run status blocked
+    - do not re-run completed stages on resume

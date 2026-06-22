@@ -1,0 +1,48 @@
+# Kernel bin script inventory — generic harness only (ADR-030, ADR-031)
+# Sync from jambu/harness/.harness/bin/kernel-bin.manifest.yaml on package build.
+
+apiVersion: proc.jambu/v1
+kind: KernelBinManifest
+metadata:
+  id: harness-kernel-bin
+  version: "1.2.0"
+
+spec:
+  description: >
+    Scripts that ship in @jambu/harness. Domain packs add scripts via bin_domain in
+    their manifest — never listed here.
+
+  kernel_scripts:
+    - _harness_paths.py
+    - harness_dsl_bindings.py
+    - harness_workflow_run.py
+    - harness_workflow_manifest.py
+    - harness_workflow_run_resolve.py
+    - harness_workflow_validate.py
+    - harness_workflow_gate.py
+    - harness_workflow_preflight.py
+    - harness_workflow_reconcile.py
+    - harness_workflow_overlap.py
+    - harness_workflow_migrate.py
+    - harness_workflow_stub.py
+    - harness_invoke.py
+    - harness_gate_check.py
+    - harness_gate_runner.py
+    - harness_gate_executor.py
+    - harness_playbook.py
+    - harness_baseline.py
+    - harness_continuity_resolve.py
+    - harness_command_dispatch.py
+    - harness_protocol_guard.py
+    - harness_goal_runtime.py
+    - harness_hitl_handoff.py
+    - harness_ref_resolver.py
+    - harness_trace_collector.py
+    - harness_trace_ensure.py
+    - harness_trace_hook_origin.py
+    - harness_harness_parity.py
+
+  domain_extension:
+    declared_in: domain-pack.spec.provides.bin_domain
+    install_path: "{harness_dir}/bin/"
+    rule: Domain pack merge copies only scripts listed in its manifest

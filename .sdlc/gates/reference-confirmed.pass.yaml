@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: reference-confirmed.pass
+  version: "1.0.0"
+spec:
+  description: Operator or auto-confirm that registered reference images are the target UI.
+  inputs:
+    - runId
+    - target.reference_ui.confirmed
+  outcomes:
+    PASS: target.reference_ui.confirmed is true
+    FAIL: reference-confirmation.md missing or confirmed flag false
+  check:
+    type: adapter
+    adapter: reference-confirmed

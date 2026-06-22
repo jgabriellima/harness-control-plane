@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: pr-merged.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Every vertical-slice pull request on the workflow-run manifest is merged on GitHub.
+    Returns WAIT (HITL) when PRs are open but not merged; required before integration.
+  inputs:
+    - runId
+  outcomes:
+    PASS: all slice PRs merged
+    WAIT: PR open — human merge required (pairs with control.hitl on pr-creation)
+    FAIL: missing pr_url or invalid URL
+  check:
+    type: adapter
+    adapter: pr-merged

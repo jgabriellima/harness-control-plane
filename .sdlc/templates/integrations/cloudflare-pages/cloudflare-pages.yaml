@@ -1,0 +1,108 @@
+integration: cloudflare-pages
+version: "1.0"
+status: active
+serves_slots: [deploy]
+
+# ── Secrets Required ──────────────────────────────────────────────────────────
+secrets_required:
+  - env_var: CLOUDFLARE_API_TOKEN
+    scope: ci
+    required: true
+    description: Cloudflare API token with Cloudflare Pages Edit permission
+  - env_var: CLOUDFLARE_ACCOUNT_ID
+    scope: ci
+    required: true
+    description: Cloudflare account ID — found in dashboard URL or Workers overview
+  - env_var: CLOUDFLARE_PAGES_PROJECT_NAME
+    scope: ci
+    required: true
+    description: Cloudflare Pages project name (e.g. ai-native-sdlc-docs)
+  - env_var: ASTRO_SITE
+    scope: ci
+    required: false
+    description: Canonical production site URL for sitemap, OG tags, and post-deploy smoke
+  - env_var: PRODUCTION_URL
+    scope: ci
+    required: false
+    description: Production URL for smoke tests when custom domain is configured (defaults to ASTRO_SITE)
+
+# ── Connection ────────────────────────────────────────────────────────────────
+connection:
+  api_token: "${CLOUDFLARE_API_TOKEN}"
+  account_id: "${CLOUDFLARE_ACCOUNT_ID}"
+  project_name: "${CLOUDFLARE_PAGES_PROJECT_NAME}"
+
+# ── Project Configuration ─────────────────────────────────────────────────────
+project:
+  framework: astro
+  root_directory: app
+  build_command: npm run build
+  output_directory: dist
+  install_command: npm ci
+  node_version: "24"
+
+# ── Gate contract (ADR-013) ───────────────────────────────────────────────────
+gate_contract:
+  version: "1.0"
+  workspace_rebind:
+    patches:
+      - type: yaml_scalar
+        yaml_key: project.root_directory
+  protocol_guard:
+    deploy_stage:
+      static_paths:
+        - .sdlc/integrations/cloudflare-pages/cloudflare-pages.yaml
+        - .github/workflows/deploy.yaml
+
+# ── Environments ──────────────────────────────────────────────────────────────
+environments:
+  production:
+    branch: main
+    url: "https://ai-native-sdlc.org"
+    env_vars:
+      - ASTRO_SITE
+      - PRODUCTION_URL
+
+  staging:
+    branch: staging
+    url: auto-generated               # *.pages.dev preview per branch deployment
+    env_vars:
+      - ASTRO_SITE
+
+  preview:
+    branches: "feat/*, fix/*, chore/*"
+    url: auto-generated
+
+# ── Deployment Configuration ──────────────────────────────────────────────────
+deployment:
+  method: github-actions              # wrangler pages deploy in deploy.yaml
+  cli: wrangler
+  cli_version: "latest"
+  zero_downtime: true
+  commands:
+    staging: >-
+      npx wrangler pages deploy dist
+      --project-name="${CLOUDFLARE_PAGES_PROJECT_NAME}"
+      --branch=staging
+    production: >-
+      npx wrangler pages deploy dist
+      --project-name="${CLOUDFLARE_PAGES_PROJECT_NAME}"
+      --branch=main
+  rollback:
+    enabled: true
+    command: >-
+      npx wrangler pages deployment rollback
+      --project-name="${CLOUDFLARE_PAGES_PROJECT_NAME}"
+    trigger: post-deploy-smoke-failure
+
+# ── Setup Checklist ───────────────────────────────────────────────────────────
+setup:
+  - step: Create Cloudflare Pages project (Workers & Pages → Create → Pages → Connect to Git or Direct Upload)
+  - step: Set root directory to "app", build command "npm run build", output directory "dist"
+  - step: Set Node.js version to 24 in Pages build settings
+  - step: Add custom domain ai-native-sdlc.org to production branch (main)
+  - step: Create API token with "Cloudflare Pages — Edit" permission
+  - step: Copy CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT_NAME to GitHub Secrets
+  - step: Set ASTRO_SITE=https://ai-native-sdlc.org in GitHub Secrets (production smoke + build)
+  - step: Remove VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID from GitHub Secrets
+  - step: Run /sdlc:doctor to verify deployment integration

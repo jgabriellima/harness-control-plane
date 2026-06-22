@@ -1,0 +1,15 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: memory-consistency.pass
+  version: "1.0.0"
+spec:
+  description: Handoff verdict must not contradict operational-context COMPLETE flags.
+  inputs:
+    - runId
+  outcomes:
+    PASS: handoff and memory aligned
+    FAIL: stale COMPLETE flags contradict latest handoff
+  check:
+    type: adapter
+    adapter: memory-consistency

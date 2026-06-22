@@ -1,0 +1,58 @@
+integration: github
+version: "1.0"
+status: pending_credentials
+serves_slots: [source_control, ci]
+
+repository:
+  url: ""
+  default_branch: main
+  protected_branches: [main]
+  branch_naming:
+    feature: "feat/{description}"
+    fix: "fix/{issue-id}-{description}"
+    chore: "chore/{description}"
+
+secrets_required:
+  - env_var: GITHUB_PERSONAL_ACCESS_TOKEN
+    scope: local
+    required: true
+    description: GitHub PAT for MCP server and gh CLI — scopes repo, workflow
+
+auth:
+  token: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+  cli: gh
+
+pull_requests:
+  require_checks_before_merge: true
+  required_checks: []
+  delete_branch_on_merge: true
+  merge_strategy: squash
+
+issues:
+  labels:
+    - name: incident
+      color: "d73a4a"
+      description: Production incident
+    - name: automated
+      color: "22c55e"
+      description: Created by automation
+
+actions:
+  workflows: {}
+  ci_secrets: []
+
+gate_contract:
+  version: "1.0"
+  gates:
+    ci-target-aligned:
+      checks: []
+  workspace_rebind:
+    patches: []
+  protocol_guard:
+    deploy_stage:
+      static_paths: []
+
+setup:
+  - step: Set repository.url during init from git remote
+  - step: Export GITHUB_PERSONAL_ACCESS_TOKEN for MCP and gh CLI
+  - step: Patch required_checks from existing workflow names

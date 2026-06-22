@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sdlc.jambu/schemas/workflow-state",
+  "title": "WorkflowState",
+  "description": "Per-run workflow execution state persisted in traces or run manifests.",
+  "type": "object",
+  "required": ["workflowId", "runId", "status", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "workflowId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "in_progress", "blocked", "completed", "failed"]
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed", "failed", "skipped"]
+          },
+          "gateOutcome": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "RETRY", "ESCALATE", "WAIT"]
+          },
+          "outputUri": { "type": "string" },
+          "failReason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

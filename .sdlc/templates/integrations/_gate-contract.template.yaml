@@ -1,0 +1,43 @@
+# Gate contract template — copy into new integration YAML (ADR-013)
+# Validate: python3 .sdlc/bin/sdlc_gate_runner.py validate-contract --config <path>
+#
+# Meta-cognition: playbook pb.sdlc.integration-authoring
+
+gate_contract:
+  version: "1.0"
+
+  # Invariant checks — keys MUST match sdlc.yaml gates: entries when slot applies
+  gates:
+    ci-target-aligned:
+      # Include ONLY if this integration serves_slots contains "ci"
+      checks:
+        - type: file_must_contain
+          paths:
+            - "<provider-ci-config-path>"   # e.g. bitbucket-pipelines.yml
+          must_contain: "{target_root}"     # provider-specific alignment token
+
+    # deploy-target-aligned:
+    #   checks:
+    #     - type: yaml_scalar_equals
+    #       path: "<self>"
+    #       yaml_key: project.root_directory
+    #       expected: "{target_root}"
+
+  # Patches when workspace.target_root changes (workspace-rebind stage)
+  workspace_rebind:
+    patches:
+      - type: regex_replace
+        paths:
+          - "<provider-ci-config-path>"
+        search: "working-directory: {old_target_root}"
+        replace: "working-directory: {target_root}"
+      # - type: yaml_scalar
+      #   yaml_key: project.root_directory
+      #   # omit path → applies to integration config file itself
+
+  # Orchestrator may edit during deploy stage (protocol guard)
+  protocol_guard:
+    deploy_stage:
+      static_paths:
+        - "<provider-ci-config-path>"
+        - "<integration-config-path>"

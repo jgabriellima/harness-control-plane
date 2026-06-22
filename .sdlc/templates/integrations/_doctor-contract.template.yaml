@@ -1,0 +1,46 @@
+# Doctor contract template — copy into integration YAML (ADR-013)
+# Framework interprets checks in .sdlc/doctor/doctor-contract.ts only.
+# Validate shape: python3 .sdlc/bin/sdlc_gate_runner.py validate-contract --config <path>
+#
+# Meta-cognition: playbook pb.sdlc.integration-authoring
+
+doctor_contract:
+  version: "1.0"
+
+  checks:
+    # ── Structural (integration file itself) ─────────────────────────────────
+    - id: connection.example_field
+      type: yaml_scalar_required
+      yaml_path: connection.example_field
+      remediation: "Set connection.example_field in integration YAML"
+
+    - id: states
+      type: yaml_object_min_keys
+      yaml_path: states
+      min_keys: 4
+      remediation: "Populate states from provider API"
+
+    # ── Optional when ticket_structure is declared ───────────────────────────
+    - id: ticket-template
+      type: file_required
+      path: ".sdlc/templates/<provider_id>-ticket.md"
+      when_integration_has: ticket_structure
+      required_when_project: operational
+
+    - id: ticket-skill
+      type: skill_required
+      skill: "<provider_id>-ticket"
+      when_integration_has: ticket_structure
+      required_when_project: operational
+
+    # ── Operational (live probe) ─────────────────────────────────────────────
+    - id: api-live
+      type: http_status
+      modes: [operational]
+      env_var_from: connection.api_key_env
+      env_var_default: PROVIDER_API_KEY
+      url: "{connection.base_url}/<provider-specific-path>"
+      header_api_key: X-API-Key
+      expect_status: "200"
+      on_missing_env: warn
+      skip_message: "structural mode — live API check deferred"

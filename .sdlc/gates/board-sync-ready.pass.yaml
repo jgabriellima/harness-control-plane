@@ -1,0 +1,15 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: board-sync-ready.pass
+  version: "1.0.0"
+spec:
+  description: All vertical-slice tickets in workflow manifest are done.
+  inputs:
+    - tickets
+  outcomes:
+    PASS: every slice ticket status is done
+    FAIL: incomplete tickets
+  check:
+    type: adapter
+    adapter: board-sync-ready

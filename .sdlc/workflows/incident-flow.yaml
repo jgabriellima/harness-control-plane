@@ -1,0 +1,191 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: incident-flow
+  name: Incident Flow
+  description: End-to-end incident resolution from detection to merged fix.
+  version: "1.1.0"
+  trigger: /sdlc:incident
+  command: .cursor/commands/sdlc-incident.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:incident
+    - type: workflow_dispatch
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  severitySla:
+    P1:
+      max_ttr: 2h
+      escalation: immediate
+      auto_trigger: true
+    P2:
+      max_ttr: 8h
+      escalation: after_1h
+      auto_trigger: true
+    P3:
+      max_ttr: sprint
+      escalation: none
+      auto_trigger: false
+
+  nodes:
+    - id: ingestion
+      name: Incident Ingestion
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/incident-resolver.md
+        objective: Ingest incident from observability or GitHub issue into structured object
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: triage
+      name: Triage and Record
+      dependsOn: [ingestion]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Record incident under .sdlc/context/incidents/ and update incidents memory
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/index-registered.pass
+      control:
+        blocking: true
+
+    - id: context-hydration
+      name: Context Hydration
+      dependsOn: [triage]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:hydrate
+        objective: Load architecture, stack trace files, git history, relevant ADRs
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: reproduction
+      name: Reproduction Test
+      dependsOn: [context-hydration]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/incident-resolver.md
+        objective: Write failing Playwright regression test that reproduces the incident
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: return_to_context_hydration
+
+    - id: root-cause-analysis
+      name: Root Cause Analysis
+      dependsOn: [reproduction]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/incident-resolver.md
+        objective: Produce root cause, fix strategy, and risk assessment
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: fix-implementation
+      name: Fix Implementation
+      dependsOn: [root-cause-analysis]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/incident-resolver.md
+        objective: Minimal fix following architecture rules with observability hooks
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: fix-validation
+      name: Fix Validation
+      dependsOn: [fix-implementation]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/incident-resolver.md
+        objective: Reproduction test PASS, full E2E PASS, build PASS, browser validate
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: return_to_fix_implementation
+
+    - id: pr-creation
+      name: Fix PR
+      dependsOn: [fix-validation]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:incident
+        objective: Create fix branch PR with root cause and evidence in body
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: resolution-record
+      name: Resolution Record
+      dependsOn: [pr-creation]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Mark incident resolved and update systemic follow-ups if pattern detected
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: false
+
+  failureBehavior:
+    - do not proceed without confirmed failing reproduction test
+    - return to implementation on validation failure

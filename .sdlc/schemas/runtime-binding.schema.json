@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/runtime-binding.schema.json",
+  "title": "Runtime Binding Stamp",
+  "description": "MS-6 (ADR-032): Generated stamp at .cursor/runtime-binding.yaml recording kernel identity, singular active pack, resolved storage paths, and runtime adapter projection targets. Produced by harness bind; hooks.json is derived from hooks.manifest.yaml — neither is hand-authored in consumer workspaces.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "kernel", "active_pack", "storage", "runtime"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "proc.jambu/v1"
+    },
+    "kind": {
+      "const": "RuntimeBinding"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Workspace binding name",
+          "examples": ["workspace-runtime-binding"]
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "generated_by": {
+          "type": "string",
+          "description": "CLI entry that produced this stamp",
+          "examples": ["harness bind", "harness activate"]
+        },
+        "harness_dsl": {
+          "type": "string",
+          "description": "Source DSL file path at bind time",
+          "examples": [".harness/harness.yaml", ".sdlc/sdlc.yaml"]
+        }
+      }
+    },
+    "kernel": {
+      "type": "object",
+      "description": "Kernel infrastructure identity — not the active specialized harness",
+      "required": ["harness_dir", "dsl_file", "cli_prefix", "api_version"],
+      "additionalProperties": false,
+      "properties": {
+        "harness_dir": {
+          "type": "string",
+          "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+          "examples": [".harness/"]
+        },
+        "dsl_file": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*\\.yaml$",
+          "examples": ["harness.yaml"]
+        },
+        "cli_prefix": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "examples": ["harness"]
+        },
+        "api_version": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]+/v[0-9]+$",
+          "examples": ["proc.jambu/v1"]
+        },
+        "package": {
+          "type": "string",
+          "examples": ["@jambu/harness"]
+        }
+      }
+    },
+    "active_pack": {
+      "type": "object",
+      "description": "Singular active specialized harness at bind time; null id when uninitialized",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "harness_dir": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$"
+            },
+            { "type": "null" }
+          ],
+          "examples": [".energy/", ".sdlc/"]
+        },
+        "dsl_file": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._-]*\\.yaml$"
+            },
+            { "type": "null" }
+          ],
+          "examples": ["energy.yaml", "sdlc.yaml"]
+        },
+        "cli_prefix": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            { "type": "null" }
+          ],
+          "examples": ["energy", "sdlc"]
+        },
+        "command_namespace": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "lifecycle": {
+              "type": "string",
+              "pattern": "^/[a-z][a-z0-9-]*:$",
+              "examples": ["/energy:", "/sdlc:"]
+            },
+            "capabilities": {
+              "type": "string",
+              "pattern": "^/[a-z][a-z0-9-]*:$",
+              "examples": ["/run:"]
+            }
+          }
+        },
+        "activated_at": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "Artifact kind — pack for registry entries; product for SDLC install stamp",
+          "enum": ["pack", "product", "kernel-only"]
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "description": "Resolved persistent paths from MS-5 storage contract",
+      "required": ["root", "resolved"],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+          "description": "Resolved storage.root at bind time"
+        },
+        "resolved": {
+          "type": "object",
+          "description": "Absolute repo-relative paths after template expansion",
+          "additionalProperties": false,
+          "properties": {
+            "handoffs": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workflow_runs": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cognitive_outputs": {
+              "type": "string"
+            },
+            "handoff_latest": {
+              "type": "string"
+            }
+          }
+        },
+        "policies": {
+          "$ref": "harness-storage.schema.json#/properties/policies"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "description": "Agent runtime adapter projection targets",
+      "required": ["engine", "specialization_layer", "hooks"],
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["cursor", "claude", "openclaw", "hermes-agent"]
+        },
+        "specialization_layer": {
+          "type": "string",
+          "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+          "examples": [".cursor/"]
+        },
+        "hooks": {
+          "type": "string",
+          "description": "Generated Cursor hooks projection path",
+          "examples": [".cursor/hooks.json"]
+        },
+        "hooks_manifest": {
+          "type": "string",
+          "description": "Source-of-truth hook manifest path",
+          "examples": [".cursor/hooks.manifest.yaml"]
+        },
+        "binding_stamp": {
+          "type": "string",
+          "description": "Self-reference path for this stamp file",
+          "examples": [".cursor/runtime-binding.yaml"]
+        },
+        "context_injection": {
+          "type": "string",
+          "enum": ["sessionStart", "beforeSubmitPrompt", "none"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "apiVersion": "proc.jambu/v1",
+      "kind": "RuntimeBinding",
+      "metadata": {
+        "name": "workspace-runtime-binding",
+        "generated_at": "2026-06-12T12:00:00Z",
+        "generated_by": "harness bind",
+        "harness_dsl": ".harness/harness.yaml"
+      },
+      "kernel": {
+        "harness_dir": ".harness/",
+        "dsl_file": "harness.yaml",
+        "cli_prefix": "harness",
+        "api_version": "proc.jambu/v1",
+        "package": "@jambu/harness"
+      },
+      "active_pack": {
+        "id": "energy-admin",
+        "harness_dir": ".energy/",
+        "dsl_file": "energy.yaml",
+        "cli_prefix": "energy",
+        "command_namespace": {
+          "lifecycle": "/energy:",
+          "capabilities": "/run:"
+        },
+        "activated_at": "2026-06-12T01:00:00Z",
+        "kind": "pack"
+      },
+      "storage": {
+        "root": ".energy/",
+        "resolved": {
+          "handoffs": ".energy/handoffs/",
+          "workflow_runs": ".energy/workflow-runs/",
+          "trace": ".energy/trace/",
+          "evidence": ".energy/evidence/",
+          "handoff_latest": ".energy/handoffs/LATEST.md"
+        },
+        "policies": {
+          "evidence_always_under_storage_root": true
+        }
+      },
+      "runtime": {
+        "engine": "cursor",
+        "specialization_layer": ".cursor/",
+        "hooks": ".cursor/hooks.json",
+        "hooks_manifest": ".cursor/hooks.manifest.yaml",
+        "binding_stamp": ".cursor/runtime-binding.yaml",
+        "context_injection": "sessionStart"
+      }
+    }
+  ]
+}

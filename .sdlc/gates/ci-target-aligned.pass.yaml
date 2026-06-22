@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: ci-target-aligned.pass
+  version: "1.0.0"
+spec:
+  description: CI deploy workflows reference workspace.target_root working-directory.
+  inputs:
+    - targetRoot
+  outcomes:
+    PASS: all ci-target-aligned paths aligned
+    FAIL: CI drift detected
+  check:
+    type: doctor
+    command: npm
+    args: ["run", "doctor:structural"]

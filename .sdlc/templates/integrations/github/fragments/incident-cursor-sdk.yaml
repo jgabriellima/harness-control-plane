@@ -1,0 +1,16 @@
+# Merged when slots.incident = github-issues-cursor-sdk (ADR-029)
+secrets_required:
+  - env_var: CURSOR_API_KEY
+    scope: ci
+    required: true
+    slot: incident
+    description: Cursor API key for autonomous incident fix in CI (incident-response workflow)
+actions:
+  workflows:
+    incident_response: .github/workflows/incident-response.yaml
+  ci_secrets:
+    - CURSOR_API_KEY
+incident:
+  agent_runtime: cursor-sdk
+  execution: ci
+  materialize_workflow: true

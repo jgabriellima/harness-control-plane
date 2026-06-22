@@ -1,0 +1,228 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: ecosystem-ops-flow
+  name: Ecosystem Ops Flow
+  description: >
+    Operational control plane for Jambu ecosystem topology — sibling repo bootstrap,
+    SDLC install-only, ecosystem registration. No application scaffold. ADR-039.
+  version: "1.0.0"
+  trigger: /sdlc:ecosystem
+  command: .cursor/commands/sdlc-ecosystem.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:ecosystem
+
+  agentPolicy:
+    controlPlane: .sdlc/bin/sdlc_workflow_run.py
+    conflictPolicy: reuse
+    completionPolicy: deterministic
+    maxStepDepth: 32
+    mandatoryFirstCommands:
+      - python3 .sdlc/bin/sdlc_continuity_resolve.py resolve --command /sdlc:ecosystem --intent "{intent}" --json
+      - python3 .sdlc/bin/sdlc_workflow_run.py run --workflow ecosystem-ops-flow --intent "{intent}" --mode agent
+    stepLoop:
+      - python3 .sdlc/bin/sdlc_workflow_run.py step --run-id {run_id} --mode agent
+      - on_exit_42_execute_node_objective
+      - python3 .sdlc/bin/sdlc_workflow_run.py submit --run-id {run_id} --node {node_id} --cognitive {path}
+    forbiddenAgentBehaviors:
+      - write_package_json_or_src_in_child_without_init_confirmed_at
+      - set_child_sdlc_status_operational_without_bootstrap_flow
+      - infer_application_stack_from_repo_name
+      - route_ecosystem_bootstrap_through_goal_flow
+      - implement_app_code_in_orchestrator_session
+      - skip_scope_verify_node
+    onCompleteRequiredActions:
+      - id: handoff
+        type: command
+        command: /sdlc:handoff
+        description: Record ops run in handoffs with allowlist audit outcome
+    orchestratorRole: ecosystem_operator_only
+    implementationDelegate: none
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  orchestration:
+    context_capsule: .cursor/skills/ecosystem-ops/SKILL.md
+    composition:
+      index: .sdlc/workflows/README.md
+    manifest:
+      storage: .sdlc/workflow-runs/{run_id}/manifest.yaml
+      control_script: .sdlc/bin/sdlc_workflow_run.py
+      active_pointer: .sdlc/workflow-runs/ACTIVE
+      template: .sdlc/templates/ecosystem-ops-run-manifest.yaml
+    modes:
+      sibling-repo-bootstrap:
+        description: Create sibling directory, SDLC CLI install only, ecosystem registration
+        forbidden_child_paths:
+          - package.json
+          - tsconfig.json
+          - tsconfig.*.json
+          - src/**
+          - app/**
+          - e2e/**
+      sdlc-sync:
+        description: Cross-repo SDLC runtime sync per cross-repo-operations.md
+      register-only:
+        description: Update ecosystem docs and memories without repo mutation
+    idempotency:
+      resume: /sdlc:ecosystem --resume {run_id}
+    definition_of_done:
+      - run_mode_classified
+      - allowlist_declared
+      - scope_verify_gate_pass
+      - delivery_bundle_written
+
+  preConditions:
+    - ecosystem_ops_context_capsule_available
+    - cwd_is_ai_native_sdlc_repo
+
+  nodes:
+    - id: classify-intent
+      name: Intent Classification
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/ecosystem-ops/SKILL.md
+        objective: >
+          Parse intent into run_mode sibling-repo-bootstrap|sdlc-sync|register-only.
+          Extract target_slug, jambu_layer, remote_hint. Write mode-decision.md.
+          Set manifest.ecosystem_ops.run_mode and target paths.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: allowlist-declare
+      name: Path Allowlist Declaration
+      dependsOn: [classify-intent]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/ecosystem-ops/SKILL.md
+        objective: >
+          Write allowlist.yaml to output_dir from run_mode template in skill capsule.
+          Include forbidden_paths block. Operator may narrow never widen without ADR.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: execute-ops
+      name: Execute Operational Steps
+      dependsOn: [allowlist-declare]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/ecosystem-ops/SKILL.md
+        objective: >
+          sibling-repo-bootstrap: mkdir + git init + ai-native-sdlc install --runtime cursor
+          on ../{slug}; update jambu/docs and memories. sdlc-sync: run documented sync script.
+          register-only: doc/memory updates only. Never write app scaffold.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: structural-doctor
+      name: Child Structural Doctor
+      dependsOn: [execute-ops]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/ecosystem-ops:structural-doctor
+          command: bash
+          args:
+            - -c
+            - |
+              TARGET="${ECOSYSTEM_OPS_CHILD:-}"
+              if [ -z "$TARGET" ] || [ ! -d "$TARGET/.sdlc" ]; then
+                echo "SKIP: no child .sdlc (register-only or pending)"
+                exit 0
+              fi
+              cd "$TARGET/.sdlc" && npm run doctor:structural
+        objective: Run structural doctor on child repo when .sdlc exists
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: false
+        skipInModes: [register-only]
+
+    - id: scope-verify
+      name: Scope Verification
+      dependsOn: [structural-doctor]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/ecosystem-ops/SKILL.md
+        objective: >
+          Compare git diff paths (child + jambu docs) against allowlist.yaml.
+          Fail if forbidden paths touched. Write scope-report.md with PASS|FAIL.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/ecosystem-scope.pass
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: delivery
+      name: Delivery Bundle
+      dependsOn: [scope-verify]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/ecosystem-ops/SKILL.md
+        objective: >
+          Write delivery.md listing run_mode, paths touched, doctor summary,
+          scope gate outcome, and explicit Not Included (app scaffold, /sdlc:init).
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: handoff
+      name: Session Handoff
+      dependsOn: [delivery]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Record ops completion; next steps for operator (/sdlc:init in child)
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: true
+
+  successCriteria:
+    - scope-verify gate PASS
+    - delivery bundle written
+    - no forbidden app scaffold in child repo
+
+  failureBehavior:
+    - abort on scope-verify FAIL
+    - do not mark child operational
+    - report allowlist violations with remediation to run /sdlc:init in child repo
