@@ -1,0 +1,50 @@
+---
+description: Output formatting and communication standards for all agent and assistant outputs in this project.
+globs:
+  - "**/*.md"
+  - "**/*.mdc"
+  - "**/*.ts"
+  - "**/*.astro"
+alwaysApply: true
+---
+
+# Output Standards
+
+## Language and Tone
+
+All outputs — plans, summaries, specs, tickets, code comments, architecture notes — must adhere to the following:
+
+- **No emojis.** No decorative symbols. No "🎯", "✅", "📋", "🚀", or any Unicode ideograph used for decoration.
+- **Technical language.** Use precise engineering vocabulary. Avoid colloquialisms, marketing language, and vague qualifiers like "simple", "easy", "just", "straightforward".
+- **Advanced engineering depth.** Explanations and plans must reflect systems-level thinking: data flow, component interaction contracts, failure modes, performance characteristics, observability hooks.
+- **Technical notes as implementation plans.** When planning or describing what must be done, write it as an engineering execution plan: entry point, data model, transformation path, side effects, constraint violations, verification steps.
+- **Vertical and end-to-end.** Always trace the full path. From trigger to effect. From interface to output. Never describe only one layer without anchoring it to the system.
+
+## Structure
+
+Plans and analysis must follow this general structure when applicable:
+
+1. **Problem statement** — What is wrong or missing. Precise, falsifiable.
+2. **Constraint inventory** — Which rules, contracts, or invariants apply.
+3. **Execution plan** — Ordered list of actions with file-level precision.
+4. **Verification criteria** — How correctness is confirmed. Not "test it manually" — name the specific test, assertion, or observable output.
+5. **Residual risks** — What could still fail and why.
+
+## Prohibited Patterns
+
+The following patterns indicate low-quality output and must not appear:
+
+- Bullet lists with only one word per item
+- Headers that say "Summary" followed by a repetition of what was just said
+- Phrases like "Great!", "Sure!", "Of course!", "Certainly!", "Happy to help"
+- Emoji in any position: headers, bullets, inline, titles
+- Passive voice when describing agent actions ("it was updated" → "updated X in Y")
+- Vague file references ("somewhere in the config" → name the exact file and line context)
+- Describing what the code does line by line without explaining the engineering rationale
+
+## Plane Ticket Specific
+
+See `.sdlc/templates/plane-ticket.md` for the full ticket contract.
+Key rule: the `Technical Notes` section of every Plane ticket IS the implementation plan.
+It must be vertical (entry point → data → transformation → output → observability) and
+self-contained (no follow-up conversation needed to execute).

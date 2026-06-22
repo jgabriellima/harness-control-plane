@@ -1,0 +1,49 @@
+# Ecosystem Ops Run Manifest — Template
+# Path: .sdlc/workflow-runs/{run_id}/manifest.yaml
+# Managed by: sdlc_workflow_manifest.py init --workflow ecosystem-ops-flow
+
+apiVersion: sdlc.jambu/v1
+kind: WorkflowRunManifest
+
+metadata:
+  run_id: "{run_id}"
+  workflow_id: ecosystem-ops-flow
+  recorded_at: "{ISO8601}"
+  updated_at: "{ISO8601}"
+
+status: pending
+intent: |
+  {verbatim user intent}
+
+execution:
+  mode: agent
+  idempotency_key: null
+  resume_from_node: null
+
+workflow:
+  command: /sdlc:ecosystem
+  dsl_path: .sdlc/workflows/ecosystem-ops-flow.yaml
+
+paths:
+  output_dir: .sdlc/workflow-runs/output/ecosystem-ops-flow/{run_id}
+  trace_path: .sdlc/workflow-runs/traces/{run_id}.yaml
+  state_path: .sdlc/workflow-runs/{run_id}/workflow-state.yaml
+
+ecosystem_ops:
+  context_capsule: .cursor/skills/ecosystem-ops/SKILL.md
+  run_mode: null                    # sibling-repo-bootstrap | sdlc-sync | register-only
+  target_slug: null
+  child_target: null                # absolute path to sibling repo
+  jambu_root: null
+  allowlist_path: null
+  scope_gate: null                  # PASS | FAIL | pending
+  scope_report: null
+  artifacts: {}
+
+nodes: {}
+
+definition_of_done:
+  - run_mode_classified
+  - allowlist_declared
+  - scope_verify_gate_pass
+  - delivery_bundle_written

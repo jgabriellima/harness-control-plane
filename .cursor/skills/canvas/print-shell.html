@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{TITLE}}</title>
+  <style>
+    /* Print shell — copy verbatim into companion HTML. Do not link external CSS. */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black:   #0f0f0f;
+      --gray-1:  #1a1a1a;
+      --gray-2:  #333;
+      --gray-3:  #555;
+      --gray-4:  #888;
+      --gray-6:  #e4e4e4;
+      --gray-7:  #f4f4f4;
+      --border:  #d0d0d0;
+      --warn-bg: #fffbf0;
+      --warn-bd: #d4a820;
+      --info-bg: #f0f4ff;
+      --info-bd: #4a6cf7;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      --mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+    }
+
+    html { font-size: 11pt; }
+
+    body {
+      font-family: var(--font);
+      color: var(--black);
+      background: white;
+      line-height: 1.55;
+    }
+
+    @page { size: A4; margin: 14mm 12mm; }
+
+    .page-wrap {
+      max-width: 186mm;
+      margin: 0 auto;
+      padding: 10mm 0 8mm;
+    }
+
+    h1 { font-size: 22pt; font-weight: 700; line-height: 1.2; margin-bottom: 6pt; }
+    h2 { font-size: 15pt; font-weight: 700; margin-bottom: 6pt; line-height: 1.25; }
+    h3 { font-size: 12pt; font-weight: 600; margin-bottom: 4pt; }
+    p, li { font-size: 11pt; color: var(--gray-2); }
+    .lead { font-size: 11pt; color: var(--gray-2); line-height: 1.6; }
+    .muted { color: var(--gray-4); font-size: 10pt; line-height: 1.5; }
+    .mono { font-family: var(--mono); font-size: 9.5pt; }
+
+    .section { margin-bottom: 20pt; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+    .grid-3-lifecycle { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+    .grid-3-lifecycle > :nth-child(3) { grid-column: 1 / -1; }
+    .grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+    .wrap { display: flex; flex-wrap: wrap; gap: 6pt; }
+    .spacer { height: 10pt; }
+
+    hr.divider { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+
+    .card { border: 1px solid var(--border); border-radius: 5pt; padding: 11pt 12pt; }
+    .card-accent { border-color: var(--black); }
+    .card-title { font-size: 11.5pt; font-weight: 600; margin-bottom: 5pt; line-height: 1.3; }
+    .card-body { font-size: 10.5pt; line-height: 1.55; margin-bottom: 8pt; }
+    .card-heading { font-weight: 600; font-size: 11.5pt; }
+
+    .pill {
+      display: inline-block; font-size: 9pt; font-weight: 500;
+      padding: 2pt 7pt; border-radius: 20pt;
+      border: 1px solid var(--border); color: var(--gray-2); background: var(--gray-7);
+    }
+    .pill-warn { background: #fff8e1; border-color: #d4a820; color: #7a5500; }
+    .pill-ok { background: #f0faf0; border-color: #5cad5c; color: #1a5c1a; }
+    .pill-info { background: var(--info-bg); border-color: var(--info-bd); color: #1a3ab0; }
+    .pill-danger { background: #fff0f0; border-color: #d45050; color: #7a1010; }
+
+    .stats-row { display: flex; gap: 12pt; justify-content: space-around; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 22pt; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 9.5pt; color: var(--gray-4); margin-top: 3pt; }
+
+    .stack-tag {
+      display: inline-flex; flex-direction: column;
+      padding: 4pt 9pt; border: 1px solid var(--border); border-radius: 4pt; gap: 2pt;
+    }
+    .stack-tag .lbl { font-size: 9pt; color: var(--gray-4); }
+    .stack-tag .val { font-size: 10pt; font-weight: 500; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 10.5pt; line-height: 1.45; }
+    thead th {
+      text-align: left; font-weight: 600; font-size: 10pt; color: var(--gray-3);
+      border-bottom: 1px solid var(--border); padding: 6pt 10pt; background: var(--gray-7);
+    }
+    tbody td { padding: 6pt 10pt; border-bottom: 1px solid var(--gray-6); vertical-align: top; color: var(--gray-2); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr.warn td { background: #fffcf0; }
+
+    .tree { font-family: var(--mono); font-size: 9.5pt; color: var(--gray-2); line-height: 1.5; }
+    .tree-root { font-weight: 600; color: var(--black); }
+    .tree-child { padding-left: 16pt; color: var(--gray-3); }
+
+    .callout { border-left: 3pt solid var(--warn-bd); background: var(--warn-bg); padding: 10pt 12pt; border-radius: 0 4pt 4pt 0; }
+    .callout-title { font-weight: 600; font-size: 11pt; margin-bottom: 4pt; }
+    .callout p { font-size: 10.5pt; line-height: 1.55; }
+
+    .step-row { display: flex; gap: 10pt; margin-bottom: 8pt; }
+    .step-num {
+      width: 22pt; height: 22pt; border-radius: 50%;
+      background: var(--black); color: white; font-size: 10pt; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .step-body .step-handler { font-size: 10.5pt; font-weight: 600; }
+    .step-body .step-desc { font-size: 10pt; color: var(--gray-3); margin-top: 3pt; line-height: 1.45; }
+
+    .constraint-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; }
+    .constraint-item {
+      display: flex; gap: 8pt; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 4pt; padding: 8pt 10pt;
+    }
+    .constraint-dot { width: 8pt; height: 8pt; border-radius: 1.5pt; background: var(--black); flex-shrink: 0; margin-top: 4pt; }
+    .constraint-rule { font-size: 10pt; font-weight: 600; font-family: var(--mono); line-height: 1.35; }
+    .constraint-desc { font-size: 10pt; color: var(--gray-3); line-height: 1.4; margin-top: 2pt; }
+
+    .doc-meta { font-size: 10pt; color: var(--gray-4); margin-top: 5pt; line-height: 1.45; }
+
+    @media print {
+      html { font-size: 11pt; }
+      .page-wrap { max-width: none; width: 100%; padding: 0; margin: 0; }
+      .page-break { page-break-before: always; }
+      .no-break { page-break-inside: avoid; }
+      table, .tree, .mono { font-size: 10pt; }
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    @media screen {
+      body { background: #f0f0f0; }
+      .page-wrap {
+        background: white; padding: 14mm 16mm; margin: 20px auto;
+        max-width: 210mm; box-shadow: 0 1px 6px rgba(0,0,0,0.12);
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- Replace {{BODY}} with semantic HTML mirroring the canvas sections. -->
+  {{BODY}}
+
+  <hr class="divider">
+  <p class="muted" style="text-align:center;">
+    {{FOOTER}}
+  </p>
+
+</div>
+</body>
+</html>

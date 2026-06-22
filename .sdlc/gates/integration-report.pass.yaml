@@ -1,0 +1,15 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: integration-report.pass
+  version: "1.0.0"
+spec:
+  description: integration-report.md exists and joint E2E pass is logged in manifest.
+  inputs:
+    - runId
+  outcomes:
+    PASS: report exists and joint E2E pass recorded
+    FAIL: missing report or E2E failure
+  check:
+    type: adapter
+    adapter: integration-report

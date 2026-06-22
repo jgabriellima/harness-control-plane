@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: worktree-committed.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Every registered slice worktree has a clean working tree and at least one commit
+    ahead of the default branch (implementation landed in isolation, not only dirty files).
+  inputs:
+    - runId
+  outcomes:
+    PASS: all slice worktrees clean and committed ahead of main
+    FAIL: dirty tree, no commits, or invalid worktree
+  check:
+    type: adapter
+    adapter: worktree-committed

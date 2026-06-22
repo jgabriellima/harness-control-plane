@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/domain-pack.schema.json",
+  "title": "Procedural Cognitive Runtime Domain Pack Manifest",
+  "description": "MS-2: Validated contract for domain specialization overlays on the generic harness skeleton. Reference: .sdlc/templates/domain-packs/sdlc.domain-pack.yaml",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "proc.jambu/v1"
+    },
+    "kind": {
+      "const": "DomainPack"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["extends", "identity", "provides", "overlays", "composition"],
+      "additionalProperties": false,
+      "properties": {
+        "extends": {
+          "type": "object",
+          "required": ["kernel", "min_version"],
+          "additionalProperties": false,
+          "properties": {
+            "kernel": {
+              "type": "string",
+              "description": "Kernel package name",
+              "examples": ["@jambu/harness", "@jambu/ai-native-sdlc"]
+            },
+            "min_version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            }
+          }
+        },
+        "identity": {
+          "$ref": "harness-identity.schema.json"
+        },
+        "provides": {
+          "type": "object",
+          "required": ["workflows", "init"],
+          "additionalProperties": false,
+          "properties": {
+            "lifecycle_slots_schema": {
+              "type": "string",
+              "description": "Path to domain lifecycle slot JSON Schema"
+            },
+            "workflows": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "definition"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+                  },
+                  "definition": {
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "type": "string",
+                    "pattern": "^/[a-z0-9:-]+$"
+                  }
+                }
+              }
+            },
+            "bootstrap_workflow": {
+              "type": "string",
+              "description": "Domain-specific bootstrap; harness skeleton uses harness-bootstrap-flow.yaml until specialize"
+            },
+            "init": {
+              "type": "object",
+              "required": ["command"],
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "pattern": "^/[a-z0-9:-]+$"
+                },
+                "command_file": {
+                  "type": "string"
+                }
+              }
+            },
+            "commands": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "agents": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "skills": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "playbook_domains": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "integrations_catalog": {
+              "type": "string"
+            },
+            "gates": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "bin_domain": {
+              "type": "array",
+              "description": "Domain-specific bin scripts relative to harness_dir/bin/",
+              "items": { "type": "string" }
+            },
+            "doctor_extensions": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "constraints": {
+              "type": "object",
+              "additionalProperties": {
+                "type": ["boolean", "string", "number"]
+              }
+            },
+            "source_of_truth_extensions": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "overlays": {
+          "type": "object",
+          "description": "DSL merge rules when specializing",
+          "additionalProperties": false,
+          "properties": {
+            "workflows": {
+              "$ref": "#/$defs/mergeRule"
+            },
+            "constraints": {
+              "$ref": "#/$defs/mergeRule"
+            },
+            "source_of_truth": {
+              "$ref": "#/$defs/mergeRule"
+            },
+            "runtime": {
+              "$ref": "#/$defs/mergeRule"
+            },
+            "gates": {
+              "$ref": "#/$defs/mergeRule"
+            },
+            "integrations": {
+              "const": "preserve-local"
+            }
+          }
+        },
+        "composition": {
+          "type": "object",
+          "required": ["layers", "hydration"],
+          "additionalProperties": false,
+          "properties": {
+            "layers": {
+              "type": "object",
+              "required": ["playbooks", "skills", "commands", "workflows", "agents", "gates"],
+              "additionalProperties": false,
+              "properties": {
+                "playbooks": {
+                  "type": "object",
+                  "properties": {
+                    "lazy": { "type": "boolean" },
+                    "catalog": { "type": "string" },
+                    "domains_dir": { "type": "string" }
+                  }
+                },
+                "skills": {
+                  "type": "object",
+                  "properties": {
+                    "dir": { "type": "string" }
+                  }
+                },
+                "commands": {
+                  "type": "object",
+                  "properties": {
+                    "dir": { "type": "string" },
+                    "namespace": { "type": "string" }
+                  }
+                },
+                "workflows": {
+                  "type": "object",
+                  "properties": {
+                    "dir": { "type": "string" }
+                  }
+                },
+                "agents": {
+                  "type": "object",
+                  "properties": {
+                    "dir": { "type": "string" },
+                    "isolation": {
+                      "enum": ["worktree", "thread", "session", "none"]
+                    }
+                  }
+                },
+                "gates": {
+                  "type": "object",
+                  "properties": {
+                    "enforcement": {
+                      "const": "deterministic"
+                    }
+                  }
+                }
+              }
+            },
+            "hydration": {
+              "type": "object",
+              "required": ["index_sections"],
+              "properties": {
+                "index_sections": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 1
+                },
+                "forbidden_on_session_start": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "paradigm": {
+          "type": "object",
+          "description": "Reference to invariant contract; pack must not override",
+          "properties": {
+            "contract": {
+              "const": "contracts/paradigm-invariants.yaml"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "mergeRule": {
+      "type": "string",
+      "enum": ["replace", "deep-merge", "append", "preserve-local"]
+    }
+  }
+}

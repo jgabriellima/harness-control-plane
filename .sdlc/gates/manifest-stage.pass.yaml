@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: manifest-stage.pass
+  version: "1.0.0"
+spec:
+  description: Validates run manifest stage exit criteria via sdlc_gate_check.py.
+  inputs:
+    - runId
+    - stageId
+  outcomes:
+    PASS: stage gate checks pass
+    FAIL: stage criteria unmet
+    RETRY: manifest not yet updated
+  check:
+    type: manifest
+    script: .sdlc/bin/sdlc_gate_check.py

@@ -1,0 +1,54 @@
+# Engspec Run Manifest — Template
+# Path: .sdlc/workflow-runs/{run_id}/manifest.yaml
+# Managed by: sdlc_workflow_manifest.py init --workflow engspec-flow
+# Consumed by: /sdlc:engspec via sdlc_workflow_run.py
+#
+# Extends workflow-run-manifest.yaml with engspec-specific fields.
+# Idempotency: nodes with status completed|skipped are not re-executed on resume.
+
+apiVersion: sdlc.jambu/v1
+kind: WorkflowRunManifest
+
+metadata:
+  run_id: "{run_id}"
+  workflow_id: engspec-flow
+  recorded_at: "{ISO8601}"
+  updated_at: "{ISO8601}"
+
+status: pending
+intent: |
+  {verbatim user intent}
+
+# baseline | review | generate | refine | research | full
+# Set by classify node; default baseline when intent empty or validate-only
+run_mode: null
+
+execution:
+  mode: agent
+  idempotency_key: null
+  resume_from_node: null
+
+workflow:
+  command: /sdlc:engspec
+  dsl_path: .sdlc/workflows/engspec-flow.yaml
+
+paths:
+  output_dir: .sdlc/workflow-runs/output/engspec-flow/{run_id}
+  trace_path: .sdlc/workflow-runs/traces/{run_id}.yaml
+  state_path: .sdlc/workflow-runs/{run_id}/workflow-state.yaml
+
+# Populated during style-provision
+engspec:
+  context_capsule: .cursor/skills/engspec/SKILL.md
+  playbooks_provisioned: []
+  style_stack_gate: null          # PASS | FAIL | pending
+  style_stack_report: null        # path to style-stack-report.md
+  target_paths: []                # docs or specs under edit
+  artifacts: {}                   # node_id → artifact path map
+
+nodes: {}
+
+definition_of_done:
+  all_nodes_completed: false
+  delivery_bundle_written: false
+  style_stack_validated: false

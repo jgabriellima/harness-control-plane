@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/harness-identity.schema.json",
+  "title": "Harness Identity",
+  "description": "MS-1 (ADR-030, amended ADR-031): Parametrizes harness directory, DSL filename, CLI prefix, command namespaces, and API version. The harness is operational infrastructure specialized over an agent runtime adapter — not the agent runtime itself. SDLC dogfood uses harness_dir .sdlc/ via domain pack overlay.",
+  "type": "object",
+  "required": [
+    "id",
+    "harness_dir",
+    "dsl_file",
+    "cli_prefix",
+    "command_namespace",
+    "api_version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable harness or domain-pack identifier",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "examples": ["harness", "sdlc", "energy-admin", "business"]
+    },
+    "harness_dir": {
+      "type": "string",
+      "description": "Relative path to harness root from repository root",
+      "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+      "examples": [".harness/", ".sdlc/"]
+    },
+    "dsl_file": {
+      "type": "string",
+      "description": "Operational DSL filename inside harness_dir",
+      "pattern": "^[a-z][a-z0-9._-]*\\.yaml$",
+      "examples": ["harness.yaml", "sdlc.yaml"]
+    },
+    "cli_prefix": {
+      "type": "string",
+      "description": "Prefix for bin scripts: {cli_prefix}_workflow_run.py",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "examples": ["harness", "sdlc", "business", "energy"]
+    },
+    "command_namespace": {
+      "type": "object",
+      "required": ["lifecycle", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "lifecycle": {
+          "type": "string",
+          "description": "Harness lifecycle commands namespace",
+          "pattern": "^/[a-z][a-z0-9-]*:$",
+          "examples": ["/harness:", "/sdlc:"]
+        },
+        "capabilities": {
+          "type": "string",
+          "description": "Capability commands namespace (often shared across domains)",
+          "pattern": "^/[a-z][a-z0-9-]*:$",
+          "examples": ["/run:"]
+        }
+      }
+    },
+    "api_version": {
+      "type": "string",
+      "description": "Workflow and gate resource apiVersion",
+      "pattern": "^[a-z][a-z0-9.-]+/v[0-9]+$",
+      "examples": ["proc.jambu/v1", "sdlc.jambu/v1"]
+    },
+    "package": {
+      "type": "string",
+      "description": "npm package providing harness kernel or combined domain install",
+      "examples": ["@jambu/harness", "@jambu/ai-native-sdlc"]
+    },
+    "domain_pack": {
+      "type": "string",
+      "description": "Active domain pack id after specialize",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    }
+  },
+  "examples": [
+    {
+      "id": "harness",
+      "harness_dir": ".harness/",
+      "dsl_file": "harness.yaml",
+      "cli_prefix": "harness",
+      "command_namespace": {
+        "lifecycle": "/harness:",
+        "capabilities": "/run:"
+      },
+      "api_version": "proc.jambu/v1",
+      "package": "@jambu/harness"
+    },
+    {
+      "id": "sdlc",
+      "harness_dir": ".sdlc/",
+      "dsl_file": "sdlc.yaml",
+      "cli_prefix": "sdlc",
+      "command_namespace": {
+        "lifecycle": "/sdlc:",
+        "capabilities": "/run:"
+      },
+      "api_version": "sdlc.jambu/v1",
+      "package": "@jambu/ai-native-sdlc",
+      "domain_pack": "sdlc"
+    }
+  ]
+}

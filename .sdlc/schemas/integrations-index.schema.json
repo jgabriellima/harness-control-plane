@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/sdlc/integrations-index.schema.json",
+  "title": "SDLC Integrations Index (provider-keyed)",
+  "description": "Materialized vendor integrations keyed by provider id. serves_slots declares which SDLC lifecycle phases each provider covers. Init walks slots conversationally (see lifecycle-slots.schema.json catalog) but persists binding here.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/integrationEntry"
+  },
+  "$defs": {
+    "providerId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Materialized vendor id; matches .sdlc/integrations/{provider_id}/ directory name"
+    },
+    "slotId": {
+      "type": "string",
+      "enum": [
+        "work_items",
+        "source_control",
+        "ci",
+        "qa",
+        "observability",
+        "deploy",
+        "post_deploy",
+        "incident"
+      ]
+    },
+    "integrationStatus": {
+      "type": "string",
+      "enum": ["active", "pending_credentials"]
+    },
+    "integrationEntry": {
+      "type": "object",
+      "required": ["config", "status", "serves_slots"],
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string",
+          "description": "Path to materialized integration YAML relative to repo root"
+        },
+        "status": { "$ref": "#/$defs/integrationStatus" },
+        "serves_slots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/slotId" },
+          "description": "SDLC phases this provider covers; one provider may serve multiple slots"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "plane": {
+        "config": ".sdlc/integrations/plane/plane.yaml",
+        "status": "active",
+        "serves_slots": ["work_items"]
+      },
+      "github": {
+        "config": ".sdlc/integrations/github/github.yaml",
+        "status": "active",
+        "serves_slots": ["source_control", "ci"]
+      },
+      "posthog": {
+        "config": ".sdlc/integrations/posthog/posthog.yaml",
+        "status": "pending_credentials",
+        "serves_slots": ["observability"]
+      }
+    }
+  ]
+}

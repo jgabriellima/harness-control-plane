@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: structured-output.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Validates cognitive node output against schemas/cognitive-output.schema.json.
+    FAIL if outcome=failed or confidence below threshold. RETRY if partial.
+  inputs:
+    - cognitiveOutput
+  outcomes:
+    PASS: outcome in [success] and confidence >= 0.7
+    RETRY: outcome=partial
+    FAIL: outcome=failed or missing required fields
+    ESCALATE: confidence < 0.5 after retry
+  check:
+    type: schema
+    schema: schemas/cognitive-output.schema.json

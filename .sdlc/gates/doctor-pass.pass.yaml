@@ -1,0 +1,17 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: doctor-pass.pass
+  version: "1.0.0"
+spec:
+  description: Runs SDLC doctor structural; PASS when Totals show 0 failures (exit 0 or 2 DEGRADED).
+  inputs:
+    - doctorMode
+  outcomes:
+    PASS: doctor reports 0 failures
+    FAIL: doctor reports failures
+    RETRY: transient doctor error
+  check:
+    type: doctor
+    command: npm
+    args: ["run", "doctor:structural"]

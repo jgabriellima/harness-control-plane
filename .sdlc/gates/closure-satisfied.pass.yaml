@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: closure-satisfied.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Achieved closure tier meets or exceeds delivery.default_closure (ADR-028).
+  inputs:
+    - manifest.closure
+    - manifest.target.closure
+    - delivery.default_closure
+  outcomes:
+    PASS: achieved tier rank >= required tier rank
+    FAIL: closure below project default
+  check:
+    type: adapter
+    adapter: closure-satisfied

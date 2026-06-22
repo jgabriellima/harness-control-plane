@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: shell-tier-checklist.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Product-shell tier checklist and fidelity.json report computed PASS from deterministic
+    measurement — not agent-authored markdown. FAIL on REVOKED, FAIL rows, or overall_pass=false.
+  inputs:
+    - evidenceDir
+    - runId
+  outcomes:
+    PASS: fidelity.json overall_pass true and tier checklist has no FAIL rows
+    FAIL: self-certified or revoked visual gate
+  check:
+    type: adapter
+    adapter: shell-tier-checklist

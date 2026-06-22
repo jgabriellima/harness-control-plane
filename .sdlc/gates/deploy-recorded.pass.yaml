@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: deploy-recorded.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Deploy step recorded CI success (GitHub Actions deploy workflow or explicit ci_run_url).
+    Does not re-run doctor — production deploy is verified by CI on main.
+  inputs:
+    - cognitiveOutput
+    - deployment
+  outcomes:
+    PASS: ci_run_url or deploy_run_url present in cognitive output or manifest.deployment
+    FAIL: no deploy evidence
+  check:
+    type: adapter
+    adapter: deploy-recorded

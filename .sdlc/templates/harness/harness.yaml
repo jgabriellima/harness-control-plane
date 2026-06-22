@@ -1,0 +1,74 @@
+# Generic Harness Skeleton — operational DSL template (ADR-030, ADR-031)
+# Installed by: harness install --runtime cursor
+# Specialized by: harness specialize --pack <domain>
+
+version: "1.0"
+status: uninitialized
+
+identity:
+  id: harness
+  harness_dir: .harness/
+  dsl_file: harness.yaml
+  cli_prefix: harness
+  command_namespace:
+    lifecycle: "/harness:"
+    capabilities: "/run:"
+  api_version: proc.jambu/v1
+  package: "@jambu/harness"
+  domain_pack: null
+
+baseline:
+  harness_package_version: null
+  harness_baseline_tag: null
+  subject_baseline_tag: null
+  last_harness_baseline_date: null
+  harness_baseline_changes: []
+
+workspace:
+  target_root: "."
+  profile: auto
+
+project:
+  name: ""
+  description: ""
+
+integrations: {}
+
+runtime:
+  engine: cursor
+  specialization_layer: .cursor/
+  hooks: .cursor/hooks.json
+  context_injection: sessionStart
+  workflow:
+    max_step_depth: 8
+    max_fanout_retries: 3
+    subprocess_timeout_seconds: 300
+  rules:
+    - .cursor/rules/output-standards.mdc
+  commands:
+    - "/harness:init"
+    - "/harness:config"
+    - "/harness:doctor"
+    - /hydrate-context
+    - /handoff
+  skills:
+    - handoff
+
+workflows:
+  bootstrap:
+    definition: .harness/workflows/harness-bootstrap-flow.yaml
+    trigger: "/harness:init"
+
+handoff:
+  storage: .harness/handoffs/
+  latest_symlink: .harness/handoffs/LATEST.md
+
+source_of_truth:
+  documentation: .harness/INDEX.md
+  decisions: .harness/context/decisions/
+  handoffs: .harness/handoffs/LATEST.md
+  operational_state: .cursor/memories/operational-context.md
+
+constraints:
+  handoff_required_on_completion: true
+  index_must_be_updated: true

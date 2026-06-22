@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: schema-valid.pass
+  version: "1.0.0"
+spec:
+  description: Validates document or artifact against declared JSON Schema path.
+  inputs:
+    - artifactPath
+    - schemaPath
+  outcomes:
+    PASS: artifact validates against schema
+    FAIL: validation errors present
+    RETRY: artifact missing — regenerate
+  check:
+    type: schema

@@ -1,0 +1,78 @@
+# Workflow contract — semantic rules beyond JSON Schema
+# Consumed by sdlc_workflow_validate.py review step
+
+version: "1.0"
+apiVersion: sdlc.jambu/v1
+
+structural:
+  - id: api-version-required
+    severity: error
+    message: "Workflow must declare apiVersion sdlc.jambu/v1 and kind Workflow"
+  - id: legacy-format-rejected
+    severity: error
+    message: "Pre-v1 workflow format (stages/phases without apiVersion) is invalid"
+
+nodes:
+  - id: composite-node-required
+    severity: error
+    when: { nodeShape: non-composite }
+    message: "Every node must declare function.invoke and postCondition — type/gate nodes are not valid"
+  - id: function-invoke-required
+    severity: error
+    when: { nodeShape: composite }
+    message: "Every node must declare function.invoke with type and ref"
+  - id: post-condition-target-required
+    severity: error
+    when: { nodeShape: composite }
+    require: [postCondition.target, postCondition.checks]
+    message: "Composite nodes must declare postCondition.target and postCondition.checks"
+  - id: gate-node-forbidden
+    severity: error
+    when: { nodeShape: composite }
+    message: "Separate gate-* node ids are forbidden — use postCondition.checks"
+  - id: invoke-playbook-forbidden
+    severity: error
+    when: { invokeType: playbook }
+    message: "function.invoke.type playbook is forbidden — use command, agent, skill, or subprocess"
+  - id: gate-file-exists
+    severity: error
+    message: "Gate definition file must exist under .sdlc/gates/"
+  - id: output-schema-exists
+    severity: error
+    when: { hasOutputSchema: true }
+    message: "Declared outputSchema file must exist under .sdlc/schemas/"
+  - id: depends-on-resolvable
+    severity: error
+    message: "dependsOn must reference node ids declared in the same workflow"
+  - id: dag-acyclic
+    severity: error
+    message: "Node dependency graph must be acyclic"
+  - id: unique-node-ids
+    severity: error
+    message: "Node ids must be unique within the workflow"
+
+gates:
+  - id: gate-registry-valid
+    severity: error
+    message: "Gate YAML must conform to gate-dsl.schema.json (sdlc.jambu/v1)"
+
+metadata:
+  - id: trigger-command-alignment
+    severity: error
+    message: "metadata.trigger must match a spec.triggers[].command when type is command"
+  - id: command-file-hint
+    severity: warn
+    message: "metadata.command should reference an existing runtime adapter command file"
+
+orchestration:
+  - id: e2e-manifest-script
+    severity: error
+    when: { hasOrchestration: true }
+    requirePath: orchestration.manifest.control_script
+    message: "E2E orchestration workflows must declare manifest.control_script"
+
+review:
+  description: >
+    Final review step — runs all structural, node, gate, and metadata rules.
+    Exit 0 only when zero errors. Warnings do not block unless --strict.
+  command: python3 .sdlc/bin/sdlc_workflow_validate.py review

@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: e2e-deploy-target.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Deploy node requires E2E against deploy target unless local-only waiver.
+    serverless/vm require e2e-deploy-target-report.md PASS.
+  inputs:
+    - runId
+    - target.deploy_target
+  outcomes:
+    PASS: deploy-target E2E PASS or local-only waiver
+    FAIL: serverless/vm deploy without runtime E2E evidence
+  check:
+    type: adapter
+    adapter: e2e-deploy-target

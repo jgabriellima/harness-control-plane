@@ -1,0 +1,172 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: bootstrap-flow
+  name: Bootstrap Flow
+  description: >
+    Project specialization via /sdlc:init — questionnaire, slot-aware materialization,
+    credential collection, operational doctor. ADR-011 + ADR-029. No app scaffold in bind mode.
+  version: "2.0.0"
+  trigger: /sdlc:init
+  command: .cursor/commands/sdlc-init.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:init
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  bootstrapCheck:
+    triggerCondition: ".sdlc/ does not exist OR sdlc.yaml.status == 'uninitialized'"
+    message: >
+      This project is not yet specialized.
+      Run /sdlc:init to initialize the AI-Native SDLC.
+
+  nodes:
+    - id: environment-audit
+      name: Environment Audit
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bootstrap:environment-audit
+          command: bash
+          args:
+            - -c
+            - "node -v && test -d .sdlc && test -f .sdlc/templates/init-questionnaire.yaml"
+        objective: Audit Node version and SDLC skeleton including init questionnaire
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: init-questionnaire
+      name: Init Questionnaire
+      dependsOn: [environment-audit]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: >
+          Walk init-questionnaire.yaml waves; write .sdlc/pipeline/.init-selections.json
+          with confirmed_at; run sdlc_init_validate.py
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: integration-materialization
+      name: Integration Materialization
+      dependsOn: [init-questionnaire]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bootstrap:integration-materialization
+          command: bash
+          args:
+            - -c
+            - |
+              cd .sdlc && \
+              python3 bin/sdlc_init_validate.py --file pipeline/.init-selections.json && \
+              npx ts-node pipeline/integration-mutator.ts plan --action batch \
+                --init-file pipeline/.init-selections.json --source init && \
+              npx ts-node pipeline/integration-mutator.ts apply \
+                --plan-file pipeline/.last-plan.json
+        objective: Slot-aware batch materialization via catalog-patch (ADR-029)
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: memory-initialization
+      name: Operational Memory Initialization
+      dependsOn: [integration-materialization]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/implementer.md
+        objective: Initialize architecture, operational-context, business-rules memories and INDEX
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/index-registered.pass
+      control:
+        blocking: true
+
+    - id: credential-collection
+      name: Credential Collection
+      dependsOn: [memory-initialization]
+      function:
+        invoke:
+          type: agent
+          ref: .cursor/agents/planner.md
+        objective: Collect secrets from credential manifest only — after slot confirmation
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: false
+
+    - id: doctor-validation
+      name: Doctor Validation
+      dependsOn: [credential-collection]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bootstrap:doctor-validation
+          step: loop
+          command: bash
+          args:
+            - -c
+            - "cd .sdlc && npm run doctor:operational"
+        objective: Operational doctor including orphan-secret gate (ADR-029)
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/doctor-pass.pass
+      control:
+        blocking: true
+        onFailure: fix_and_retry
+
+    - id: completion-report
+      name: Completion Report
+      dependsOn: [doctor-validation]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Emit initialization summary and set sdlc.yaml status operational
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+      control:
+        blocking: true
+
+  completion:
+    updates:
+      - file: .sdlc/sdlc.yaml
+        field: status
+        value: operational
+      - file: .cursor/memories/operational-context.md
+        action: record_initialization
+
+  failureBehavior:
+    - report gap and abort on blocking deterministic failure
+    - do not set status operational until doctor-validation gate passes

@@ -1,0 +1,82 @@
+integration: posthog
+version: "1.0"
+status: active
+replaces: sentry
+
+# ── Secrets Required ──────────────────────────────────────────────────────────
+secrets_required:
+  - env_var: PUBLIC_POSTHOG_KEY
+    scope: local
+    required: true
+    description: PostHog project API key — safe to expose in browser bundle. Get from PostHog → Settings → Project → Project API key.
+  - env_var: PUBLIC_POSTHOG_HOST
+    scope: local
+    required: true
+    description: PostHog ingest host. US Cloud = https://us.i.posthog.com, EU Cloud = https://eu.i.posthog.com
+
+# ── Connection ────────────────────────────────────────────────────────────────
+connection:
+  api_key: "${PUBLIC_POSTHOG_KEY}"
+  host: "${PUBLIC_POSTHOG_HOST}"
+  project_id: "35444"
+  region: "US Cloud"
+
+# ── SDK Configuration ─────────────────────────────────────────────────────────
+sdk:
+  package: "posthog-js"
+  init_location: app/src/components/posthog.astro
+  integration_pattern: inline-script-component
+  # PostHog for Astro uses a <script is:inline> component injected into layouts.
+  # No vite plugin or astro integration required — browser-side only.
+
+# ── Feature Parity vs Sentry ──────────────────────────────────────────────────
+feature_parity:
+  error_tracking: "posthog-js ships with exception autocapture (window.onerror + unhandledrejection). Enable via autocapture: true."
+  session_replay: "PostHog Session Replay — equivalent to Sentry Replay. Enabled by default on free tier."
+  performance_tracing: "PostHog Web Performance (Core Web Vitals) — less granular than Sentry transactions."
+  source_maps: "no direct equivalent — PostHog error tracking shows minified stacks without upload step. Compensating decision: use Vercel source maps in dashboard."
+  releases: "no direct equivalent — compensating decision: capture posthog.capture('deployment', {version}) in deploy workflow."
+  alerts: "PostHog Alerts (Insights → Alerts) on free tier. Webhooks available via Slack/Discord destination."
+  github_issue_creation: "use PostHog → Slack webhook → GitHub Actions workflow_dispatch. No native GitHub issue creation on free tier."
+
+# ── Environments ──────────────────────────────────────────────────────────────
+environments:
+  - name: production
+    active: true
+  - name: staging
+    active: true
+  - name: development
+    active: false    # disable in local dev to avoid polluting analytics
+
+# ── Error Tracking ─────────────────────────────────────────────────────────────
+error_tracking:
+  enabled: true
+  method: autocapture    # posthog-js captures window.onerror + unhandledrejection automatically
+  manual_capture: "posthog.captureException(error)"
+
+# ── Alerts ────────────────────────────────────────────────────────────────────
+# Configure in PostHog UI: Insights → Alerts
+# Webhooks: Settings → Integrations → Webhooks
+alerts:
+  - name: Error spike
+    condition: "exception count > 10 in 1 hour"
+    severity: P2
+    notify: [webhook]
+  - name: New error type
+    condition: "new exception fingerprint first seen"
+    severity: P3
+    notify: [webhook]
+
+# ── ADR Gap Log ───────────────────────────────────────────────────────────────
+# Features with no equivalent — decisions recorded in ADR-008
+adr: ".sdlc/context/decisions/ADR-008-sentry-to-posthog-gaps.md"
+
+# ── Setup Checklist ───────────────────────────────────────────────────────────
+setup:
+  - step: "Copy project API key to app/.env as PUBLIC_POSTHOG_KEY (value: phc_1Ti2xzMxGQnE24tgYsclfh0Z3GrLWw0mYJwea3bgYCi)"
+  - step: "Set PUBLIC_POSTHOG_HOST=https://us.i.posthog.com in app/.env"
+  - step: "Add PUBLIC_POSTHOG_KEY and PUBLIC_POSTHOG_HOST to Vercel project environment variables"
+  - step: "Add PUBLIC_POSTHOG_KEY to GitHub Secrets (used in CI build validation)"
+  - step: "Add GitHub Secrets: remove SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT, PUBLIC_SENTRY_DSN"
+  - step: "Configure PostHog Alerts in UI for error spike detection"
+  - step: "Run /sdlc:doctor to verify integration alignment"

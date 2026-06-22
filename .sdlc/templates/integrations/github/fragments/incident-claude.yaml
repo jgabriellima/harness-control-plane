@@ -1,0 +1,16 @@
+# Merged when slots.incident = github-issues-claude (ADR-029)
+secrets_required:
+  - env_var: ANTHROPIC_API_KEY
+    scope: ci
+    required: true
+    slot: incident
+    description: Anthropic API key for Claude Code autonomous incident fix in CI
+actions:
+  workflows:
+    incident_response: .github/workflows/incident-response-claude.yaml
+  ci_secrets:
+    - ANTHROPIC_API_KEY
+incident:
+  agent_runtime: claude-code
+  execution: ci
+  materialize_workflow: true

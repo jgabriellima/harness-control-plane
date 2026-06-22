@@ -1,0 +1,248 @@
+# E2E Orchestration Run Manifest — Template
+# Location: .sdlc/runs/{run_id}/manifest.yaml
+# Managed by: .sdlc/bin/sdlc_e2e_manifest.py
+# Consumed by: /sdlc:e2e orchestrator
+#
+# Idempotency contract:
+#   - Each stage has status: pending | in_progress | completed | skipped | failed
+#   - Orchestrator MUST skip stages with status completed or skipped
+#   - Re-running /sdlc:e2e --resume {run_id} continues from first pending stage
+#   - --force-stage {stage_id} re-runs a single stage (explicit user override only)
+
+version: "1.0"
+run_id: "{run_id}"                    # kebab-case slug, e.g. reddit-clone-20260522
+status: pending                       # pending | in_progress | completed | blocked | paused
+mode: greenfield                      # greenfield | feature | fix | content
+
+intent: |
+  {verbatim user intent}
+
+target:
+  route: null                         # e.g. /reddit
+  reference_url: null                 # e.g. https://reddit.com
+  persistence: null                   # e.g. sqlite local
+
+created_at: "{ISO8601}"
+updated_at: "{ISO8601}"
+completed_at: null
+
+orchestrator:
+  session_id: null                    # Cursor session identifier if available
+  last_handoff: null                  # path to .sdlc/handoffs/{file}.md
+
+epic:
+  ticket_id: null                     # JAMBU-N
+  uuid: null
+  spec_path: null                     # .sdlc/specs/{run_id}.md
+  plane_url: null
+
+# Stage registry — order is execution order
+stages:
+  hydrate:
+    name: Context Hydration
+    status: pending
+    command: /sdlc:hydrate
+    skip_in_modes: []
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  classify:
+    name: Mode Classification
+    status: pending
+    command: internal
+    skip_in_modes: []
+    started_at: null
+    completed_at: null
+    artifacts:
+      - mode_decision.md
+
+  discovery:
+    name: Reference Discovery and Browser Research
+    status: pending
+    command: /run:browser
+    skip_in_modes: [fix, content]
+    started_at: null
+    completed_at: null
+    # Hard gate: stage-complete blocked if reference_screenshots_on_disk=false
+    reference_screenshots_on_disk: false
+    reference_screenshots:
+      desktop_1280: null    # path — null = not captured
+      tablet_768: null
+      mobile_375: null
+    artifacts:
+      - discovery-report.md
+      - reference-screenshots/
+
+  decomposition:
+    name: Vertical Slice Decomposition
+    status: pending
+    command: internal
+    skip_in_modes: [fix]
+    started_at: null
+    completed_at: null
+    artifacts:
+      - decomposition.md
+
+  plane-hierarchy:
+    name: Plane Epic and Child Ticket Creation
+    status: pending
+    command: /sdlc:spec
+    skip_in_modes: [fix]
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  architecture:
+    name: Architecture Decisions and Master Spec
+    status: pending
+    command: internal
+    skip_in_modes: [fix, content]
+    started_at: null
+    completed_at: null
+    artifacts:
+      - master-spec.md
+
+  workspace-rebind:
+    name: Workspace CI and Integration Rebind
+    status: pending
+    command: internal
+    skip_in_modes: [fix, content]
+    started_at: null
+    completed_at: null
+    artifacts:
+      - rebind-report.md
+
+  wave-planning:
+    name: Dependency Wave Planning
+    status: pending
+    command: internal
+    skip_in_modes: [fix]
+    started_at: null
+    completed_at: null
+    artifacts:
+      - wave-sdlc-plan.md
+
+  execution:
+    name: Vertical Slice Execution (worktrees + subagents)
+    status: pending
+    command: /sdlc:implement
+    skip_in_modes: []
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  integration:
+    name: Integration Merge and Joint Validation
+    status: pending
+    command: internal
+    skip_in_modes: [fix, content]
+    started_at: null
+    completed_at: null
+    artifacts:
+      - integration-report.md
+
+  deploy:
+    name: Production Deployment
+    status: pending
+    command: /sdlc:deploy
+    skip_in_modes: [content]
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  post-deploy:
+    name: Post-Deploy Gate
+    status: pending
+    command: /sdlc:post-deployment
+    skip_in_modes: [content]
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  board-sync:
+    name: Plane Board Sync and Evidence Upload
+    status: pending
+    command: internal
+    skip_in_modes: []
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+  reflect:
+    name: SDLC Reflect and Handoff
+    status: pending
+    command: /sdlc:reflect
+    skip_in_modes: []
+    started_at: null
+    completed_at: null
+    artifacts: []
+
+# Execution waves — populated during wave-planning stage
+waves: []
+# Example wave entry:
+# - id: wave-1
+#   name: Foundation — schema, layout shell, routing
+#   parallel: true
+#   depends_on: []
+#   tickets: [JAMBU-10, JAMBU-11]
+#   status: pending
+#   started_at: null
+#   completed_at: null
+
+# Ticket registry — one entry per Plane work item in this run
+tickets: {}
+# Example ticket entry:
+# JAMBU-10:
+#   role: vertical-slice          # epic | vertical-slice | fix
+#   title: "Implement subreddit listing at /reddit"
+#   uuid: "{plane-uuid}"
+#   parent: JAMBU-9               # epic ticket_id
+#   wave: wave-1
+#   status: pending               # pending | in_progress | done | blocked
+#   worktree: /home/administrator/workspaces/jambu/worktrees/JAMBU-10-...
+#   branch: feat/JAMBU-10-...
+#   spec_path: .sdlc/specs/JAMBU-10-....md
+#   pr_url: null
+#   pr_number: null
+#   evidence_dir: .sdlc/evidence/JAMBU-10/
+#   merged_at: null
+#   subagent_dispatched: false          # ADR-009 — set true via register-subagent-dispatch
+#   subagent_session_id: null
+#   subagent_dispatched_at: null
+#   implementation_agent: null          # implementer | incident-resolver
+#   delegated_command: /sdlc:implement
+#   feature_flow_complete: false
+#   feature_flow_stages:
+#     planning: pending
+#     implementation: pending
+#     review: pending
+#     qa: pending
+#     pr_creation: pending
+#   qa_verdict: null
+#   visual_gate: null       # PASS only after fidelity loop ≥ 80% (clone mode) or functional QA (feature/fix)
+#   visual_fidelity_score: null   # float 0.0–1.0 — last measured iteration
+#   visual_fidelity_iterations: 0
+#   visual_gap_report: null # path to gap report if score < threshold
+#   review_url: null
+#   work_items_evidence_uploaded: false
+#   work_items_state_synced: false
+#   work_items_state: null
+#   plane_evidence_uploaded: false   # legacy alias when work_items provider is Plane
+#   plane_state_synced: false
+
+# Protocol audit (optional — set when run violated ADR-009 before fix)
+protocol:
+  adr: ADR-009
+  execution_valid: null               # true | false
+  violation: null                     # human-readable if execution_valid=false
+
+definition_of_done:
+  implementation_working: false
+  closure_satisfied: false
+  all_tickets_done: false
+  all_evidence_uploaded: false
+  board_fully_updated: false
+  handoff_recorded: false
+  # all_prs_merged — when delivery.default_closure >= preview-validated
+  deployed_to_production: false

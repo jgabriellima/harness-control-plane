@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: library-evidence.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Headless QA evidence — manifest.md plus pytest (or equivalent unit-test) report.
+    Active when ticket qa_surface=headless; deferred when qa_surface=browser.
+    FAIL if manifest missing or no passing test evidence.
+  inputs:
+    - evidenceDir
+    - runId
+  outcomes:
+    PASS: manifest.md and pytest/unit-test evidence present with zero failures
+    FAIL: missing evidence artifacts or test failures recorded
+  check:
+    type: adapter
+    adapter: library-evidence

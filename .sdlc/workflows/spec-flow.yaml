@@ -1,0 +1,175 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: spec-flow
+  name: Spec Flow
+  description: >
+    Converts raw feature intent into structured spec, work item ticket, and worktree.
+    Entry point for ALL new feature work.
+  version: "1.1.0"
+  trigger: /sdlc:spec
+  command: .cursor/commands/sdlc-spec.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:spec
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  preConditions:
+    - index_consulted
+    - no_duplicate_spec
+
+  nodes:
+    - id: index-check
+      name: INDEX Consultation
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:hydrate
+        objective: Read INDEX.md and verify no duplicate spec exists
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/index-registered.pass
+      control:
+        blocking: true
+
+    - id: context-hydration
+      name: Context Hydration
+      dependsOn: [index-check]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:hydrate
+        objective: Load handoff, memories, and ADR context
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: spec-generation
+      name: Spec Document Generation
+      dependsOn: [context-hydration]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/spec-writer/SKILL.md
+        objective: Author structured spec at .sdlc/specs/{draft-id}-{feature}.md
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: work-item-ticket-creation
+      name: Work Item Ticket Creation
+      dependsOn: [spec-generation]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/work-items-ticket/SKILL.md
+        objective: Create work_items ticket via provider runtime DSL (ticket_skill_ref from integration YAML)
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - type: schema
+            schema: schemas/cognitive-output.schema.json
+          - ref: gates/structured-output.pass
+          - ref: gates/ticket-qa-contract.pass
+      control:
+        blocking: true
+        onFailure: abort
+
+    - id: spec-rename
+      name: Rename Spec with Real Ticket ID
+      dependsOn: [work-item-ticket-creation]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/specs:rename
+          command: bash
+          args: [-c, "test -d .sdlc/specs"]
+        objective: Rename spec file to JAMBU-N slug and update internal references
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: index-update
+      name: INDEX Registration
+      dependsOn: [spec-rename]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Register spec, active work, and worktree rows in INDEX.md
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/index-registered.pass
+      control:
+        blocking: true
+
+    - id: worktree-creation
+      name: Worktree Creation
+      dependsOn: [index-update]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/worktree/SKILL.md
+        objective: Create isolated git worktree and feature branch
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: true
+
+    - id: work-item-state-update
+      name: Update Work Item to In Progress
+      dependsOn: [worktree-creation]
+      function:
+        invoke:
+          type: subprocess
+          ref: .sdlc/bin/work_items_sync.py:in_progress
+          command: python3
+          args:
+            - .sdlc/bin/work_items_sync.py
+            - transition
+            - --ticket
+            - "{ticket_id}"
+            - --run-id
+            - "{run_id}"
+            - --manifest-status
+            - in_progress
+        objective: Sync ticket state to in_progress via active work_items provider
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/schema-valid.pass
+      control:
+        blocking: false
+
+  successCriteria:
+    - spec-generation structured output contains spec_file path
+    - work-item-ticket-creation structured output contains ticket_id
+    - index-update gate PASS
+    - worktree-creation gate PASS
+
+  failureBehavior:
+    - abort on ticket creation failure
+    - do not create worktree without registered spec

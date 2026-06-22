@@ -1,0 +1,73 @@
+# MS-6 Runtime Hook Manifest — SOURCE OF TRUTH (ADR-032)
+# Installed to: {specialization_layer}/hooks.manifest.yaml (e.g. .cursor/hooks.manifest.yaml)
+# Projection: harness bind → {specialization_layer}/hooks.json (Cursor adapter format)
+# Hand-editing hooks.json in consumer workspaces is forbidden — regenerate via harness bind.
+#
+# Kernel dispatcher routes events to harness bin/; active pack handlers are merged at bind
+# from the active pack hook_surface (singular — no multi-pack routing table).
+
+apiVersion: proc.jambu/v1
+kind: RuntimeHookManifest
+
+metadata:
+  name: workspace-runtime-hooks
+  labels:
+    active_pack: null  # set by harness bind from packs.active.id
+    cli_prefix: null   # set by harness bind from active pack identity
+
+spec:
+  projection:
+    target: .cursor/hooks.json
+    format: cursor-hooks-v1
+    version: 1
+
+  kernel:
+    dispatcher:
+      command: python3 .harness/bin/harness_hook_dispatcher.py
+      description: Kernel entry — dispatches to active pack handlers and kernel observe hooks
+    bin_dir: .harness/bin/
+    observe:
+      trace:
+        command: python3 .harness/bin/harness_trace_collector.py
+        mode: fail-open
+    events:
+      sessionStart:
+        - role: kernel
+          command: .cursor/hooks/session-start.sh
+          timeout: 15
+      stop:
+        - role: kernel
+          command: python3 .harness/bin/harness_hook_dispatcher.py
+          timeout: 15
+          loop_limit: 5
+        - role: kernel
+          command: .cursor/hooks/session-stop.sh
+          timeout: 10
+
+  # Populated by harness bind from active pack hook_surface — placeholders below.
+  active_pack:
+    id: null
+    handlers: {}
+    # Example after activate energy-admin (bind expands {cli_prefix} and bin paths):
+    # handlers:
+    #   preToolUse:
+    #     - role: pack
+    #       evaluate: python3 .energy/bin/energy_protocol_guard.py --mode evaluate
+    #       apply: python3 .energy/bin/energy_protocol_guard.py --mode apply
+    #       matcher: Write|StrReplace|Delete|EditNotebook
+    #       failClosed: true
+    #       timeout: 10
+    #   beforeSubmitPrompt:
+    #     - role: pack
+    #       command: python3 .energy/bin/energy_goal_runtime.py
+    #       matcher: UserPromptSubmit
+    #       timeout: 90
+    #   afterFileEdit:
+    #     - role: pack
+    #       command: python3 .energy/bin/energy_protocol_guard.py --event afterFileEdit
+    #       timeout: 10
+
+  shim_layer:
+    description: Thin adapter scripts under specialization_layer/hooks/ — stable paths for Cursor hook API
+    dir: .cursor/hooks/
+    pattern: "{event}.sh → harness_hook_dispatcher.py --event {event}"

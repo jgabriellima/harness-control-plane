@@ -72,5 +72,6 @@ Desktop release CI workflow: `.github/workflows/desktop-release.yml` (tag trigge
 
 ## Related
 
-- ADR-039: `.sdlc/context/decisions/` in consumer product repos
+- ADR-039: `.sdlc/context/decisions/ADR-039-ecosystem-ops-flow.md` (ecosystem); control plane install model
+- SDLC contract: `.sdlc/sdlc.yaml`, `.sdlc/INDEX.md`
 - Business dogfood workspace: `jgabriellima/business-workflow` → `app/.business/`

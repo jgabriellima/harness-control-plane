@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sdlc.jambu/schemas/workflow-continuity",
+  "title": "WorkflowContinuity",
+  "description": "Run-level continuity contract — what blocks progress and how to resume. Source of truth on WorkflowRunManifest; mirrored to work_items provider.",
+  "type": "object",
+  "required": ["awaiting", "blocked_by_node", "required_actions"],
+  "additionalProperties": false,
+  "properties": {
+    "phase": {
+      "type": "string",
+      "description": "Macro phase id, child workflow_id, or active workflowRef target"
+    },
+    "awaiting": {
+      "type": "string",
+      "enum": ["none", "input", "approval", "external", "gate_failure", "agent_dispatch"]
+    },
+    "blocked_by_node": {
+      "type": ["string", "null"],
+      "description": "Node id currently blocking run progress"
+    },
+    "required_actions": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/$defs/requiredAction" }
+    },
+    "resume_hints": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "conflict_policy": {
+      "type": "string",
+      "enum": ["ask", "reuse", "force_new_run"],
+      "default": "ask"
+    },
+    "last_resolution": {
+      "type": "object",
+      "description": "Last sdlc_continuity_resolve.py decision",
+      "properties": {
+        "command": { "type": "string" },
+        "action": {
+          "type": "string",
+          "enum": ["skip", "resume", "ask", "redo_node", "new_run", "proceed"]
+        },
+        "run_id": { "type": "string" },
+        "node_id": { "type": "string" },
+        "recorded_at": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "requiredAction": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["human", "gate", "command", "artifact"]
+        },
+        "description": { "type": "string" },
+        "gate": { "type": "string", "description": "Gate ref e.g. gates/pr-merged.pass" },
+        "command": { "type": "string", "description": "Shell command to resume runner" },
+        "artifact_path": { "type": "string" }
+      }
+    }
+  }
+}

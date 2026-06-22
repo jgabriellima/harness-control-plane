@@ -1,0 +1,13 @@
+{
+  "_comment": "Add alongside existing local playwright entry in ~/.cursor/mcp.json. Start SSH tunnel first.",
+  "mcpServers": {
+    "user-playwright-remote": {
+      "url": "http://127.0.0.1:8931/mcp"
+    },
+    "_cdp_alternative": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint=http://127.0.0.1:9222"],
+      "_note": "Use when remote Chrome has CDP enabled instead of Playwright Extension. Requires SSH tunnel on port 9222."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# Example composite node extensions (ADR-020) — not a runnable workflow file.
+# Merge patterns into workflow DSL under spec.nodes[].
+
+- id: pr-creation
+  name: Pull request creation
+  dependsOn: [qa]
+  function:
+    invoke:
+      type: command
+      ref: /sdlc:implement
+    objective: Open PR for vertical slice; record URLs in structured output
+    outputSchema: schemas/cognitive-output.schema.json
+  control:
+    blocking: true
+    hitl:
+      kind: approval
+      reason: Human merge required before board-sync
+      resumeGate: gates/pr-merged.pass
+  emits:
+    - key: pr_url
+      from: $node.output.structured.pr_url
+    - key: spec_path
+      from: $node.output.structured.spec_path
+  postCondition:
+    target: $node.output
+    checks:
+      - ref: gates/pr-open.pass
+      - ref: gates/structured-output.pass

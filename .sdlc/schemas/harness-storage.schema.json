@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/proc/harness-storage.schema.json",
+  "title": "Harness Storage Contract",
+  "description": "MS-5 (ADR-032): Persistent artifact root, layout, path templates, and retention policies for the active specialized harness. Execution may occur in worktrees (MS-7); durable harness state and evidence MUST resolve under storage.root.",
+  "type": "object",
+  "required": ["root", "layout"],
+  "additionalProperties": false,
+  "properties": {
+    "root": {
+      "type": "string",
+      "description": "Durable storage anchor relative to repository root (typically active harness_dir)",
+      "pattern": "^\\.[a-z0-9][a-z0-9._-]*/$",
+      "examples": [".harness/", ".sdlc/", ".energy/"]
+    },
+    "deliverables_root": {
+      "type": "string",
+      "description": "Operator-facing deliverables tree relative to repository root (ADR-040 dual-root)",
+      "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+      "examples": ["output/"]
+    },
+    "layout": {
+      "type": "object",
+      "description": "Fixed subdirectory names relative to storage.root",
+      "required": ["handoffs", "workflow_runs", "trace", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "handoffs": {
+          "type": "string",
+          "description": "Session continuity artifacts",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["handoffs/"]
+        },
+        "workflow_runs": {
+          "type": "string",
+          "description": "Workflow runner manifest store",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["workflow-runs/"]
+        },
+        "trace": {
+          "type": "string",
+          "description": "Cognitive trace event store",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["trace/"]
+        },
+        "evidence": {
+          "type": "string",
+          "description": "QA and gate evidence (gitignored by policy)",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["evidence/"]
+        },
+        "cognitive_outputs": {
+          "type": "string",
+          "description": "Stage cognitive output artifacts",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["cognitive-outputs/"]
+        },
+        "runs": {
+          "type": "string",
+          "description": "E2E orchestration manifests (domain-specific alias)",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["runs/"]
+        }
+      }
+    },
+    "templates": {
+      "type": "object",
+      "description": "Parameterized path templates relative to storage.root; placeholders expanded by path resolver (P2)",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      },
+      "properties": {
+        "workflow_run_manifest": {
+          "type": "string",
+          "description": "Per-run workflow state file",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/\\{run_id\\}/[a-z0-9][a-z0-9._-]*\\.yaml$",
+          "examples": ["workflow-runs/{run_id}/manifest.yaml"]
+        },
+        "evidence_run_dir": {
+          "type": "string",
+          "description": "Per-run evidence directory",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/\\{run_id\\}/$",
+          "examples": ["evidence/{run_id}/"]
+        },
+        "handoff_latest": {
+          "type": "string",
+          "description": "Latest handoff symlink or pointer path relative to storage.root",
+          "examples": ["handoffs/LATEST.md"]
+        },
+        "scaffold_templates": {
+          "type": "string",
+          "description": "Directory of harness scaffold templates (handoff, ADR, spec stubs)",
+          "pattern": "^[a-z0-9][a-z0-9._-]*/$",
+          "examples": ["templates/"]
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "description": "Retention and dual-root enforcement rules (MS-7)",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_always_under_storage_root": {
+          "type": "boolean",
+          "description": "Evidence writes MUST resolve under storage.root even when execution occurs in a worktree",
+          "default": true
+        },
+        "dual_root": {
+          "type": "boolean",
+          "description": "When true, workspace.worktrees supplies execution root; storage.root supplies persistence",
+          "default": false
+        },
+        "handoff_retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional retention window for handoff files; 0 means no automatic pruning"
+        },
+        "evidence_retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional retention window for evidence directories"
+        },
+        "workflow_run_retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional retention window for completed workflow run manifests"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "root": ".harness/",
+      "layout": {
+        "handoffs": "handoffs/",
+        "workflow_runs": "workflow-runs/",
+        "trace": "trace/",
+        "evidence": "evidence/",
+        "cognitive_outputs": "cognitive-outputs/"
+      },
+      "templates": {
+        "workflow_run_manifest": "workflow-runs/{run_id}/manifest.yaml",
+        "evidence_run_dir": "evidence/{run_id}/",
+        "handoff_latest": "handoffs/LATEST.md",
+        "scaffold_templates": "templates/"
+      },
+      "policies": {
+        "evidence_always_under_storage_root": true,
+        "dual_root": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: post-deploy-recorded.pass
+  version: "1.0.0"
+spec:
+  description: Post-deploy smoke or production URL recorded on workflow manifest.
+  inputs:
+    - deployment
+  outcomes:
+    PASS: post_deploy_smoke_pass or production_url set
+    FAIL: post-deploy evidence missing
+  check:
+    type: adapter
+    adapter: post-deploy-recorded

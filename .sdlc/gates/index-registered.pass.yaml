@@ -1,0 +1,16 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: index-registered.pass
+  version: "1.0.0"
+spec:
+  description: Verifies resource is registered in .sdlc/INDEX.md.
+  inputs:
+    - resourceId
+    - indexSection
+  outcomes:
+    PASS: row present in INDEX
+    FAIL: missing registration
+  check:
+    type: file
+    path: .sdlc/INDEX.md

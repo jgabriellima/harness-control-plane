@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: open-integration-run.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Block deploy and overlapping goal runs when another run has execution complete
+    but integration pending on the same target_root/route (ADR-027 FM-5).
+  inputs:
+    - runId
+    - target.target_root
+  outcomes:
+    PASS: no conflicting open integration runs
+    FAIL: resume or close conflicting run first
+  check:
+    type: adapter
+    adapter: open-integration-run

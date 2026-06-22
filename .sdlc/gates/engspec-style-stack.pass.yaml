@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: engspec-style-stack.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Engineering spec style stack report exists and all required inventory rows
+    are PASS. Conditional product-shell rows may be SKIP when not applicable.
+  inputs:
+    - outputPath
+    - cognitiveOutput
+  outcomes:
+    PASS: style-stack-report.md present; structured.style_stack_gate is PASS; zero required FAIL rows
+    FAIL: missing report, gate not PASS, or any required core row FAIL
+  check:
+    type: file
+    path: "{outputPath}/style-stack-report.md"
+    mustExist: true

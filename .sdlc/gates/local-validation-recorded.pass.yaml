@@ -1,0 +1,19 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: local-validation-recorded.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Local closure tier recorded after build/typecheck and feature-flow QA evidence.
+    Required for delivery.default_closure local-validated (ADR-028).
+  inputs:
+    - manifest.closure
+    - cognitiveOutput
+    - runId
+  outcomes:
+    PASS: manifest.closure.tier >= local-validated with build_pass
+    FAIL: missing local validation evidence
+  check:
+    type: adapter
+    adapter: local-validation-recorded

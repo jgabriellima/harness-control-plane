@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jambu.ai/schemas/sdlc/lifecycle-slots.schema.json",
+  "title": "SDLC Lifecycle Slot Catalog",
+  "description": "Canonical lifecycle slot IDs for /sdlc:init conversation and package catalog. Not persisted as a separate sdlc.yaml block — init writes serves_slots on each integrations entry.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/slotEntry"
+  },
+  "$defs": {
+    "slotId": {
+      "type": "string",
+      "enum": [
+        "work_items",
+        "source_control",
+        "ci",
+        "qa",
+        "observability",
+        "deploy",
+        "post_deploy",
+        "incident"
+      ]
+    },
+    "providerToken": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "slotEntry": {
+      "type": "object",
+      "required": ["selected", "required"],
+      "additionalProperties": false,
+      "properties": {
+        "selected": {
+          "oneOf": [
+            { "const": "none" },
+            { "$ref": "#/$defs/providerToken" }
+          ]
+        },
+        "required": { "type": "boolean" }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "description": "Reference catalog of supported providers per slot (package templates, not project state)",
+      "additionalProperties": false,
+      "properties": {
+        "work_items": {
+          "type": "array",
+          "items": { "enum": ["plane", "linear", "jira", "github-issues"] }
+        },
+        "source_control": {
+          "type": "array",
+          "items": { "enum": ["github", "gitlab", "bitbucket"] }
+        },
+        "ci": {
+          "type": "array",
+          "items": { "enum": ["github-actions", "gitlab-ci", "circleci"] }
+        },
+        "qa": {
+          "type": "array",
+          "items": { "enum": ["playwright", "cypress", "maestro"] }
+        },
+        "observability": {
+          "type": "array",
+          "items": { "enum": ["posthog", "sentry", "datadog"] }
+        },
+        "deploy": {
+          "type": "array",
+          "items": { "enum": ["vercel", "railway", "fly.io", "aws"] }
+        },
+        "post_deploy": {
+          "type": "array",
+          "items": { "enum": ["vercel", "railway", "fly.io", "browser-user"] }
+        },
+        "incident": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "github-issues-human-hitl",
+              "github-issues-cursor-sdk",
+              "github-issues-claude",
+              "pagerduty-webhook"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "work_items": { "selected": "plane", "required": true },
+      "source_control": { "selected": "github", "required": true },
+      "ci": { "selected": "github-actions", "required": false },
+      "qa": { "selected": "playwright", "required": false },
+      "observability": { "selected": "posthog", "required": false },
+      "deploy": { "selected": "vercel", "required": false },
+      "post_deploy": { "selected": "none", "required": false },
+      "incident": { "selected": "none", "required": false }
+    }
+  ]
+}

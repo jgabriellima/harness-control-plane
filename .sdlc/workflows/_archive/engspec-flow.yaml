@@ -1,0 +1,276 @@
+apiVersion: sdlc.jambu/v1
+kind: Workflow
+
+metadata:
+  id: engspec-flow
+  name: Engineering Spec Flow
+  description: >
+    Self-contained engineering specification pipeline — style stack validation,
+    progressive expansion to review, generation, refinement, research, and
+    full architecture-artistry orchestration. Does not create Plane tickets
+    or worktrees unless intent explicitly requests feature spec handoff.
+  version: "1.0.0"
+  trigger: /sdlc:engspec
+  command: .cursor/commands/sdlc-engspec.md
+
+spec:
+  triggers:
+    - type: command
+      command: /sdlc:engspec
+
+  stateContract: schemas/workflow-state.schema.json
+  cognitiveOutputContract: schemas/cognitive-output.schema.json
+
+  orchestration:
+    context_capsule: .cursor/skills/engspec/SKILL.md
+    composition:
+      index: .sdlc/workflows/README.md
+      orchestrator_playbook: pb.docs.architecture-artistry
+    manifest:
+      storage: .sdlc/workflow-runs/{run_id}/manifest.yaml
+      control_script: .sdlc/bin/sdlc_workflow_run.py
+      active_pointer: .sdlc/workflow-runs/ACTIVE
+      template: .sdlc/templates/engspec-run-manifest.yaml
+    modes:
+      baseline:
+        description: Validate style stack placement — no content mutation
+        stages_skipped: [classify, research, review, generate, refine, visual-enrichment, index-register]
+        default_when: empty intent or validate-only keywords
+      review:
+        description: Gap matrix and reviewer plan without content edits
+        stages_skipped: [research, generate, refine, visual-enrichment]
+      generate:
+        description: Author new engineering artifact from intent
+        stages_skipped: [research, review, refine, visual-enrichment]
+      refine:
+        description: Apply pedagogical profile and edit existing sections
+        stages_skipped: [research, generate, visual-enrichment]
+      research:
+        description: Deep research for spec topic — no content edits
+        stages_skipped: [review, generate, refine, visual-enrichment, index-register]
+      full:
+        description: architecture-artistry orchestration — review, refine, visuals
+        stages_skipped: []
+    playbooks_when:
+      - condition: "manifest.run_mode in ['review', 'refine', 'full']"
+        playbooks:
+          - pb.engineering.pedagogical-profiles
+          - pb.docs.architecture-review
+        inject: node_objective
+      - condition: "manifest.run_mode == 'full'"
+        playbooks:
+          - pb.docs.architecture-artistry
+          - pb.docs.visual-enrichment-gate
+        inject: node_objective
+      - condition: "intent matches product-shell|starlight shell|docs chrome"
+        playbooks:
+          - pb.docs.product-shell-design
+          - pb.docs.product-shell-engineering
+          - pb.docs.product-shell-visual-gate
+          - pb.docs.starlight-shell-engineering
+        inject: style-provision
+    idempotency:
+      resume: /sdlc:engspec --resume {run_id}
+    definition_of_done:
+      - style_stack_validated
+      - delivery_bundle_written
+      - no_unscoped_contamination
+
+  preConditions:
+    - engspec_context_capsule_available
+
+  nodes:
+    - id: style-provision
+      name: Style Stack Provision
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Load engspec context capsule; provision core engineering-spec playbooks
+          via sdlc_playbook.py; record provision manifest path.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: style-validate
+      name: Style Stack Validation
+      dependsOn: [style-provision]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Verify every required playbook, rule, skill reference, and learn artifact
+          in the Style Stack Inventory exists and is registered. Write style-stack-report.md.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/engspec-style-stack.pass
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+    - id: classify
+      name: Intent Classification and Mode Expansion
+      dependsOn: [style-validate]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Parse intent into run_mode baseline|review|generate|refine|research|full.
+          Write mode-decision.md; set manifest run_mode. Baseline completes after delivery.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline]
+
+    - id: research
+      name: Scoped Deep Research
+      dependsOn: [classify]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          F0-pattern research scoped to engineering spec topic. One winning choice
+          per decision. Write research-report.md — no plan language.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, review, generate, refine]
+
+    - id: review
+      name: Architecture Documentation Review
+      dependsOn: [classify]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Execute architecture-review playbook — inventory, arc42 gap matrix,
+          C4 zoom audit, vertical trace audit, reviewer plan on disk before edits.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, generate, research]
+
+    - id: generate
+      name: Engineering Artifact Generation
+      dependsOn: [classify]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/write-docs/SKILL.md
+        objective: >
+          Author-mode generation of spec, ADR, or architecture doc per intent.
+          No meta-contamination. Full vertical trace per output-standards.mdc.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, review, refine, research]
+
+    - id: refine
+      name: Pedagogical Refinement
+      dependsOn: [review]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Apply one pedagogical profile per section; refine content per reviewer plan
+          using write-docs author mode. Reviewer plan MUST exist before edits.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, review, generate, research]
+
+    - id: visual-enrichment
+      name: Visual Enrichment and Validation
+      dependsOn: [refine]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Select visual modality; generate and validate diagrams/assets per
+          visual-enrichment-gate playbook.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, review, generate, refine, research]
+
+    - id: index-register
+      name: INDEX Registration
+      dependsOn: [generate, refine, visual-enrichment]
+      function:
+        invoke:
+          type: command
+          ref: /sdlc:handoff
+        objective: Register new specs, ADRs, and evidence paths in INDEX.md
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/index-registered.pass
+      control:
+        blocking: true
+        skipInModes: [baseline, review, refine, research]
+
+    - id: delivery
+      name: Delivery Bundle
+      dependsOn: [style-validate, classify, research, review, generate, refine, visual-enrichment, index-register]
+      function:
+        invoke:
+          type: skill
+          ref: .cursor/skills/engspec/SKILL.md
+        objective: >
+          Write delivery.md from engspec-delivery template. List artifacts,
+          run_mode, gate outcomes, playbooks provisioned, and Not Included scope.
+        outputSchema: schemas/cognitive-output.schema.json
+      postCondition:
+        target: $node.output
+        checks:
+          - ref: gates/delivery-complete.pass
+          - ref: gates/structured-output.pass
+      control:
+        blocking: true
+
+  successCriteria:
+    - style-validate gate PASS
+    - delivery bundle written
+    - run_mode recorded on manifest
+
+  failureBehavior:
+    - abort on style-stack gate FAIL
+    - do not edit docs before reviewer plan exists in review|refine|full modes
+    - do not create worktree or Plane ticket unless user explicitly requests handoff to /sdlc:spec

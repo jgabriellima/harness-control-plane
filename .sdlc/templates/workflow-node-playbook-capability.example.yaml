@@ -1,0 +1,19 @@
+# Example composite node — playbook capability via skill (ADR-020 Phase 3)
+# Copy into a Workflow spec nodes[] array; validate with sdlc_workflow_validate.py review
+
+- id: domain-procedure
+  name: Domain procedure via playbook-capability
+  dependsOn: [preflight]
+  function:
+    objective: Execute domain playbook inside workflow continuity
+    inputs:
+      playbookRef: pb.example.capability
+    invoke:
+      type: skill
+      ref: .cursor/skills/playbook-capability/SKILL.md
+  postCondition:
+    target: $node.output.structured
+    checks:
+      - type: filesystem
+        path: .sdlc/workflow-runs/{run_id}/cognitive/domain-procedure.json
+        required: [status, summary]

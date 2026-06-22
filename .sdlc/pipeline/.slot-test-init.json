@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "confirmed_at": "2026-06-08T12:00:00Z",
+  "workspace": {
+    "target_root": ".",
+    "profile": "python-library",
+    "mode": "bind"
+  },
+  "delivery": {
+    "default_closure": "local-validated",
+    "surfaces": {
+      "local": true,
+      "preview": false,
+      "staging": false,
+      "production": false
+    }
+  },
+  "slots": {
+    "work_items": "local-work-items",
+    "source_control": "github",
+    "ci": "github-actions",
+    "qa": "pytest-only",
+    "observability": "none",
+    "deploy": "none",
+    "post_deploy": "none",
+    "incident": "none"
+  },
+  "incident": null
+}

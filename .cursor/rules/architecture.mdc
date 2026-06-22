@@ -1,0 +1,51 @@
+---
+description: Architecture rules for @jambu/control-plane (harness-control-plane).
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Harness Control Plane — Architecture Rules
+
+## Project Identity
+
+Domain-neutral harness operating console (ADR-039). Astro SSR API + React islands + optional Tauri desktop. Binds any workspace via `.cursor/runtime-binding.yaml`; does not embed domain harness packs (`.business/`, `.sdlc/` in consumer repos).
+
+## Stack Constraints
+
+- **SSR**: Astro 6 + `@astrojs/node`
+- **UI**: React islands, Tailwind 4
+- **Desktop**: Tauri 2 + Node sidecar (optional)
+- **Binding**: `src/lib/harness-binding.ts` — stamp-only; paths from workspace binding
+- **Language**: TypeScript strict — no `any`
+- **Test**: Playwright E2E + Node unit tests (`test:unit`)
+- **Observability**: Sentry (`@sentry/astro`) when enabled in stack
+
+## Structural Invariants
+
+- Application source: `src/` (pages, components, lib)
+- Desktop shell: `src-tauri/`
+- CLI/embed: `cli/`, `embed/`
+- E2E: `e2e/`
+- SDLC runtime: `.sdlc/`, `.cursor/`
+- Evidence: `.sdlc/evidence/`
+
+## Forbidden Patterns
+
+- Do NOT bundle domain harness workflows in the installer (no `.business/` in release artifact)
+- Do NOT hardcode consumer workspace paths — use `resolveHarnessBinding()` and env vars
+- Do NOT bypass TypeScript strict mode
+- Do NOT commit secrets — use `.env` (gitignored)
+- Do NOT add npm dependencies without updating `package.json` and `.cursor/memories/architecture.md`
+
+## Worktrees
+
+Feature/fix work in `~/workspaces/jambu/worktrees/{ticket_id}-{slug}/` per `.sdlc/sdlc.yaml`.
+
+## Source of Truth
+
+| Source | Path |
+|---|---|
+| Operational DSL | `.sdlc/sdlc.yaml` |
+| Navigation | `.sdlc/INDEX.md` |
+| Architecture memory | `.cursor/memories/architecture.md` |
+| ADRs | `.sdlc/context/decisions/` |

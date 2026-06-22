@@ -1,0 +1,309 @@
+version: '1.0'
+status: operational
+initialized: 2026-06-22
+baseline:
+  sdlc_package_version: null
+  sdlc_baseline_tag: null
+  app_baseline_tag: null
+  last_sdlc_baseline_date: '2026-06-22'
+  sdlc_baseline_changes:
+  - product SDLC bootstrap — harness-control-plane @jambu/control-plane (ADR-039)
+workspace:
+  target_root: .
+  profile: astro
+  worktrees:
+    root: ../worktrees
+    pool: jambu
+    dir_template: '{ticket_id}-{slug}'
+    branch_templates:
+      feat: feat/{ticket_id}-{slug}
+      fix: fix/{ticket_id}-{slug}
+      chore: chore/{ticket_id}-{slug}
+delivery:
+  default_closure: local-validated
+  surfaces:
+    local:
+      enabled: true
+      evidence:
+      - build
+      - test:unit
+      - test:e2e
+    preview:
+      enabled: false
+    staging:
+      enabled: false
+    production:
+      enabled: false
+gates:
+  integration:
+  - integration-report
+  - joint-e2e-pass
+  deploy:
+  - ci-target-aligned
+  - staging-smoke-or-url
+  post-deploy:
+  - evidence-manifest
+  - production-http-200
+  reflect:
+  - reflect-report-pass
+  workspace-rebind:
+  - rebind-report
+  - ci-target-aligned
+project:
+  name: harness-control-plane
+  description: |
+    Domain-neutral harness control plane — Astro SSR API, React islands, optional
+    Tauri desktop shell. Binds consumer workspaces via .cursor/runtime-binding.yaml
+    (ADR-039). Package @jambu/control-plane.
+  stack:
+    framework: astro
+    framework_version: 6.x
+    language: typescript
+    language_mode: strict
+    styling: tailwind
+    testing: playwright
+    observability: sentry
+    deployment: github-actions
+    ci: github-actions
+    desktop: tauri
+    work_items: local-work-items
+    source_control: github
+source_of_truth:
+  work_items: local-work-items
+  documentation: .sdlc/INDEX.md
+  architecture: .cursor/memories/architecture.md
+  operational_state: .cursor/memories/operational-context.md
+  decisions: .sdlc/context/decisions/
+  handoffs: .sdlc/handoffs/LATEST.md
+integrations:
+  local-work-items:
+    config: .sdlc/integrations/local-work-items/local-work-items.yaml
+    status: active
+    serves_slots:
+    - work_items
+  github:
+    config: .sdlc/integrations/github/github.yaml
+    status: active
+    serves_slots:
+    - ci
+    - source_control
+runtime:
+  engine: cursor
+  specialization_layer: .cursor/
+  hooks: .cursor/hooks.json
+  context_injection: sessionStart
+  rules:
+  - .cursor/rules/architecture.mdc
+  - .cursor/rules/output-standards.mdc
+  - .cursor/rules/goal-runner-mandate.mdc
+  commands:
+  - /sdlc:init
+  - /sdlc:discovery
+  - /sdlc:goal
+  - /sdlc:spec
+  - /sdlc:plan
+  - /sdlc:feature
+  - /sdlc:implement
+  - /sdlc:deploy
+  - /sdlc:incident
+  - /sdlc:hydrate
+  - /sdlc:doctor
+  - /sdlc:baseline
+  - /sdlc:reflect
+  - /sdlc:post-deployment
+  - /sdlc:token-health
+  - /sdlc:learn
+  - /sdlc:config
+  - /sdlc:handoff
+  - /sdlc:reset
+  - /run:e2e
+  - /run:browser
+  - /run:cua
+  - /hydrate-context
+  - /handoff
+  agents:
+  - planner
+  - spec-writer
+  - implementer
+  - reviewer
+  - qa
+  - deployer
+  - incident-resolver
+  skills:
+  - handoff
+  - worktree
+  - local-ticket
+  - work-items-ticket
+  - spec-writer
+  - browser-user
+  - canvas
+  - playbook-capability
+  - write-docs
+  - qa-recording
+  mcps:
+  - name: github
+    required: true
+    purpose: Repository operations, PR creation, issue management, worktree operations
+    command: npx @modelcontextprotocol/server-github
+workflows:
+  spec:
+    definition: .sdlc/workflows/spec-flow.yaml
+    trigger: /sdlc:spec
+    agents:
+    - spec-writer
+    outputs:
+    - spec-doc
+    - work-items-ticket
+    - worktree
+  goal:
+    definition: .sdlc/workflows/goal-flow.yaml
+    trigger: /sdlc:goal
+    agents:
+    - planner
+    - implementer
+    - reviewer
+    - qa
+    - deployer
+    outputs:
+    - run-manifest
+    - handoff
+  feature:
+    definition: .sdlc/workflows/feature-flow.yaml
+    trigger: /sdlc:implement
+    agents:
+    - planner
+    - implementer
+    - reviewer
+    - qa
+    outputs:
+    - pr
+    - evidence
+    - handoff
+  deployment:
+    definition: .sdlc/workflows/deployment-flow.yaml
+    trigger: /sdlc:deploy
+    agents:
+    - deployer
+    outputs:
+    - release
+    - handoff
+  e2e:
+    definition: .sdlc/workflows/e2e-flow.yaml
+    trigger: /run:e2e
+    agents:
+    - qa
+    outputs:
+    - evidence
+  incident:
+    definition: .sdlc/workflows/incident-flow.yaml
+    trigger: /sdlc:incident
+    agents:
+    - incident-resolver
+    outputs:
+    - fix-pr
+    - incident-record
+    - handoff
+  bootstrap:
+    definition: .sdlc/workflows/bootstrap-flow.yaml
+    trigger: /sdlc:init
+    agents:
+    - planner
+    - implementer
+    outputs:
+    - initialized-project
+handoff:
+  storage: .sdlc/handoffs/
+  latest_symlink: .sdlc/handoffs/LATEST.md
+constraints:
+  worktrees_mandatory: true
+  no_direct_commits_to_main: true
+  handoff_required_on_completion: true
+  index_must_be_updated: true
+workspace_bindings:
+  rebind:
+    architecture_memory_patterns:
+    - (Target root:\s*`)[^`]+(`)
+    - (target_root:\s*`)[^`]+(`)
+    memory_patches:
+    - source_of_truth_ref: source_of_truth.architecture
+  cognitive_state:
+    paths:
+    - .sdlc/sdlc.yaml
+    - .sdlc/INDEX.md
+  protocol:
+    deploy_stage:
+      target_files:
+      - package.json
+deliverables:
+  root: output/
+  latest_pointer: output/LATEST
+  by_ticket_index: output/by-ticket/
+  evidence_staging: .sdlc/evidence/
+  publish:
+    on_workflow_complete: true
+    on_qa_complete: true
+    copy_evidence: true
+    symlink_latest: true
+qa:
+  evidence_path_template: .sdlc/evidence/{ticket}/
+  evidence_upload_to_plane: false
+  evidence_upload_to_work_items: true
+  evidence_publish_to_deliverables: true
+  evidence_post_comment: false
+  evidence_commit_to_git: false
+  evidence_manifest_in_comment: false
+  upload_types:
+    screenshots: image/png
+    videos: video/webm
+    logs: text/plain
+  upload_size_limit_mb: 5
+  worktree_gate: true
+context_budget:
+  always_injected_warn_tokens: 12000
+  hydration_eager_warn_tokens: 8000
+  memory_archive_dir: .cursor/memories/archive
+  index_archive_dir: .sdlc/archive/index
+  index_section_limits:
+    ACTIVE_WORK: 6
+    SPECS: 15
+    HANDOFFS: 5
+  terminal_statuses:
+  - complete
+  - done
+  - merged
+  - discontinued
+  - superseded
+  - closed
+manifest_tickets:
+  statuses:
+  - pending
+  - in_progress
+  - ready_for_review
+  - done
+  - blocked
+  gate_for_review:
+  - done
+  - ready_for_review
+  boolean_fields:
+  - subagent_dispatched
+  - feature_flow_complete
+  - work_items_evidence_uploaded
+  - work_items_state_synced
+  legacy_boolean_aliases:
+    work_items_evidence_uploaded: plane_evidence_uploaded
+    work_items_state_synced: plane_state_synced
+autonomous_maintenance:
+  dependency_updates:
+    enabled: true
+    plane_ticket_on_update: false
+    auto_merge_patch: false
+  flaky_tests:
+    enabled: false
+    plane_ticket_on_detection: false
+  stale_code_detection:
+    enabled: true
+    plane_ticket_on_detection: false
+  telemetry_driven_refactoring:
+    enabled: true
+    source: sentry
+    plane_ticket_on_trigger: false

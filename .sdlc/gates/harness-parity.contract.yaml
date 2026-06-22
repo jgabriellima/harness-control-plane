@@ -1,0 +1,28 @@
+apiVersion: sdlc.jambu/v1
+kind: HarnessParityContract
+metadata:
+  id: harness-parity
+  version: "1.0.0"
+spec:
+  description: >
+    Cross-language harness invariants. When both Python manifest tooling and TypeScript
+    harness readers exist, they must agree on filesystem edge cases (ADR-027 FM-7).
+  invariants:
+    - id: skip-active-pointer-in-run-listing
+      description: Run directory listings must skip ACTIVE pointer file, not treat it as a run dir
+      python:
+        glob: ".business/bin/**/*manifest*.py"
+        required_patterns:
+          - 'entry.name == "ACTIVE"'
+          - is_dir
+      typescript:
+        glob: "src/lib/harness-reader.ts"
+        required_patterns:
+          - ACTIVE
+          - 'name === "ACTIVE"'
+    - id: skip-active-pointer-workflow-manifest
+      description: SDLC workflow manifest list_runs skips ACTIVE pointer
+      python:
+        glob: ".sdlc/bin/sdlc_workflow_manifest.py"
+        required_patterns:
+          - 'entry.name == "ACTIVE"'

@@ -1,0 +1,18 @@
+apiVersion: sdlc.jambu/v1
+kind: Gate
+metadata:
+  id: reference-ui-ready.pass
+  version: "1.0.0"
+spec:
+  description: >
+    Reference UI bound to on-disk PNGs (>1KB) or signed reference-waiver ADR.
+    Blocks text-only discovery (ADR-027).
+  inputs:
+    - runId
+    - outputDir
+  outcomes:
+    PASS: reference-screenshots contain valid PNG or waiver ADR registered
+    FAIL: no PNGs and no waiver — capture via browser or emit waiver ADR
+  check:
+    type: adapter
+    adapter: reference-ui-ready
