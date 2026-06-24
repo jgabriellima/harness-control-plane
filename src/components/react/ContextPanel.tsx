@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GripVertical, MoreVertical } from 'lucide-react';
 
 import type {
@@ -13,6 +13,7 @@ import {
 import { subscribeRuntimeHubStream } from '../../lib/sse-client';
 import { panelLayoutStore, usePanelLayout } from '../../lib/panel-layout-store';
 import type { WidgetId, WidgetManifestEntry } from '../../lib/ui-panel-manifest';
+import IntegrationConnectButton from './IntegrationConnectButton';
 
 interface WidgetConfig {
   id: WidgetId;
@@ -134,7 +135,13 @@ function WidgetItemRow({ item }: { item: ContextWidgetItem }) {
   );
 }
 
-function HealthWidgetBody({ health }: { health: ContextHealthSnapshot }) {
+function HealthWidgetBody({
+  health,
+  onRefresh,
+}: {
+  health: ContextHealthSnapshot;
+  onRefresh?: () => void;
+}) {
   if (health.totalSlots === 0 && !health.overall) {
     return (
       <div className="flex flex-col items-center px-4 py-6 text-center">
@@ -156,15 +163,24 @@ function HealthWidgetBody({ health }: { health: ContextHealthSnapshot }) {
       </div>
       <ul className="space-y-2">
         {health.slots.slice(0, 4).map((slot) => (
-          <li key={slot.slotId} className="flex items-center justify-between text-xs">
+          <li key={slot.slotId} className="flex items-center justify-between gap-2 text-xs">
             <span className="truncate text-gray-600">{slot.provider}</span>
-            <span
-              className={`rounded px-1.5 py-0.5 font-medium ${
-                slot.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-              }`}
-            >
-              {slot.ready ? 'ready' : slot.status}
-            </span>
+            {slot.connectAvailable ? (
+              <IntegrationConnectButton
+                slotId={slot.slotId}
+                label="Connect"
+                compact
+                onConnected={onRefresh}
+              />
+            ) : (
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 font-medium ${
+                  slot.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                }`}
+              >
+                {slot.ready ? 'ready' : slot.status}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -182,6 +198,7 @@ function ContextWidget({
   onDragStart,
   onDragOver,
   onDrop,
+  onHealthRefresh,
 }: {
   widget: WidgetConfig;
   entry: WidgetManifestEntry;
@@ -192,6 +209,7 @@ function ContextWidget({
   onDragStart: () => void;
   onDragOver: (event: React.DragEvent) => void;
   onDrop: () => void;
+  onHealthRefresh?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -278,7 +296,7 @@ function ContextWidget({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isHealth && health ? (
-          <HealthWidgetBody health={health} />
+          <HealthWidgetBody health={health} onRefresh={onHealthRefresh} />
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center px-4 py-6 text-center">
             <WidgetIcon icon={widget.icon} />
@@ -326,6 +344,23 @@ export default function ContextPanel() {
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<WidgetId | null>(null);
   const [localWidgets, setLocalWidgets] = useState<WidgetManifestEntry[]>([]);
+
+  const refreshWidgets = useCallback(async (): Promise<void> => {
+    try {
+      const response = await fetch('/api/context/widgets');
+      const payload = (await response.json()) as ContextWidgetsSnapshot & { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to load context widgets');
+      }
+
+      writeContextWidgetsCache(payload);
+      setSnapshot(payload);
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load widgets';
+      setError(message);
+    }
+  }, []);
 
   useEffect(() => {
     void panelLayoutStore.loadManifest().catch(() => undefined);
@@ -512,6 +547,9 @@ export default function ContextPanel() {
                 reorderWidgets(draggingId, entry.id);
               }
               setDraggingId(null);
+            }}
+            onHealthRefresh={() => {
+              void refreshWidgets();
             }}
           />
         );

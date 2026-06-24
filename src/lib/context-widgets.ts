@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/astro';
 
+import { composioConnectAvailable } from './composio-auth-config';
 import { formatStatusLabel } from './execution-events';
 import { listExecutions, loadReadinessSnapshot } from './harness-reader';
 import type { ExecutionStatus, ReadinessSlot } from './harness-types';
@@ -13,11 +14,15 @@ export interface ContextWidgetItem {
   timestamp: string | null;
 }
 
+export interface ContextHealthSlot extends ReadinessSlot {
+  connectAvailable: boolean;
+}
+
 export interface ContextHealthSnapshot {
   overall: string | null;
   readySlots: number;
   totalSlots: number;
-  slots: ReadinessSlot[];
+  slots: ContextHealthSlot[];
 }
 
 export interface ContextWidgetsSnapshot {
@@ -85,6 +90,10 @@ export async function collectContextWidgets(): Promise<ContextWidgetsSnapshot> {
 
     const slots = readiness?.slots ?? [];
     const readySlots = slots.filter((slot) => slot.ready).length;
+    const healthSlots: ContextHealthSlot[] = slots.map((slot) => ({
+      ...slot,
+      connectAvailable: !slot.ready && composioConnectAvailable(slot.slotId),
+    }));
 
     return {
       attention,
@@ -94,7 +103,7 @@ export async function collectContextWidgets(): Promise<ContextWidgetsSnapshot> {
         overall: readiness?.overall ?? null,
         readySlots,
         totalSlots: slots.length,
-        slots,
+        slots: healthSlots,
       },
       generatedAt: new Date().toISOString(),
     };

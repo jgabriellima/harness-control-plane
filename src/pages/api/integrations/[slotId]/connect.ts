@@ -1,11 +1,20 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../lib/api-json';
+import { composioAuthConfigId, composioConnectAvailable } from '../../../../lib/composio-auth-config';
 
-function composioAuthConfigId(slotId: string): string | undefined {
-  const normalized = slotId.replace(/\./g, '_').replace(/-/g, '_').toUpperCase();
-  return process.env[`COMPOSIO_AUTH_CONFIG_${normalized}`]?.trim();
-}
+export const GET: APIRoute = async ({ params }) => {
+  const slotId = params.slotId?.trim();
+  if (!slotId) {
+    return jsonError('slotId is required', 400);
+  }
+
+  return jsonOk({
+    slot_id: slotId,
+    connect_available: composioConnectAvailable(slotId),
+    auth_config_configured: Boolean(composioAuthConfigId(slotId)),
+  });
+};
 
 export const POST: APIRoute = async ({ params, url }) => {
   const slotId = params.slotId?.trim();

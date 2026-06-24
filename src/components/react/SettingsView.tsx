@@ -34,15 +34,23 @@ function FieldRow({ label, value }: { label: string; value: string | null }) {
 
 function IntegrationCredentials({ slotId, provider }: { slotId: string; provider: string }) {
   const [credentials, setCredentials] = useState<CredentialPresence[]>([]);
+  const [connectAvailable, setConnectAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/integrations/${encodeURIComponent(slotId)}/credentials`);
-      const payload = (await response.json()) as CredentialPresence[];
-      if (response.ok) {
-        setCredentials(payload);
+      const [credentialsResponse, connectResponse] = await Promise.all([
+        fetch(`/api/integrations/${encodeURIComponent(slotId)}/credentials`),
+        fetch(`/api/integrations/${encodeURIComponent(slotId)}/connect`),
+      ]);
+      const credentialsPayload = (await credentialsResponse.json()) as CredentialPresence[];
+      const connectPayload = (await connectResponse.json()) as { connect_available?: boolean };
+      if (credentialsResponse.ok) {
+        setCredentials(credentialsPayload);
+      }
+      if (connectResponse.ok) {
+        setConnectAvailable(Boolean(connectPayload.connect_available));
       }
     } finally {
       setLoading(false);
@@ -76,22 +84,24 @@ function IntegrationCredentials({ slotId, provider }: { slotId: string; provider
 
   return (
     <div data-testid={`integration-credentials-${slotId}`}>
-      {provider.toLowerCase().includes('composio') ? (
-        <IntegrationConnectButton slotId={slotId} />
+      {connectAvailable ? <IntegrationConnectButton slotId={slotId} onConnected={reload} /> : null}
+      {!connectAvailable ? (
+        <p className="mb-3 text-xs text-gray-500">
+          Values are stored in the OS keychain (service: ai.jambu.business-runtime). Never written to the repo.
+        </p>
       ) : null}
-      <p className="mb-3 text-xs text-gray-500">
-        Values are stored in the OS keychain (service: ai.jambu.business-runtime). Never written to the repo.
-      </p>
-      {credentials.map((credential) => (
-        <SecretInput
-          key={credential.env_var}
-          envVar={credential.env_var}
-          label={credential.description || credential.env_var}
-          present={credential.present}
-          required={credential.required}
-          onSave={(value) => saveCredential(credential.env_var, value)}
-        />
-      ))}
+      {!connectAvailable
+        ? credentials.map((credential) => (
+            <SecretInput
+              key={credential.env_var}
+              envVar={credential.env_var}
+              label={credential.description || credential.env_var}
+              present={credential.present}
+              required={credential.required}
+              onSave={(value) => saveCredential(credential.env_var, value)}
+            />
+          ))
+        : null}
       <p className="mt-2 text-xs text-gray-400">{provider}</p>
     </div>
   );
