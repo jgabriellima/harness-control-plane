@@ -9,6 +9,7 @@ import { resolveHarnessBinding } from './harness-binding';
 import { resolveAppRoot } from './app-root';
 
 export type BrowserSessionStatus = 'starting' | 'ready' | 'closed' | 'error';
+export type BrowserControlMode = 'user' | 'agent';
 
 export interface RuntimeBrowserSession {
   sessionId: string;
@@ -19,6 +20,7 @@ export interface RuntimeBrowserSession {
   updatedAt: string;
   cdpEndpoint: string;
   renderMode: 'screencast';
+  controlMode: BrowserControlMode;
   error: string | null;
 }
 
@@ -92,6 +94,7 @@ async function persistCdpManifest(session: RuntimeBrowserSession): Promise<void>
       conversationId: session.conversationId,
       cdpEndpoint: session.cdpEndpoint,
       url: session.url,
+      controlMode: session.controlMode,
     },
     mcpHint: {
       server: 'user-playwright',
@@ -188,6 +191,7 @@ export async function createBrowserSession(input: {
     updatedAt: now,
     cdpEndpoint,
     renderMode: 'screencast',
+    controlMode: 'agent',
     error: null,
   };
 
@@ -294,6 +298,25 @@ export function subscribeBrowserScreencast(
   };
 }
 
+export function getBrowserControlMode(sessionId: string): BrowserControlMode | null {
+  const handle = sessions.get(sessionId);
+  return handle?.record.controlMode ?? null;
+}
+
+export async function setBrowserControlMode(
+  sessionId: string,
+  mode: BrowserControlMode,
+): Promise<RuntimeBrowserSession> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+  handle.record.controlMode = mode;
+  handle.record.updatedAt = new Date().toISOString();
+  await persistCdpManifest(handle.record);
+  return handle.record;
+}
+
 export async function performBrowserClick(
   sessionId: string,
   x: number,
@@ -302,6 +325,9 @@ export async function performBrowserClick(
   const handle = sessions.get(sessionId);
   if (!handle) {
     throw new Error(`Browser session ${sessionId} not found`);
+  }
+  if (handle.record.controlMode !== 'user') {
+    throw new Error('Browser control is with the agent — switch to User control to click');
   }
   await handle.page.mouse.click(x, y);
   handle.record.updatedAt = new Date().toISOString();

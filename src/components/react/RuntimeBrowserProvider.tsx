@@ -9,12 +9,15 @@ import {
   emptyBrowserSelection,
   extractBrowserNavigateUrl,
   isBrowserToolName,
+  type BrowserControlMode,
   type RuntimeBrowserSelection,
 } from '@/lib/runtime-browser-types';
 
 interface RuntimeBrowserContextValue {
   openBrowser: (url: string, conversationId?: string | null) => Promise<void>;
   closeBrowser: () => Promise<void>;
+  navigateBrowser: (url: string) => Promise<void>;
+  setControlMode: (mode: BrowserControlMode) => Promise<void>;
   selection: RuntimeBrowserSelection | null;
 }
 
@@ -29,6 +32,44 @@ function normalizeBrowserUrl(raw: string): string {
     return trimmed;
   }
   return `https://${trimmed}`;
+}
+
+interface SessionPayload {
+  sessionId: string;
+  url: string;
+  renderMode?: 'screencast' | 'iframe';
+  controlMode?: BrowserControlMode;
+}
+
+function selectionFromSession(
+  session: SessionPayload,
+  fallbackUrl: string,
+): RuntimeBrowserSelection {
+  return {
+    url: session.url ?? fallbackUrl,
+    sessionId: session.sessionId,
+    loading: false,
+    error: null,
+    renderMode: session.renderMode ?? 'screencast',
+    streamUrl: `/api/runtime/browser/stream?session_id=${encodeURIComponent(session.sessionId)}`,
+    controlMode: session.controlMode ?? 'agent',
+  };
+}
+
+async function postBrowserAction(
+  sessionId: string,
+  body: Record<string, unknown>,
+): Promise<{ session?: SessionPayload; error?: string }> {
+  const response = await fetch('/api/runtime/browser/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, ...body }),
+  });
+  const payload = (await response.json()) as { session?: SessionPayload; error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? 'Browser action failed');
+  }
+  return payload;
 }
 
 export function RuntimeBrowserProvider({ children }: { children: React.ReactNode }) {
@@ -59,11 +100,7 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
         });
 
         const payload = (await response.json()) as {
-          session?: {
-            sessionId: string;
-            url: string;
-            renderMode?: 'screencast' | 'iframe';
-          };
+          session?: SessionPayload;
           error?: string;
         };
 
@@ -75,19 +112,12 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
             error: payload.error ?? 'Failed to open browser session',
             renderMode: 'screencast',
             streamUrl: null,
+            controlMode: 'agent',
           });
           return;
         }
 
-        const sessionId = payload.session.sessionId;
-        setSelection({
-          url: payload.session.url ?? normalized,
-          sessionId,
-          loading: false,
-          error: null,
-          renderMode: payload.session.renderMode ?? 'screencast',
-          streamUrl: `/api/runtime/browser/stream?session_id=${encodeURIComponent(sessionId)}`,
-        });
+        setSelection(selectionFromSession(payload.session, normalized));
       } catch (openError) {
         const message = openError instanceof Error ? openError.message : 'Failed to open browser';
         setSelection({
@@ -97,11 +127,47 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
           error: message,
           renderMode: 'screencast',
           streamUrl: null,
+          controlMode: 'agent',
         });
       }
     },
     [foregroundConversationId],
   );
+
+  const navigateBrowser = useCallback(async (url: string): Promise<void> => {
+    const sessionId = selectionRef.current?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    const normalized = normalizeBrowserUrl(url);
+    const payload = await postBrowserAction(sessionId, { action: 'navigate', url: normalized });
+    if (payload.session) {
+      setSelection(selectionFromSession(payload.session, normalized));
+    }
+  }, []);
+
+  const setControlMode = useCallback(async (mode: BrowserControlMode): Promise<void> => {
+    const sessionId = selectionRef.current?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    const payload = await postBrowserAction(sessionId, {
+      action: 'set_control_mode',
+      control_mode: mode,
+    });
+    if (payload.session) {
+      setSelection((current) =>
+        current
+          ? {
+              ...current,
+              controlMode: payload.session?.controlMode ?? mode,
+            }
+          : current,
+      );
+    }
+  }, []);
 
   const closeBrowser = useCallback(async (): Promise<void> => {
     const sessionId = selectionRef.current?.sessionId;
@@ -181,9 +247,11 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
     () => ({
       openBrowser,
       closeBrowser,
+      navigateBrowser,
+      setControlMode,
       selection,
     }),
-    [closeBrowser, openBrowser, selection],
+    [closeBrowser, navigateBrowser, openBrowser, selection, setControlMode],
   );
 
   return <RuntimeBrowserContext.Provider value={value}>{children}</RuntimeBrowserContext.Provider>;
@@ -202,13 +270,13 @@ interface RuntimeBrowserSplitShellProps {
 }
 
 export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellProps) {
-  const { selection, closeBrowser } = useRuntimeBrowser();
+  const { selection, closeBrowser, navigateBrowser, setControlMode } = useRuntimeBrowser();
   const browserPanelOpen = selection !== null;
 
   return (
     <div
       className={`grid h-full min-h-0 overflow-hidden ${
-        browserPanelOpen ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : 'grid-cols-1'
+        browserPanelOpen ? 'grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]' : 'grid-cols-1'
       }`}
       data-testid="runtime-browser-shell"
     >
@@ -219,6 +287,8 @@ export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellP
           onClose={() => {
             void closeBrowser();
           }}
+          onNavigate={navigateBrowser}
+          onControlModeChange={setControlMode}
         />
       ) : null}
     </div>

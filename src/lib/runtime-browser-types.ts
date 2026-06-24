@@ -1,5 +1,7 @@
 export type BrowserRenderMode = 'screencast' | 'iframe';
 
+export type BrowserControlMode = 'user' | 'agent';
+
 export interface RuntimeBrowserSelection {
   url: string;
   sessionId: string | null;
@@ -7,6 +9,7 @@ export interface RuntimeBrowserSelection {
   error: string | null;
   renderMode: BrowserRenderMode;
   streamUrl: string | null;
+  controlMode: BrowserControlMode;
 }
 
 export function emptyBrowserSelection(url: string): RuntimeBrowserSelection {
@@ -17,6 +20,7 @@ export function emptyBrowserSelection(url: string): RuntimeBrowserSelection {
     error: null,
     renderMode: 'screencast',
     streamUrl: null,
+    controlMode: 'agent',
   };
 }
 

@@ -71,6 +71,18 @@ test.describe('Runtime browser panel', () => {
     const panel = page.getByTestId('runtime-browser-panel');
     await expect(panel).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId('runtime-browser-url')).toContainText('example.com');
+    await expect(page.getByTestId('runtime-browser-address-bar')).toBeVisible();
+    await expect(page.getByTestId('runtime-browser-control-toggle')).toBeVisible();
+    await expect(page.getByTestId('runtime-browser-viewport')).toHaveAttribute(
+      'data-control-mode',
+      'agent',
+    );
+
+    await page.getByTestId('runtime-browser-control-user').click();
+    await expect(page.getByTestId('runtime-browser-viewport')).toHaveAttribute(
+      'data-control-mode',
+      'user',
+    );
 
     await page.getByTestId('runtime-browser-close').click();
     await expect(panel).toHaveCount(0);
