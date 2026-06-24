@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { createConversationState } from '@/lib/runtime-hub-store';
 import type { ChatMessage, ConversationRuntimeState } from '@/lib/runtime-hub-types';
+import { DRAFT_CONVERSATION_ID } from '@/lib/draft-conversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 
 export interface UseRuntimeConversationResult {
@@ -17,24 +18,23 @@ export interface UseRuntimeConversationResult {
 
 export function useRuntimeConversation(conversationId: string | null): UseRuntimeConversationResult {
   const hub = useRuntimeHub();
-  const storageKey = conversationId ?? 'ephemeral-new-chat';
+  const hydrateConversationRef = useRef(hub.hydrateConversation);
+  hydrateConversationRef.current = hub.hydrateConversation;
+
+  const storageKey = conversationId ?? DRAFT_CONVERSATION_ID;
 
   useEffect(() => {
     if (conversationId) {
-      void hub.hydrateConversation(conversationId);
+      void hydrateConversationRef.current(conversationId);
     }
-  }, [conversationId, hub]);
+  }, [conversationId]);
 
   const state = hub.getConversationState(storageKey) ?? createConversationState(storageKey);
 
-  const visibleMessages = useMemo(
-    () => state.messages.filter((message) => message.role !== 'tool'),
-    [state.messages],
-  );
+  const visibleMessages = state.messages;
 
-  const hasConversationContent = useMemo(
-    () => visibleMessages.some((message) => message.role === 'user' || message.role === 'assistant'),
-    [visibleMessages],
+  const hasConversationContent = visibleMessages.some(
+    (message) => message.role === 'user' || message.role === 'assistant',
   );
 
   const dispatchMessage = async (

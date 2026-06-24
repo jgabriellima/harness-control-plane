@@ -3,9 +3,11 @@ import { getCursorLocalAdapter } from './runtime-adapters/cursor-local';
 import type { NormalizedMessage, SessionRefs } from './runtime-adapters/types';
 import { deriveAndUpdateSessionTitle } from './conversation-store';
 import { dispatchChatToRuntime, RuntimeGatewayError } from './runtime-gateway';
+import { startRunHubFanout } from './runtime-hub-stream';
+import { appendRunStarted } from './runtime-run-registry';
 import { bindSession, readLatestBindings } from './runtime-session-registry';
 import { resolveHarnessRoot } from './app-root';
-import { workspaceCwd } from './runtime-sessions';
+import { runWithWorkspaceCwdAsync, workspaceCwd } from './runtime-sessions';
 
 export { RuntimeGatewayError };
 
@@ -14,8 +16,23 @@ export async function orchestrateChatDispatch(
   workspaceRoot: string,
 ): Promise<ChatDispatchResponse> {
   const cwd = resolveHarnessRoot(workspaceRoot);
+  const conversationKey = request.conversation_id?.trim() || 'ephemeral-new-chat';
 
-  const result = await dispatchChatToRuntime(request, cwd);
+  const result = await runWithWorkspaceCwdAsync(cwd, async () =>
+    dispatchChatToRuntime(request, cwd),
+  );
+
+  startRunHubFanout(result.run_id, result.agent_id, conversationKey);
+
+  try {
+    await appendRunStarted({
+      runId: result.run_id,
+      conversationId: conversationKey,
+      agentId: result.agent_id,
+    });
+  } catch {
+    // Registry append is best-effort; in-memory fanout still streams to connected clients.
+  }
 
   if (request.conversation_id) {
     await bindSession({

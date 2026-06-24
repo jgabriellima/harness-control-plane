@@ -17,6 +17,19 @@ import {
   createConversationState,
   countStreamingConversations,
 } from '@/lib/runtime-hub-store';
+import {
+  applyActiveRunToConversationState,
+  attachActiveRunStream,
+  fetchActiveRunsIndex,
+  findActiveRunForConversation,
+  purgeStaleActiveRun,
+  resolveTurnTrackingForActiveRun,
+} from '@/lib/active-run-sync';
+import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
+import {
+  extractBrowserNavigateUrl,
+  isBrowserToolName,
+} from '@/lib/runtime-browser-types';
 import type {
   ConversationRuntimeState,
   DispatchMessagePayload,
@@ -25,6 +38,7 @@ import type {
   RuntimeHubWireEvent,
   WorkspaceLayoutMode,
 } from '@/lib/runtime-hub-types';
+import { conversationIdFromPath, navigateShell, useShellPathname } from '@/lib/shell-navigation';
 import { WELCOME_MESSAGE } from '@/lib/runtime-hub-types';
 
 const RuntimeHubContext = createContext<RuntimeHubContextValue | null>(null);
@@ -34,9 +48,73 @@ interface TurnTracking {
   thinkingMessageId: string;
 }
 
-function conversationIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/conversation\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+function dispatchBrowserToolSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'tool_call') {
+    return;
+  }
+
+  const tool = typeof event.payload.tool === 'string' ? event.payload.tool : '';
+  if (!isBrowserToolName(tool)) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:browser-tool', {
+      detail: {
+        tool,
+        args: event.payload.args,
+        conversationId: event.conversation_id,
+      },
+    }),
+  );
+
+  const navigateUrl = extractBrowserNavigateUrl(event.payload.args);
+  if (navigateUrl) {
+    window.dispatchEvent(
+      new CustomEvent('runtime:open-browser', {
+        detail: {
+          url: navigateUrl,
+          conversationId: event.conversation_id,
+        },
+      }),
+    );
+  }
+}
+
+function resolveTurnTracking(
+  conversationId: string,
+  state: ConversationRuntimeState,
+  trackingMap: Map<string, TurnTracking>,
+): TurnTracking | null {
+  const existing = trackingMap.get(conversationId);
+  if (existing) {
+    return existing;
+  }
+
+  if (state.activeRunId) {
+    const tracking = resolveTurnTrackingForActiveRun(state, state.activeRunId);
+    trackingMap.set(conversationId, tracking);
+    return tracking;
+  }
+
+  const assistantMessage = [...state.messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.streaming);
+
+  if (!assistantMessage) {
+    return null;
+  }
+
+  const thinkingMessage = [...state.messages]
+    .reverse()
+    .find((message) => message.role === 'thinking' && message.streaming);
+
+  const tracking: TurnTracking = {
+    assistantMessageId: assistantMessage.id,
+    thinkingMessageId: thinkingMessage?.id ?? `thinking-recovered-${assistantMessage.id}`,
+  };
+  trackingMap.set(conversationId, tracking);
+  return tracking;
 }
 
 function parseLayoutMode(value: string | null): WorkspaceLayoutMode {
@@ -61,12 +139,10 @@ function readLayoutFromUrl(): { mode: WorkspaceLayoutMode; panes: string[] } {
   const params = new URLSearchParams(window.location.search);
   const mode = parseLayoutMode(params.get('layout'));
   const panesRaw = params.get('panes');
-  const panes = panesRaw
-    ? panesRaw
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-    : [];
+  const panes =
+    panesRaw != null && panesRaw.length > 0
+      ? panesRaw.split(',').map((entry) => entry.trim())
+      : [];
 
   if (panes.length === 0) {
     const storedPanes = localStorage.getItem('runtime-hub-pane-ids');
@@ -104,8 +180,9 @@ function syncUrlLayout(mode: WorkspaceLayoutMode, panes: string[]): void {
     url.searchParams.delete('panes');
   } else {
     url.searchParams.set('layout', mode);
-    if (panes.length > 0) {
-      url.searchParams.set('panes', panes.join(','));
+    const serialized = normalizePaneIds(panes, mode).join(',');
+    if (serialized.replace(/,/g, '').length > 0) {
+      url.searchParams.set('panes', serialized);
     } else {
       url.searchParams.delete('panes');
     }
@@ -113,14 +190,31 @@ function syncUrlLayout(mode: WorkspaceLayoutMode, panes: string[]): void {
   window.history.replaceState({}, '', url.toString());
 }
 
+function normalizePaneIds(panes: string[], mode: WorkspaceLayoutMode): string[] {
+  const count = paneCountForMode(mode);
+  const next = panes.slice(0, count);
+  while (next.length < count) {
+    next.push('');
+  }
+  return next;
+}
+
 export function RuntimeHubProvider({ children }: { children: React.ReactNode }) {
+  const pathname = useShellPathname();
   const [conversations, setConversations] = useState<Map<string, ConversationRuntimeState>>(
     () => new Map(),
   );
-  const [foregroundConversationId, setForegroundConversationId] = useState<string | null>(null);
+  const [foregroundConversationId, setForegroundConversationId] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? conversationIdFromPath(window.location.pathname) : null,
+  );
   const [layoutMode, setLayoutModeState] = useState<WorkspaceLayoutMode>('single');
   const [paneConversationIds, setPaneConversationIdsState] = useState<string[]>([]);
   const turnTrackingRef = useRef<Map<string, TurnTracking>>(new Map());
+  const hydratedIdsRef = useRef<Set<string>>(new Set());
+  const syncCooldownRef = useRef<Map<string, number>>(new Map());
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  const SYNC_COOLDOWN_MS = 10_000;
 
   const updateConversation = useCallback(
     (conversationId: string, updater: (state: ConversationRuntimeState) => ConversationRuntimeState) => {
@@ -134,28 +228,38 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [],
   );
 
-  const handleHubEvent = useCallback(
+  const applyWireEvent = useCallback(
     (event: RuntimeHubWireEvent) => {
       const conversationId = event.conversation_id;
       if (!conversationId) {
         return;
       }
 
-      const tracking = turnTrackingRef.current.get(conversationId);
-      if (!tracking) {
-        return;
-      }
+      dispatchBrowserToolSideEffect(event);
 
-      updateConversation(conversationId, (state) =>
-        applyHubEvent(
+      let terminalEvent = false;
+
+      updateConversation(conversationId, (state) => {
+        const tracking = resolveTurnTracking(conversationId, state, turnTrackingRef.current);
+        if (!tracking) {
+          return state;
+        }
+
+        const nextState = applyHubEvent(
           state,
           event,
           tracking.assistantMessageId,
           tracking.thinkingMessageId,
-        ),
-      );
+        );
 
-      if (event.type === 'run_complete' || event.type === 'error') {
+        if (event.type === 'run_complete' || event.type === 'error' || event.type === 'run.aborted') {
+          terminalEvent = true;
+        }
+
+        return nextState;
+      });
+
+      if (terminalEvent) {
         turnTrackingRef.current.delete(conversationId);
         setTimeout(() => {
           updateConversation(conversationId, (state) => ({
@@ -168,6 +272,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [updateConversation],
   );
 
+  const handleHubEvent = useCallback(
+    (event: RuntimeHubWireEvent) => {
+      applyWireEvent(event);
+    },
+    [applyWireEvent],
+  );
+
   useEffect(() => {
     const unsubscribe = subscribeRuntimeHubStream({
       onEvent: handleHubEvent,
@@ -176,104 +287,231 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
   }, [handleHubEvent]);
 
   useEffect(() => {
-    const syncFromLocation = (): void => {
-      setForegroundConversationId(conversationIdFromPath(window.location.pathname));
-      const { mode, panes } = readLayoutFromUrl();
-      setLayoutModeState(mode);
-      const foreground = conversationIdFromPath(window.location.pathname);
-      const normalizedPanes =
-        panes.length > 0
-          ? panes
-          : foreground
-            ? [foreground]
-            : [];
-      setPaneConversationIdsState(normalizedPanes.slice(0, paneCountForMode(mode)));
-    };
+    const foreground = conversationIdFromPath(pathname);
+    setForegroundConversationId(foreground);
 
-    syncFromLocation();
-    window.addEventListener('popstate', syncFromLocation);
-    return () => window.removeEventListener('popstate', syncFromLocation);
-  }, []);
+    const { mode, panes } = readLayoutFromUrl();
+    setLayoutModeState(mode);
+
+    const normalizedPanes =
+      panes.length > 0
+        ? panes
+        : foreground
+          ? [foreground]
+          : [];
+    setPaneConversationIdsState(normalizedPanes.slice(0, paneCountForMode(mode)));
+  }, [pathname]);
+
+  const syncActiveRunForConversation = useCallback(
+    async (conversationId: string): Promise<boolean> => {
+      if (isDraftConversationId(conversationId)) {
+        return false;
+      }
+
+      const lastAttempt = syncCooldownRef.current.get(conversationId) ?? 0;
+      if (Date.now() - lastAttempt < SYNC_COOLDOWN_MS) {
+        return false;
+      }
+      syncCooldownRef.current.set(conversationId, Date.now());
+
+      const activeRuns = await fetchActiveRunsIndex();
+      const entry = findActiveRunForConversation(activeRuns, conversationId);
+      if (!entry) {
+        return false;
+      }
+
+      const existingState = conversationsRef.current.get(conversationId);
+      if (existingState?.runPhase === 'streaming' && existingState.activeRunId === entry.runId) {
+        return true;
+      }
+
+      const attached = await attachActiveRunStream(entry.runId);
+      if (!attached) {
+        await purgeStaleActiveRun(entry.runId);
+        return false;
+      }
+
+      updateConversation(conversationId, (state) => {
+        const tracking = resolveTurnTrackingForActiveRun(state, entry.runId);
+        turnTrackingRef.current.set(conversationId, tracking);
+        return applyActiveRunToConversationState(state, entry);
+      });
+
+      return true;
+    },
+    [updateConversation],
+  );
 
   useEffect(() => {
-    void fetch('/api/runtime/active-runs')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as {
-          active?: Array<{ runId: string; conversationId: string; agentId: string }>;
-        };
-        const active = payload.active ?? [];
-        for (const entry of active) {
-          updateConversation(entry.conversationId, (state) => ({
-            ...state,
-            agentId: entry.agentId,
-            activeRunId: entry.runId,
-            runPhase: 'streaming',
-          }));
-        }
-      })
-      .catch(() => undefined);
-  }, [updateConversation]);
+    const foreground = conversationIdFromPath(pathname);
+    if (!foreground || isDraftConversationId(foreground)) {
+      return;
+    }
+
+    void syncActiveRunForConversation(foreground);
+  }, [pathname, syncActiveRunForConversation]);
 
   const hydrateConversation = useCallback(
     async (conversationId: string): Promise<void> => {
-      const existing = conversations.get(conversationId);
-      if (existing?.hydrated) {
+      if (isDraftConversationId(conversationId)) {
+        updateConversation(conversationId, (state) => ({
+          ...state,
+          title: 'New chat',
+          hydrated: true,
+        }));
         return;
       }
 
-      try {
-        const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
-        if (!response.ok) {
-          throw new Error('Failed to load conversation session');
-        }
+      const alreadyHydrated = hydratedIdsRef.current.has(conversationId);
 
-        const payload = (await response.json()) as {
-          id: string;
-          title: string;
-          projectId: string;
-          agentId: string | null;
-          messages: ConversationRuntimeState['messages'];
-        };
+      if (!alreadyHydrated) {
+        try {
+          const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
+          if (!response.ok) {
+            throw new Error('Failed to load conversation session');
+          }
 
-        updateConversation(conversationId, (state) => {
-          const restored =
-            payload.messages.length > 0
-              ? payload.messages.filter((message) => message.role !== 'tool')
-              : [];
-          return {
-            ...state,
-            title: payload.title,
-            projectId: payload.projectId,
-            agentId: payload.agentId,
-            messages: restored.length > 0 ? [WELCOME_MESSAGE, ...restored] : [WELCOME_MESSAGE],
-            hydrated: true,
+          const payload = (await response.json()) as {
+            id: string;
+            title: string;
+            projectId: string;
+            agentId: string | null;
+            updatedAt: string;
+            messages: ConversationRuntimeState['messages'];
           };
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to load conversation';
-        updateConversation(conversationId, (state) => ({
-          ...state,
-          error: message,
-          hydrated: true,
-        }));
+
+          hydratedIdsRef.current.add(conversationId);
+
+          updateConversation(conversationId, (state) => {
+            const restored =
+              payload.messages.length > 0
+                ? payload.messages.filter((message) => message.role !== 'tool')
+                : [];
+            return {
+              ...state,
+              title: payload.title,
+              projectId: payload.projectId,
+              agentId: payload.agentId,
+              updatedAt: payload.updatedAt,
+              messages: restored.length > 0 ? [WELCOME_MESSAGE, ...restored] : [WELCOME_MESSAGE],
+              hydrated: true,
+            };
+          });
+        } catch (error) {
+          hydratedIdsRef.current.add(conversationId);
+          const message = error instanceof Error ? error.message : 'Failed to load conversation';
+          updateConversation(conversationId, (state) => ({
+            ...state,
+            error: message,
+            hydrated: true,
+          }));
+        }
       }
+
+      await syncActiveRunForConversation(conversationId);
     },
-    [conversations, updateConversation],
+    [syncActiveRunForConversation, updateConversation],
+  );
+
+  const ensurePersistedConversation = useCallback(
+    async (
+      conversationId: string | null,
+      projectId: string,
+    ): Promise<{ conversationId: string; migratedFrom: string | null }> => {
+      if (!isDraftConversationId(conversationId)) {
+        return { conversationId: conversationId as string, migratedFrom: null };
+      }
+
+      const draftKey = conversationId ?? DRAFT_CONVERSATION_ID;
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'New chat',
+          project_id: projectId,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        conversation?: { id: string };
+        error?: string;
+      };
+
+      if (!response.ok || !payload.conversation?.id) {
+        throw new Error(payload.error ?? 'Failed to create conversation');
+      }
+
+      const persistedId = payload.conversation.id;
+
+      setConversations((current) => {
+        const next = new Map(current);
+        const draftState = next.get(draftKey) ?? createConversationState(persistedId);
+        next.delete(draftKey);
+        next.delete(DRAFT_CONVERSATION_ID);
+        next.delete('ephemeral-new-chat');
+        next.set(persistedId, {
+          ...draftState,
+          conversationId: persistedId,
+          projectId,
+          title: draftState.title ?? 'New chat',
+          updatedAt: new Date().toISOString(),
+          hydrated: true,
+        });
+        return next;
+      });
+
+      if (layoutMode === 'single') {
+        setForegroundConversationId(persistedId);
+        navigateShell(`/conversation/${encodeURIComponent(persistedId)}`);
+      } else {
+        setPaneConversationIdsState((current) => {
+          const normalized = normalizePaneIds(current, layoutMode);
+          const draftIndex = normalized.findIndex((entry) => isDraftConversationId(entry));
+          if (draftIndex >= 0) {
+            normalized[draftIndex] = persistedId;
+          }
+          persistLayout(layoutMode, normalized);
+          syncUrlLayout(layoutMode, normalized);
+          return normalized;
+        });
+        setForegroundConversationId(persistedId);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('runtime:conversations-changed'));
+      }
+
+      return { conversationId: persistedId, migratedFrom: draftKey };
+    },
+    [layoutMode],
   );
 
   const dispatchMessage = useCallback(
     async (conversationId: string | null, payload: DispatchMessagePayload): Promise<void> => {
-      const targetId = conversationId ?? 'ephemeral-new-chat';
+      let targetId = conversationId ?? DRAFT_CONVERSATION_ID;
+      let persistedConversationId = conversationId;
+
+      try {
+        const ensured = await ensurePersistedConversation(conversationId, payload.projectId);
+        targetId = ensured.conversationId;
+        persistedConversationId = ensured.conversationId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create conversation';
+        updateConversation(targetId, (current) => ({
+          ...current,
+          error: message,
+        }));
+        return;
+      }
+
       const state = conversations.get(targetId) ?? createConversationState(targetId);
 
       if (state.runPhase === 'streaming') {
-        updateConversation(targetId, (current) => ({
-          ...current,
-          error: 'A run is already in progress for this conversation.',
-        }));
+        return;
+      }
+
+      const resumedActiveRun = await syncActiveRunForConversation(targetId);
+      if (resumedActiveRun) {
         return;
       }
 
@@ -308,12 +546,24 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         ...current,
         error: null,
         runPhase: 'streaming',
+        runActivity: 'dispatching',
         toolActivity: [],
         activeRunId: null,
         messages: [
           ...current.messages,
-          { id: userMessageId, role: 'user', content: payload.message },
-          { id: assistantMessageId, role: 'assistant', content: '', streaming: true },
+          {
+            id: userMessageId,
+            role: 'user',
+            content: payload.message,
+            recordedAt: new Date().toISOString(),
+          },
+          {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: '',
+            streaming: true,
+            recordedAt: new Date().toISOString(),
+          },
         ],
       }));
 
@@ -323,7 +573,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             project_id: payload.projectId,
-            conversation_id: conversationId,
+            conversation_id: persistedConversationId,
             message: payload.message,
             mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
             integration_slots: payload.integrationSlots ?? [],
@@ -355,6 +605,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           ...current,
           activeRunId: null,
           runPhase: 'failed',
+          runActivity: 'idle',
           error: message,
           messages: current.messages.map((entry) =>
             entry.id === assistantMessageId
@@ -364,28 +615,91 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         }));
       }
     },
+    [conversations, ensurePersistedConversation, syncActiveRunForConversation, updateConversation],
+  );
+
+  const cancelActiveRun = useCallback(
+    async (conversationId: string): Promise<void> => {
+      const state = conversations.get(conversationId);
+      const runId = state?.activeRunId;
+      if (!runId) {
+        return;
+      }
+
+      const response = await fetch(`/api/runtime/runs/${encodeURIComponent(runId)}/cancel`, {
+        method: 'POST',
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        updateConversation(conversationId, (current) => ({
+          ...current,
+          error: body.error ?? 'Failed to cancel run',
+        }));
+      }
+    },
     [conversations, updateConversation],
   );
 
   const setLayoutMode = useCallback((mode: WorkspaceLayoutMode) => {
     setLayoutModeState(mode);
     setPaneConversationIdsState((current) => {
-      const count = paneCountForMode(mode);
-      const next = current.slice(0, count);
-      while (next.length < count) {
-        next.push('');
-      }
-      persistLayout(mode, next.filter((entry) => entry.length > 0));
-      syncUrlLayout(mode, next.filter((entry) => entry.length > 0));
+      const next = normalizePaneIds(current, mode);
+      persistLayout(mode, next);
+      syncUrlLayout(mode, next);
       return next;
     });
   }, []);
 
   const setPaneConversationIds = useCallback((ids: string[]) => {
-    setPaneConversationIdsState(ids);
-    persistLayout(layoutMode, ids.filter((entry) => entry.length > 0));
-    syncUrlLayout(layoutMode, ids.filter((entry) => entry.length > 0));
+    const normalized = normalizePaneIds(ids, layoutMode);
+    setPaneConversationIdsState(normalized);
+    persistLayout(layoutMode, normalized);
+    syncUrlLayout(layoutMode, normalized);
   }, [layoutMode]);
+
+  const assignConversationToPane = useCallback(
+    (paneIndex: number, conversationId: string) => {
+      setPaneConversationIdsState((current) => {
+        const normalized = normalizePaneIds(current, layoutMode);
+        normalized[paneIndex] = conversationId;
+        persistLayout(layoutMode, normalized);
+        syncUrlLayout(layoutMode, normalized);
+        return normalized;
+      });
+
+      if (paneIndex === 0) {
+        setForegroundConversationId(conversationId);
+        navigateShell(`/conversation/${encodeURIComponent(conversationId)}`);
+      }
+
+      void hydrateConversation(conversationId);
+    },
+    [hydrateConversation, layoutMode],
+  );
+
+  const navigateToConversation = useCallback(
+    (conversationId: string, options?: { paneIndex?: number }) => {
+      const paneIndex = options?.paneIndex ?? 0;
+
+      if (layoutMode === 'single') {
+        navigateShell(`/conversation/${encodeURIComponent(conversationId)}`);
+        setForegroundConversationId(conversationId);
+        void hydrateConversation(conversationId);
+        return;
+      }
+
+      assignConversationToPane(paneIndex, conversationId);
+    },
+    [assignConversationToPane, hydrateConversation, layoutMode],
+  );
+
+  const startSessionInPane = useCallback(
+    async (paneIndex: number, _projectId?: string): Promise<string | null> => {
+      assignConversationToPane(paneIndex, DRAFT_CONVERSATION_ID);
+      return DRAFT_CONVERSATION_ID;
+    },
+    [assignConversationToPane],
+  );
 
   const activeRunCount = useMemo(() => countStreamingConversations(conversations), [conversations]);
 
@@ -403,19 +717,41 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [conversations],
   );
 
-  const contextValue: RuntimeHubContextValue = {
-    foregroundConversationId,
-    layoutMode,
-    paneConversationIds,
-    activeRunCount,
-    setForegroundConversation: setForegroundConversationId,
-    setLayoutMode,
-    setPaneConversationIds,
-    getConversationPhase,
-    getConversationState,
-    dispatchMessage,
-    hydrateConversation,
-  };
+  const contextValue = useMemo<RuntimeHubContextValue>(
+    () => ({
+      foregroundConversationId,
+      layoutMode,
+      paneConversationIds,
+      activeRunCount,
+      setForegroundConversation: setForegroundConversationId,
+      setLayoutMode,
+      setPaneConversationIds,
+      assignConversationToPane,
+      navigateToConversation,
+      startSessionInPane,
+      getConversationPhase,
+      getConversationState,
+      dispatchMessage,
+      cancelActiveRun,
+      hydrateConversation,
+    }),
+    [
+      foregroundConversationId,
+      layoutMode,
+      paneConversationIds,
+      activeRunCount,
+      setLayoutMode,
+      setPaneConversationIds,
+      assignConversationToPane,
+      navigateToConversation,
+      startSessionInPane,
+      getConversationPhase,
+      getConversationState,
+      dispatchMessage,
+      cancelActiveRun,
+      hydrateConversation,
+    ],
+  );
 
   return (
     <RuntimeHubContext.Provider value={contextValue}>{children}</RuntimeHubContext.Provider>

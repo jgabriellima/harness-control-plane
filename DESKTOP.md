@@ -7,17 +7,40 @@ Native desktop shell for the Astro SSR control plane. Production builds embed a 
 - Rust stable (`rustup`)
 - Linux: `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `build-essential`
 - Node.js >= 22.12
+- Python 3 + Pillow (only to regenerate icons: `npm run desktop:icons`)
 
 ## Development
 
 ```bash
-cd app
-npm install
-cp .env.example .env   # local only — edit with your keys; .env is gitignored
-npm run tauri:dev
+cd harness-control-plane   # or from app/: npm run desktop:prepare
+npm run desktop:prepare    # free stale dev listeners, pick CONTROL_PLANE_PORT
+npm run tauri:dev          # sidecar stub + Tauri (includes port prep)
 ```
 
-Dev mode uses `beforeDevCommand` (`npm run dev`) and loads `http://localhost:4321`.
+From `business-workflow/app`:
+
+```bash
+npm run dev:desktop
+```
+
+`scripts/dev-port.mjs` frees prior **node/astro/tauri** listeners on the target port (never kills Cursor). If `:4321` is busy, the next free port is chosen and injected into Astro (`server.port` + `--port`) and Tauri (`devUrl`).
+
+Manual preflight:
+
+```bash
+node scripts/prepare-desktop-dev.mjs
+# CONTROL_PLANE_PORT=4322
+# devUrl=http://localhost:4322/
+```
+
+`npm run tauri:dev` runs `desktop:sidecar` first to create the platform `externalBin` stub required by the Tauri build (sidecar is production-only; dev uses Astro directly).
+
+If the app panics with `invalid icon` on launch, regenerate icons and rebuild Rust:
+
+```bash
+npm run desktop:icons
+cd src-tauri && cargo clean && cargo build
+```
 Project workspaces are created under `{repo-root}/workspaces/` (gitignored). Each workspace receives `.cursor/` and `.business/` baseline packs on creation via `POST /api/projects`.
 
 Production (Tauri sidecar) uses `~/business/workspaces/` unless `BUSINESS_WORKSPACES_ROOT` is set in `config.env`.

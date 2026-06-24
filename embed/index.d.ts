@@ -25,6 +25,7 @@ export interface UIConfig {
     };
   };
   integrator?: {
+    project_root?: string;
     hooks_module?: string;
     policy_profile?: string;
   };
@@ -75,6 +76,7 @@ export interface StartHarnessUIOptions {
 
 export interface CreateHarnessUIOptions {
   projectRoot?: string;
+  uiConfigPath?: string | URL;
   hooks?: IntegratorHooks;
 }
 

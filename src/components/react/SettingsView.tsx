@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import type { SettingsSnapshot } from '../../lib/settings-snapshot';
 import SecretInput from './SecretInput';
+import IntegrationConnectButton from './IntegrationConnectButton';
 
 interface CredentialPresence {
   env_var: string;
@@ -75,6 +76,9 @@ function IntegrationCredentials({ slotId, provider }: { slotId: string; provider
 
   return (
     <div data-testid={`integration-credentials-${slotId}`}>
+      {provider.toLowerCase().includes('composio') ? (
+        <IntegrationConnectButton slotId={slotId} />
+      ) : null}
       <p className="mb-3 text-xs text-gray-500">
         Values are stored in the OS keychain (service: ai.jambu.business-runtime). Never written to the repo.
       </p>

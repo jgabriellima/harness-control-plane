@@ -6,7 +6,10 @@ import {
   readStaleSidebarCache,
   writeSidebarCache,
 } from '../../lib/sidebar-cache';
+import { DRAFT_CONVERSATION_ID } from '@/lib/draft-conversation';
+import { navigateShell, useShellPathname } from '@/lib/shell-navigation';
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
+import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 
 interface ProjectItem {
   id: string;
@@ -83,11 +86,34 @@ function ConversationSidebarLink({
   conversation: ConversationItem;
   isActive: boolean;
 }) {
+  const hub = useRuntimeHub();
   const isStreaming = useConversationStreamingPhase(conversation.id);
+
+  function handleClick(event: React.MouseEvent<HTMLAnchorElement>): void {
+    event.preventDefault();
+
+    if (hub.layoutMode !== 'single') {
+      const count = hub.layoutMode === 'grid-4' ? 4 : 2;
+      const panes = hub.paneConversationIds;
+      let emptyIndex: number | null = null;
+      for (let index = 0; index < count; index += 1) {
+        if (!panes[index]) {
+          emptyIndex = index;
+          break;
+        }
+      }
+
+      hub.navigateToConversation(conversation.id, { paneIndex: emptyIndex ?? 0 });
+      return;
+    }
+
+    hub.navigateToConversation(conversation.id);
+  }
 
   return (
     <a
       href={conversationHref(conversation.id)}
+      onClick={handleClick}
       className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
         isActive
           ? 'bg-violet-50 font-medium text-violet-700'
@@ -111,19 +137,21 @@ function ConversationSidebarLink({
 }
 
 export default function SidebarPanel() {
+  const pathname = useShellPathname();
+  const hub = useRuntimeHub();
+  const [harnessSpec, setHarnessSpec] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectItem[]>(() => readStaleSidebarCache<ProjectItem[]>('projects') ?? []);
   const [conversations, setConversations] = useState<ConversationItem[]>(
     () => readStaleSidebarCache<ConversationItem[]>('conversations') ?? [],
   );
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [activeExecutionId, setActiveExecutionId] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? activeExecutionFromPath(window.location.pathname) : null,
-  );
-  const [runsSectionActive, setRunsSectionActive] = useState(() =>
-    typeof window !== 'undefined' ? isRunsSectionActive(window.location.pathname) : false,
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(() =>
+    activeConversationFromPath(pathname),
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const activeExecutionId = activeExecutionFromPath(pathname);
+  const runsSectionActive = isRunsSectionActive(pathname);
 
   async function loadSidebarData(projectId?: string, options?: { background?: boolean }): Promise<void> {
     const background = options?.background ?? false;
@@ -153,7 +181,7 @@ export default function SidebarPanel() {
       writeSidebarCache('projects', projectsPayload.projects);
       writeSidebarCache('conversations', conversationsPayload.conversations);
 
-      const pathConversationId = activeConversationFromPath(window.location.pathname);
+      const pathConversationId = activeConversationFromPath(pathname);
       if (pathConversationId) {
         setActiveConversationId(pathConversationId);
       } else {
@@ -168,6 +196,17 @@ export default function SidebarPanel() {
   }
 
   const activeProject = projects.find((project) => project.active) ?? projects[0];
+
+  useEffect(() => {
+    void fetch('/api/runtime/harness-spec')
+      .then(async (response) => {
+        const payload = (await response.json()) as { operatorNote?: string; indexExcerpt?: string };
+        if (response.ok) {
+          setHarnessSpec(payload.operatorNote ?? payload.indexExcerpt ?? null);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,7 +264,7 @@ export default function SidebarPanel() {
         setConversations(conversationsPayload.conversations);
         writeSidebarCache('conversations', conversationsPayload.conversations);
 
-        const pathConversationId = activeConversationFromPath(window.location.pathname);
+        const pathConversationId = activeConversationFromPath(pathname);
         setActiveConversationId(
           pathConversationId ?? conversationsPayload.conversations[0]?.id ?? null,
         );
@@ -248,19 +287,8 @@ export default function SidebarPanel() {
   }, []);
 
   useEffect(() => {
-    function syncNavigationState(): void {
-      setActiveConversationId(activeConversationFromPath(window.location.pathname));
-      setActiveExecutionId(activeExecutionFromPath(window.location.pathname));
-      setRunsSectionActive(isRunsSectionActive(window.location.pathname));
-    }
-
-    syncNavigationState();
-    window.addEventListener('popstate', syncNavigationState);
-
-    return () => {
-      window.removeEventListener('popstate', syncNavigationState);
-    };
-  }, []);
+    setActiveConversationId(activeConversationFromPath(pathname));
+  }, [pathname]);
 
   useEffect(() => {
     function refreshConversationsInBackground(): void {
@@ -268,51 +296,26 @@ export default function SidebarPanel() {
         return;
       }
 
-      const cached = readSidebarCache<ConversationItem[]>('conversations');
-      if (cached) {
-        return;
-      }
-
+      invalidateSidebarCache('conversations');
       void loadSidebarData(activeProject.id, { background: true }).catch(() => undefined);
     }
 
     window.addEventListener('focus', refreshConversationsInBackground);
+    window.addEventListener('runtime:conversations-changed', refreshConversationsInBackground);
 
     return () => {
       window.removeEventListener('focus', refreshConversationsInBackground);
+      window.removeEventListener('runtime:conversations-changed', refreshConversationsInBackground);
     };
   }, [activeProject?.id]);
 
   async function handleNewChat(): Promise<void> {
-    try {
-      const response = await fetch('/api/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'New chat',
-          project_id: activeProject?.id ?? 'business-workflows',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create conversation');
-      }
-
-      const payload = (await response.json()) as {
-        conversation: { id: string };
-      };
-
-      invalidateSidebarCache('conversations');
-      window.location.assign(conversationHref(payload.conversation.id));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to start new chat';
-      setLoadError(message);
-    }
+    hub.navigateToConversation(DRAFT_CONVERSATION_ID);
   }
 
   return (
     <aside
-      className="flex w-[280px] shrink-0 flex-col border-r border-gray-200 bg-white"
+      className="flex h-full min-h-0 flex-col border-r border-gray-200 bg-white"
       data-testid="sidebar-panel"
     >
       <div className="flex h-9 items-center gap-2 border-b border-gray-200 px-4">
@@ -345,7 +348,22 @@ export default function SidebarPanel() {
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
                 onClick={() => {
-                  void loadSidebarData(project.id).catch(() => undefined);
+                  void (async () => {
+                    try {
+                      const response = await fetch(
+                        `/api/projects/${encodeURIComponent(project.id)}`,
+                        { method: 'POST' },
+                      );
+                      if (!response.ok) {
+                        throw new Error('Failed to activate project');
+                      }
+                      invalidateSidebarCache('projects');
+                      invalidateSidebarCache('conversations');
+                      await loadSidebarData(project.id);
+                    } catch {
+                      setLoadError('Failed to activate project');
+                    }
+                  })();
                 }}
               >
                 <span className="truncate">{project.name}</span>
@@ -406,6 +424,10 @@ export default function SidebarPanel() {
             <li>
               <a
                 href={runsHref()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigateShell('/executions');
+                }}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                   runsSectionActive
                     ? 'bg-violet-50 font-medium text-violet-700'
@@ -434,6 +456,11 @@ export default function SidebarPanel() {
           </div>
           <div className="min-w-0 flex-1 text-left">
             <p className="truncate text-xs font-medium text-gray-900">Operator</p>
+            {harnessSpec ? (
+              <p className="mt-0.5 line-clamp-2 text-[10px] text-gray-500" data-testid="sidebar-harness-spec">
+                {harnessSpec}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

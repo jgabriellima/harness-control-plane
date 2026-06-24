@@ -166,6 +166,56 @@ async function completeRunFanout(
   fanoutStarted.delete(runId);
 }
 
+export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; message?: string }> {
+  const entry = getRuntimeRunEntry(runId);
+  if (!entry) {
+    return { ok: false, message: `Run ${runId} not found` };
+  }
+
+  const { run, conversationId, agentId } = entry;
+  if (!run.supports('cancel')) {
+    return { ok: false, message: run.unsupportedReason('cancel') ?? 'Cancel not supported' };
+  }
+
+  try {
+    await run.cancel();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Cancel failed';
+    return { ok: false, message };
+  }
+
+  if (conversationId && agentId) {
+    broadcastEvent({
+      type: 'run.aborted',
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      timestamp: new Date().toISOString(),
+      payload: { status: 'cancelled' },
+    });
+  }
+
+  try {
+    await appendRunTerminal({
+      runId,
+      event: 'run.aborted',
+      status: 'cancelled',
+    });
+  } catch {
+    // Registry append is best-effort.
+  }
+
+  if (conversationId && agentId) {
+    await completeRunFanout(runId, agentId, conversationId, 'cancelled');
+  } else {
+    releaseRuntimeRun(runId);
+    releaseAgentSlot();
+    fanoutStarted.delete(runId);
+  }
+
+  return { ok: true };
+}
+
 async function streamRunToHub(
   runId: string,
   agentId: string,

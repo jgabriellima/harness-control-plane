@@ -1,4 +1,6 @@
 import type { ChatDispatchResponse, ChatRequest } from './harness-types';
+import { readRunsIndex } from './runtime-run-registry';
+import { startRunHubFanout } from './runtime-hub-stream';
 import { registerRuntimeRun, registerRuntimeSession } from './runtime-sessions';
 
 export class RuntimeGatewayError extends Error {
@@ -68,6 +70,24 @@ export async function dispatchChatToRuntime(
     throw new RuntimeGatewayError('message is required', 400);
   }
 
+  const conversationKey = request.conversation_id?.trim() || 'ephemeral-new-chat';
+  const runsIndex = await readRunsIndex(cwd);
+  const activeRun = runsIndex.active.find(
+    (entry) =>
+      entry.conversationId === conversationKey &&
+      (!request.agent_id || entry.agentId === request.agent_id),
+  );
+
+  if (activeRun) {
+    startRunHubFanout(activeRun.runId, activeRun.agentId, activeRun.conversationId);
+    return {
+      run_id: activeRun.runId,
+      agent_id: activeRun.agentId,
+      conversation_id: conversationKey,
+      stream_url: `/api/runtime/stream?run_id=${encodeURIComponent(activeRun.runId)}&agent_id=${encodeURIComponent(activeRun.agentId)}`,
+    };
+  }
+
   const { Agent } = await import('@cursor/sdk');
 
   const agentOptions = buildLocalAgentOptions(cwd);
@@ -84,11 +104,12 @@ export async function dispatchChatToRuntime(
   const runId = run.id;
   const agentId = agent.agentId;
 
-  registerRuntimeRun(runId, run);
+  registerRuntimeRun(runId, run, conversationKey, agentId);
 
   return {
     run_id: runId,
     agent_id: agentId,
+    conversation_id: conversationKey,
     stream_url: `/api/runtime/stream?run_id=${encodeURIComponent(runId)}&agent_id=${encodeURIComponent(agentId)}`,
   };
 }

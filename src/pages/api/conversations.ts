@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 
 import { createConversation, listProfileConversations } from '../../lib/conversation-store';
 import { jsonError, jsonOk } from '../../lib/api-json';
+import { activeProjectCookieHeader } from '../../lib/workspace-manager';
 import { resolveRequestWorkspace } from '../../lib/workspace-request';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,11 +40,18 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     const { workspaceRoot, activeProjectId } = await resolveRequestWorkspace(request, projectId);
+    const resolvedProjectId = projectId ?? activeProjectId;
     const conversation = await createConversation(workspaceRoot, {
       title,
-      projectId: projectId ?? activeProjectId,
+      projectId: resolvedProjectId,
     });
-    return jsonOk({ conversation });
+    return new Response(JSON.stringify({ conversation }), {
+      status: 201,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': activeProjectCookieHeader(resolvedProjectId),
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create conversation';
     return jsonError(message, 500);

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { resolveProjectRoot } from './project-root.ts';
 
@@ -22,6 +23,21 @@ export function resolveHostRepoRoot(): string {
     process.env.CONTROL_PLANE_HOST_REPO?.trim() ?? process.env.BUSINESS_REPO_ROOT?.trim();
   if (override) {
     return resolve(override);
+  }
+
+  const projectRoot = process.env.CONTROL_PLANE_PROJECT_ROOT?.trim();
+  if (projectRoot) {
+    let dir = resolve(projectRoot);
+    for (;;) {
+      if (existsSync(join(dir, '.sdlc', 'sdlc.yaml'))) {
+        return dir;
+      }
+      const parent = resolve(dir, '..');
+      if (parent === dir) {
+        break;
+      }
+      dir = parent;
+    }
   }
 
   for (const candidate of walkCandidates()) {
@@ -68,4 +84,29 @@ export function resolvePlatformAppRoot(projectRoot?: string): string {
 /** @deprecated Use resolveHostRepoRoot — kept for transitional imports */
 export function resolveRepoRoot(): string {
   return resolveHostRepoRoot();
+}
+
+/**
+ * `@jambu/control-plane` package root (Astro SSR shell sources).
+ * Used to resolve control-plane `src/**` paths cited in chat artifacts.
+ */
+export function resolveControlPlaneInstallRoot(): string {
+  const override = process.env.CONTROL_PLANE_INSTALL_ROOT?.trim();
+  if (override) {
+    return resolve(override);
+  }
+
+  const fromModule = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  if (existsSync(join(fromModule, 'package.json')) && existsSync(join(fromModule, 'src', 'lib'))) {
+    return fromModule;
+  }
+
+  for (const candidate of walkCandidates()) {
+    const resolved = resolve(candidate);
+    if (existsSync(join(resolved, 'astro.config.mjs')) && existsSync(join(resolved, 'src', 'lib'))) {
+      return resolved;
+    }
+  }
+
+  return fromModule;
 }

@@ -25,9 +25,11 @@
     "test:e2e": "playwright test",
     "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts",
     "desktop:sidecar": "node desktop-sidecar/build.mjs",
+    "desktop:prepare": "node scripts/prepare-desktop-dev.mjs",
+    "desktop:icons": "python3 scripts/generate-icons.py && tauri icon src-tauri/icons/icon.png -o src-tauri/icons",
     "desktop:sync-version": "node scripts/sync-desktop-version.mjs",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "node scripts/tauri-dev.mjs",
     "tauri:build": "npm run build && node desktop-sidecar/build.mjs && tauri build"
   },
   "dependencies": {
@@ -48,11 +50,13 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^4.11.2",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "use-stick-to-bottom": "^1.1.6",
+    "playwright": "^1.60.0",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
@@ -63,7 +67,8 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite-plugin-top-level-await": "^1.6.0"
   },
   "overrides": {
     "vite": "^7.3.5"

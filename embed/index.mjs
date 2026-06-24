@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve, isAbsolute } from 'node:path';
+import { dirname, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const UI_CONFIG_FILENAME = 'ui.config.yaml';
 
 function ensureObject(value, path) {
   if (value === undefined || value === null) {
@@ -22,6 +23,49 @@ function ensureHook(name, value) {
   }
 }
 
+function resolveUiConfigPathHint(hint) {
+  if (!hint) {
+    return null;
+  }
+  if (hint instanceof URL) {
+    return fileURLToPath(hint);
+  }
+  return resolve(hint);
+}
+
+function discoverUIConfigPath(options = {}) {
+  const hintPath = resolveUiConfigPathHint(options.uiConfigPath);
+  if (hintPath && existsSync(hintPath)) {
+    return resolve(hintPath);
+  }
+
+  const explicitRoot = options.projectRoot?.trim() || process.env.CONTROL_PLANE_PROJECT_ROOT?.trim();
+  if (explicitRoot) {
+    const candidate = resolve(explicitRoot, UI_CONFIG_FILENAME);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const candidates = [];
+  const cwd = process.cwd();
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    candidates.push(resolve(dir, UI_CONFIG_FILENAME));
+    candidates.push(resolve(dir, 'app', UI_CONFIG_FILENAME));
+    if (dir === dirname(dir)) {
+      break;
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function resolveProjectRoot(options = {}) {
   const explicitRoot = options.projectRoot?.trim();
   if (explicitRoot) {
@@ -34,6 +78,25 @@ function resolveProjectRoot(options = {}) {
   }
 
   return resolve(process.cwd());
+}
+
+function resolveProjectRootFromIntegration(options, uiConfig, configDir) {
+  const explicitRoot = options.projectRoot?.trim();
+  if (explicitRoot) {
+    return resolve(explicitRoot);
+  }
+
+  const envRoot = process.env.CONTROL_PLANE_PROJECT_ROOT?.trim();
+  if (envRoot) {
+    return resolve(envRoot);
+  }
+
+  const dslRoot = uiConfig.integrator?.project_root?.trim();
+  if (dslRoot) {
+    return isAbsolute(dslRoot) ? resolve(dslRoot) : resolve(configDir, dslRoot);
+  }
+
+  return resolve(configDir);
 }
 
 function assertRuntimeBinding(projectRoot) {
@@ -63,8 +126,7 @@ function assertRuntimeBinding(projectRoot) {
   };
 }
 
-function loadUIConfig(projectRoot) {
-  const configPath = resolve(projectRoot, 'ui.config.yaml');
+function loadUIConfigFromPath(configPath) {
   if (!existsSync(configPath)) {
     throw new Error(`Missing ${configPath}`);
   }
@@ -75,6 +137,10 @@ function loadUIConfig(projectRoot) {
   }
 
   return doc;
+}
+
+function loadUIConfig(projectRoot) {
+  return loadUIConfigFromPath(resolve(projectRoot, UI_CONFIG_FILENAME));
 }
 
 function normalizeHooks(rawHooks) {
@@ -138,8 +204,19 @@ async function runCommand(command, args, options = {}) {
 }
 
 export async function createHarnessUI(options = {}) {
-  const projectRoot = resolveProjectRoot({ projectRoot: options.projectRoot });
-  const uiConfig = loadUIConfig(projectRoot);
+  const discoveredConfigPath = discoverUIConfigPath(options);
+  let projectRoot;
+  let uiConfig;
+
+  if (discoveredConfigPath) {
+    const configDir = dirname(discoveredConfigPath);
+    uiConfig = loadUIConfigFromPath(discoveredConfigPath);
+    projectRoot = resolveProjectRootFromIntegration(options, uiConfig, configDir);
+  } else {
+    projectRoot = resolveProjectRoot(options);
+    uiConfig = loadUIConfig(projectRoot);
+  }
+
   assertRuntimeBinding(projectRoot);
 
   const explicitHooks = normalizeHooks(options.hooks);

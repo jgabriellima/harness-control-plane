@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+RESOURCE_ROOT="$(cd "$HERE/../../.." && pwd)"
+export TAURI_RESOURCE_DIR="${TAURI_RESOURCE_DIR:-$RESOURCE_ROOT}"
+export HOST="${HOST:-127.0.0.1}"
+export PORT="${TAURI_APP_PORT:-${PORT:-4321}}"
+exec node "$HERE/../../../desktop-sidecar/index.cjs"

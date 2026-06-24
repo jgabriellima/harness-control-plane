@@ -6,6 +6,11 @@ import type {
   ContextWidgetItem,
   ContextWidgetsSnapshot,
 } from '../../lib/context-widgets';
+import {
+  readContextWidgetsCache,
+  writeContextWidgetsCache,
+} from '../../lib/context-widgets-cache';
+import { subscribeRuntimeHubStream } from '../../lib/sse-client';
 import { panelLayoutStore, usePanelLayout } from '../../lib/panel-layout-store';
 import type { WidgetId, WidgetManifestEntry } from '../../lib/ui-panel-manifest';
 
@@ -282,6 +287,11 @@ function ContextWidget({
               <button
                 type="button"
                 className="mt-3 text-sm font-medium text-violet-600 hover:text-violet-700"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('runtime:schedule-compose', { detail: { prefix: '/schedule ' } }),
+                  );
+                }}
               >
                 {widget.actionLabel}
               </button>
@@ -311,8 +321,8 @@ function ContextWidget({
 
 export default function ContextPanel() {
   const { manifest } = usePanelLayout();
-  const [snapshot, setSnapshot] = useState<ContextWidgetsSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<ContextWidgetsSnapshot | null>(() => readContextWidgetsCache());
+  const [loading, setLoading] = useState(() => readContextWidgetsCache() == null);
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<WidgetId | null>(null);
   const [localWidgets, setLocalWidgets] = useState<WidgetManifestEntry[]>([]);
@@ -331,7 +341,10 @@ export default function ContextPanel() {
     let cancelled = false;
 
     async function loadWidgets(): Promise<void> {
-      setLoading(true);
+      const hasCachedSnapshot = readContextWidgetsCache() != null;
+      if (!hasCachedSnapshot) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -343,6 +356,7 @@ export default function ContextPanel() {
         }
 
         if (!cancelled) {
+          writeContextWidgetsCache(payload);
           setSnapshot(payload);
         }
       } catch (loadError) {
@@ -362,6 +376,51 @@ export default function ContextPanel() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    return subscribeRuntimeHubStream({
+      onEvent: (event) => {
+        if (
+          !event.type.startsWith('execution.') &&
+          !event.type.startsWith('schedule.') &&
+          event.type !== 'run_complete' &&
+          event.type !== 'run.aborted'
+        ) {
+          return;
+        }
+
+        const label =
+          typeof event.payload.message === 'string'
+            ? event.payload.message
+            : typeof event.payload.intent === 'string'
+              ? event.payload.intent
+              : event.type;
+
+        const item: ContextWidgetItem = {
+          id: `${event.run_id}-${event.timestamp}`,
+          label,
+          status: null,
+          statusLabel: event.type,
+          href: event.run_id ? `/execution/${encodeURIComponent(event.run_id)}` : null,
+          timestamp: event.timestamp,
+        };
+
+        setSnapshot((current) => {
+          const base = current ?? {
+            attention: [],
+            jobs: [],
+            activity: [],
+            health: { overall: null, readySlots: 0, totalSlots: 0, slots: [] },
+            generatedAt: new Date().toISOString(),
+          };
+          return {
+            ...base,
+            activity: [item, ...base.activity].slice(0, 12),
+          };
+        });
+      },
+    });
   }, []);
 
   const visibleWidgets = useMemo(
@@ -416,7 +475,7 @@ export default function ContextPanel() {
 
   return (
     <aside
-      className="flex w-80 shrink-0 flex-col gap-2 overflow-y-auto border-l border-gray-200 bg-gray-50 p-3"
+      className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto border-l border-gray-200 bg-gray-50 p-3"
       data-testid="context-panel"
     >
       {error ? (
@@ -425,7 +484,9 @@ export default function ContextPanel() {
         </p>
       ) : null}
       {loading && !snapshot ? (
-        <p className="text-xs text-gray-500">Loading context…</p>
+        <p className="text-xs text-gray-500" aria-live="polite">
+          Loading context…
+        </p>
       ) : null}
       {visibleWidgets.map((entry) => {
         const widget = WIDGET_CONFIG[entry.id];
