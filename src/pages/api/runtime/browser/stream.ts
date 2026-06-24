@@ -27,34 +27,52 @@ export const GET: APIRoute = async ({ url, request }) => {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
-      const heartbeat = setInterval(() => {
-        if (!closed) {
-          controller.enqueue(encodeSseHeartbeat());
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let unsubscribe: (() => void) | null = null;
+
+      function closeStream(): void {
+        if (closed) {
+          return;
         }
+        closed = true;
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = undefined;
+        }
+        unsubscribe?.();
+        unsubscribe = null;
+        try {
+          controller.close();
+        } catch {
+          // Stream already closed.
+        }
+      }
+
+      function safeEnqueue(chunk: Uint8Array): void {
+        if (closed) {
+          return;
+        }
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          closeStream();
+        }
+      }
+
+      heartbeat = setInterval(() => {
+        safeEnqueue(encodeSseHeartbeat());
       }, 15_000);
 
-      const unsubscribe = subscribeBrowserScreencast(sessionId, (frame) => {
-        if (!closed) {
-          controller.enqueue(encodeSseFrame(frame));
-        }
+      unsubscribe = subscribeBrowserScreencast(sessionId, (frame) => {
+        safeEnqueue(encodeSseFrame(frame));
       });
 
       if (!unsubscribe) {
-        clearInterval(heartbeat);
-        controller.close();
+        closeStream();
         return;
       }
 
-      request.signal.addEventListener(
-        'abort',
-        () => {
-          closed = true;
-          clearInterval(heartbeat);
-          unsubscribe();
-          controller.close();
-        },
-        { once: true },
-      );
+      request.signal.addEventListener('abort', closeStream, { once: true });
     },
     cancel() {
       // Handled by abort listener.
