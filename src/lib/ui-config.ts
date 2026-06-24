@@ -34,6 +34,7 @@ export interface UIConfig {
     };
   };
   integrator?: {
+    project_root?: string;
     hooks_module?: string;
     policy_profile?: string;
   };
@@ -137,6 +138,7 @@ function parseAndValidateUIConfig(raw: unknown): UIConfig {
 
   assertOptionalRecord(raw.integrator, 'integrator');
   if (raw.integrator) {
+    assertOptionalString(raw.integrator.project_root, 'integrator.project_root');
     assertOptionalString(raw.integrator.hooks_module, 'integrator.hooks_module');
     assertOptionalString(raw.integrator.policy_profile, 'integrator.policy_profile');
   }

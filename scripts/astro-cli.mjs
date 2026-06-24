@@ -7,6 +7,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { prepareDevPort } from './dev-port.mjs';
+
 const [command, ...args] = process.argv.slice(2);
 if (!command) {
   console.error('usage: astro-cli.mjs <dev|preview|...> [args]');
@@ -24,14 +26,12 @@ function resolvePrimaryRepoRoot(worktreeRoot) {
 
   try {
     const stat = readFileSync(gitPath);
-    // Linked worktree: `.git` is a file with `gitdir: ...`
     const content = stat.toString('utf8').trim();
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (!match) {
       return null;
     }
     const gitdir = path.resolve(worktreeRoot, match[1].trim());
-    // .../repo/.git/worktrees/<name> → repo root
     return path.dirname(path.dirname(path.dirname(gitdir)));
   } catch {
     return null;
@@ -53,9 +53,25 @@ function resolveEnvFile() {
   return existsSync(primaryEnv) ? primaryEnv : null;
 }
 
+const astroArgs = [...args];
+if (command === 'dev' && !astroArgs.some((token) => token === '--port')) {
+  const presetPort = process.env.CONTROL_PLANE_PORT?.trim() || process.env.PORT?.trim();
+  if (!presetPort) {
+    await prepareDevPort({ logPrefix: '[dev]' });
+  }
+  const port = process.env.CONTROL_PLANE_PORT?.trim() || process.env.PORT?.trim();
+  if (!port) {
+    console.error('[dev] CONTROL_PLANE_PORT is unset after prepareDevPort');
+    process.exit(1);
+  }
+  astroArgs.push('--port', port);
+}
+
 const envFile = resolveEnvFile();
 const nodeArgs =
-  envFile !== null ? ['--env-file', envFile, astroBin, command, ...args] : [astroBin, command, ...args];
+  envFile !== null
+    ? ['--env-file', envFile, astroBin, command, ...astroArgs]
+    : [astroBin, command, ...astroArgs];
 
 const child = spawn(process.execPath, nodeArgs, {
   cwd: appRoot,

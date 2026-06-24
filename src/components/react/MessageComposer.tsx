@@ -1,5 +1,6 @@
 import React, { useId, useState } from 'react';
 
+import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import { isUnknownSlashCommand } from '../../lib/slash-command';
 import { subscribeRuntimeStream } from '../../lib/sse-client';
 
@@ -29,7 +30,7 @@ interface MessageComposerProps {
 export default function MessageComposer({
   value,
   onChange,
-  projectId = 'business-workflows',
+  projectId = DEFAULT_WORKSPACE_ID,
   conversationId,
   agentId,
   knownCommands = [],

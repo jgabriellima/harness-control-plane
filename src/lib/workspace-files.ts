@@ -3,7 +3,11 @@ import { resolve } from 'node:path';
 
 import { inferMimeFromPath } from './file-reference';
 import { resolveHarnessBinding } from './harness-binding';
-import { resolvePlatformAppRoot, resolveRepoRoot } from './repo-root';
+import {
+  resolveControlPlaneInstallRoot,
+  resolvePlatformAppRoot,
+  resolveRepoRoot,
+} from './repo-root';
 import { resolveActiveWorkspaceRoot } from './workspace-manager';
 
 export interface WorkspaceFileContent {
@@ -58,6 +62,8 @@ export function expandWorkspacePathCandidates(
     if (normalized === '.env' || normalized === 'env') {
       candidates.unshift('.env');
     }
+
+    candidates.push(`src/lib/${normalized}`);
   }
 
   return [...new Set(candidates)];
@@ -114,13 +120,15 @@ export async function readWorkspaceFile(
   const harnessDirRel = binding.harnessRoot.slice(binding.workspaceRoot.length + 1);
   const repoRoot = resolveRepoRoot();
   const appRoot = resolvePlatformAppRoot();
+  const controlPlaneRoot = resolveControlPlaneInstallRoot();
 
-  const allowedRoots = [projectRoot, repoRoot, appRoot];
+  const allowedRoots = [projectRoot, repoRoot, appRoot, controlPlaneRoot];
   const relativeCandidates = expandWorkspacePathCandidates(normalizedPath, harnessDirRel);
   const candidates = relativeCandidates.flatMap((relativePath) => [
     resolve(projectRoot, relativePath),
     resolve(repoRoot, relativePath),
     resolve(appRoot, relativePath),
+    resolve(controlPlaneRoot, relativePath),
   ]);
 
   for (const candidate of [...new Set(candidates)]) {

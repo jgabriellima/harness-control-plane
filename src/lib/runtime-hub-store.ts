@@ -2,24 +2,78 @@ import type {
   ChatMessage,
   ConversationRuntimeState,
   DispatchMessagePayload,
+  RunActivityPhase,
   RunPhase,
   RuntimeHubWireEvent,
 } from './runtime-hub-types';
 import { WELCOME_MESSAGE } from './runtime-hub-types';
+import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
 
 export function createConversationState(conversationId: string): ConversationRuntimeState {
   return {
     conversationId,
     agentId: null,
-    projectId: 'business-workflows',
+    projectId: DEFAULT_WORKSPACE_ID,
     title: null,
+    updatedAt: null,
     messages: [WELCOME_MESSAGE],
     activeRunId: null,
     runPhase: 'idle',
+    runActivity: 'idle',
     toolActivity: [],
     error: null,
     hydrated: false,
   };
+}
+
+export function resolveRunActivityLabel(
+  activity: RunActivityPhase,
+  toolActivity: string[],
+): string {
+  if (activity === 'thinking') {
+    return 'Reasoning…';
+  }
+
+  if (activity === 'responding') {
+    return 'Generating response…';
+  }
+
+  if (activity === 'tool' && toolActivity.length > 0) {
+    const lastLine = toolActivity[toolActivity.length - 1] ?? '';
+    const [toolName = 'tool'] = lastLine.split(' · ');
+    const normalized = toolName.trim().toLowerCase();
+
+    if (normalized.includes('read')) {
+      return 'Reading file…';
+    }
+    if (normalized.includes('grep') || normalized.includes('search')) {
+      return 'Searching workspace…';
+    }
+    if (normalized.includes('shell') || normalized.includes('terminal')) {
+      return 'Running command…';
+    }
+    if (normalized.includes('write') || normalized.includes('edit')) {
+      return 'Writing file…';
+    }
+
+    return `Using ${toolName.trim()}…`;
+  }
+
+  if (activity === 'dispatching' || activity === 'tool') {
+    return 'Runtime working…';
+  }
+
+  return 'Runtime working…';
+}
+
+function withActivity(
+  state: ConversationRuntimeState,
+  activity: RunActivityPhase,
+): ConversationRuntimeState {
+  if (state.runActivity === activity) {
+    return state;
+  }
+  return { ...state, runActivity: activity };
 }
 
 export function applyHubEvent(
@@ -30,36 +84,53 @@ export function applyHubEvent(
 ): ConversationRuntimeState {
   if (event.type === 'assistant') {
     const text = typeof event.payload.text === 'string' ? event.payload.text : '';
+    const nextActivity: RunActivityPhase =
+      text.length > 0 ? 'responding' : state.runActivity === 'idle' ? 'dispatching' : state.runActivity;
+
     if (text.length === 0) {
-      return state;
+      return withActivity(state, nextActivity);
     }
 
-    return {
-      ...state,
-      messages: state.messages.map((message) =>
-        message.id === assistantMessageId
-          ? { ...message, content: message.content + text }
-          : message,
-      ),
-    };
+    return withActivity(
+      {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === assistantMessageId
+            ? { ...message, content: message.content + text }
+            : message,
+        ),
+      },
+      'responding',
+    );
   }
 
   if (event.type === 'thinking') {
     const text = typeof event.payload.text === 'string' ? event.payload.text : '';
+    const durationMs =
+      typeof event.payload.duration_ms === 'number' ? event.payload.duration_ms : undefined;
+
     if (text.length === 0) {
-      return state;
+      return withActivity(state, 'thinking');
     }
 
     const existingThinking = state.messages.find((message) => message.id === thinkingMessageId);
     if (existingThinking) {
-      return {
-        ...state,
-        messages: state.messages.map((message) =>
-          message.id === thinkingMessageId
-            ? { ...message, content: `${message.content}${text}`, streaming: true }
-            : message,
-        ),
-      };
+      return withActivity(
+        {
+          ...state,
+          messages: state.messages.map((message) =>
+            message.id === thinkingMessageId
+              ? {
+                  ...message,
+                  content: `${message.content}${text}`,
+                  streaming: true,
+                  durationMs: durationMs ?? message.durationMs,
+                }
+              : message,
+          ),
+        },
+        'thinking',
+      );
     }
 
     const assistantIndex = state.messages.findIndex((message) => message.id === assistantMessageId);
@@ -68,26 +139,63 @@ export function applyHubEvent(
       role: 'thinking',
       content: text,
       streaming: true,
+      durationMs,
     };
 
-    if (assistantIndex === -1) {
-      return { ...state, messages: [...state.messages, thinkingMessage] };
-    }
+    const withThinking =
+      assistantIndex === -1
+        ? { ...state, messages: [...state.messages, thinkingMessage] }
+        : {
+            ...state,
+            messages: [
+              ...state.messages.slice(0, assistantIndex),
+              thinkingMessage,
+              ...state.messages.slice(assistantIndex),
+            ],
+          };
 
-    return {
-      ...state,
-      messages: [
-        ...state.messages.slice(0, assistantIndex),
-        thinkingMessage,
-        ...state.messages.slice(assistantIndex),
-      ],
-    };
+    return withActivity(withThinking, 'thinking');
   }
 
   if (event.type === 'tool_call') {
     const tool = typeof event.payload.tool === 'string' ? event.payload.tool : 'tool';
     const status = typeof event.payload.status === 'string' ? event.payload.status : 'running';
     const line = `${tool} · ${status}`;
+    const args =
+      event.payload.args !== undefined ? JSON.stringify(event.payload.args, null, 2) : undefined;
+    const result =
+      event.payload.result !== undefined ? JSON.stringify(event.payload.result, null, 2) : undefined;
+
+    const toolMessageId = `tool-${event.run_id}-${tool}-${state.messages.length}`;
+    const existingTool = state.messages.find(
+      (message) => message.role === 'tool' && message.id.startsWith(`tool-${event.run_id}-${tool}`),
+    );
+
+    const toolMessages = existingTool
+      ? state.messages.map((message) =>
+          message.id === existingTool.id
+            ? {
+                ...message,
+                content: line,
+                streaming: status === 'running',
+                toolInput: args ?? message.toolInput,
+                toolOutput: result ?? message.toolOutput,
+                recordedAt: event.timestamp,
+              }
+            : message,
+        )
+      : [
+          ...state.messages,
+          {
+            id: toolMessageId,
+            role: 'tool' as const,
+            content: line,
+            streaming: status === 'running',
+            recordedAt: event.timestamp,
+            toolInput: args,
+            toolOutput: result,
+          },
+        ];
 
     const lastIndex = state.toolActivity.findLastIndex((entry) => entry.startsWith(`${tool} ·`));
     const toolActivity =
@@ -95,7 +203,14 @@ export function applyHubEvent(
         ? state.toolActivity.map((entry, index) => (index === lastIndex ? line : entry))
         : [...state.toolActivity, line].slice(-12);
 
-    return { ...state, toolActivity };
+    return withActivity({ ...state, messages: toolMessages, toolActivity }, 'tool');
+  }
+
+  if (event.type === 'run.aborted') {
+    return {
+      ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'completed'),
+      error: null,
+    };
   }
 
   if (event.type === 'run_complete') {
@@ -143,6 +258,7 @@ export function finalizeTurn(
     ...state,
     messages,
     toolActivity: [],
+    runActivity: 'idle',
     activeRunId: null,
     runPhase: phase === 'completed' ? 'completed' : phase,
   };
@@ -160,11 +276,23 @@ export function beginTurn(
     error: null,
     activeRunId: runId,
     runPhase: 'streaming',
+    runActivity: 'dispatching',
     toolActivity: [],
     messages: [
       ...state.messages,
-      { id: userMessageId, role: 'user', content: userContent },
-      { id: assistantMessageId, role: 'assistant', content: '', streaming: true },
+      {
+        id: userMessageId,
+        role: 'user',
+        content: userContent,
+        recordedAt: new Date().toISOString(),
+      },
+      {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        streaming: true,
+        recordedAt: new Date().toISOString(),
+      },
     ],
   };
 }

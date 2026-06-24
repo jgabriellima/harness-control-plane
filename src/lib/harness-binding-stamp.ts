@@ -40,7 +40,7 @@ export function resolveBindingFromStamp(
     workflowsDir: joinWorkspace(workspaceRoot, workflowsRelative),
     runsDir: joinWorkspace(workspaceRoot, runsRelative),
     tracesDir: joinWorkspace(workspaceRoot, tracesRelative),
-    commandsDir: joinWorkspace(workspaceRoot, specializationLayer, 'commands'),
+    commandsDir: join(joinWorkspace(workspaceRoot, specializationLayer.slice(0, -1)), 'commands'),
     commandNamespace: {
       lifecycle: pack.command_namespace?.lifecycle ?? `/${cliPrefix}:`,
       capabilities: pack.command_namespace?.capabilities ?? '/run:',

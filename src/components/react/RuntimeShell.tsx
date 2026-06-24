@@ -3,27 +3,22 @@
 import React from 'react';
 
 import ChatPane from './ChatPane';
+import ChatPaneEmptySlot from './ChatPaneEmptySlot';
 import { ChatArtifactProvider, ChatArtifactSplitShell } from './ChatArtifactProvider';
 import ContextPanel from './ContextPanel';
-import LayoutGridController from './LayoutGridController';
+import ExecutionsListView from './ExecutionsListView';
+import ResizableOrchestrationShell from './ResizableOrchestrationShell';
+import { RuntimeBrowserProvider, RuntimeBrowserSplitShell } from './RuntimeBrowserProvider';
 import SidebarPanel from './SidebarPanel';
 import WorkspaceHeader from './WorkspaceHeader';
 import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
+import { conversationIdFromPath, isChatRoute, useShellPathname } from '@/lib/shell-navigation';
 
 interface RuntimeShellProps {
   projectName: string;
   initialPathname?: string;
   seedArtifactE2e?: boolean;
   children?: React.ReactNode;
-}
-
-function conversationIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/conversation\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
-}
-
-function isChatRoute(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/conversation/');
 }
 
 function ChatWorkspaceGrid({
@@ -34,8 +29,7 @@ function ChatWorkspaceGrid({
   seedArtifactE2e?: boolean;
 }) {
   const hub = useRuntimeHub();
-  const pathname =
-    typeof window !== 'undefined' ? window.location.pathname : initialPathname;
+  const pathname = useShellPathname(initialPathname);
   const foregroundId =
     hub.foregroundConversationId ?? conversationIdFromPath(pathname);
 
@@ -67,12 +61,10 @@ function ChatWorkspaceGrid({
             {paneConversationId ? (
               <ChatPane conversationId={paneConversationId} compact />
             ) : (
-              <div
-                className="flex h-full items-center justify-center px-4 text-center text-sm text-gray-500"
-                data-testid="chat-pane-picker"
-              >
-                Select a conversation from the sidebar to open this pane.
-              </div>
+              <ChatPaneEmptySlot
+                paneIndex={index}
+                paneLabel={mode === 'split-2' ? (index === 0 ? 'Left pane' : 'Right pane') : `Pane ${index + 1}`}
+              />
             )}
           </div>
         ))}
@@ -80,7 +72,11 @@ function ChatWorkspaceGrid({
     );
   })();
 
-  return <ChatArtifactSplitShell>{workspace}</ChatArtifactSplitShell>;
+  return (
+    <RuntimeBrowserSplitShell>
+      <ChatArtifactSplitShell>{workspace}</ChatArtifactSplitShell>
+    </RuntimeBrowserSplitShell>
+  );
 }
 
 function RuntimeShellBody({
@@ -89,34 +85,31 @@ function RuntimeShellBody({
   seedArtifactE2e = false,
   children,
 }: RuntimeShellProps) {
-  const pathname =
-    typeof window !== 'undefined' ? window.location.pathname : initialPathname;
+  const pathname = useShellPathname(initialPathname);
   const chatRoute = isChatRoute(pathname);
+
+  const mainContent = (() => {
+    if (chatRoute) {
+      return <ChatWorkspaceGrid initialPathname={pathname} seedArtifactE2e={seedArtifactE2e} />;
+    }
+    if (pathname === '/executions') {
+      return <ExecutionsListView />;
+    }
+    return children;
+  })();
 
   return (
     <>
-      <LayoutGridController />
-      <div
-        id="orchestration-grid"
-        className="orchestration-grid grid h-screen grid-cols-[280px_minmax(0,1fr)_320px] overflow-hidden [&>*]:min-h-0"
-        data-testid="orchestration-layout"
-      >
-      <SidebarPanel />
-
-      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
-        <WorkspaceHeader projectName={projectName} />
-
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {chatRoute ? (
-            <ChatWorkspaceGrid initialPathname={pathname} seedArtifactE2e={seedArtifactE2e} />
-          ) : (
-            children
-          )}
-        </main>
-      </div>
-
-      <ContextPanel />
-      </div>
+      <ResizableOrchestrationShell
+        sidebar={<SidebarPanel />}
+        main={
+          <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+            <WorkspaceHeader projectName={projectName} />
+            <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{mainContent}</main>
+          </div>
+        }
+        context={<ContextPanel />}
+      />
     </>
   );
 }
@@ -129,15 +122,17 @@ export default function RuntimeShell({
 }: RuntimeShellProps) {
   return (
     <RuntimeHubProvider>
-      <ChatArtifactProvider>
-        <RuntimeShellBody
-          projectName={projectName}
-          initialPathname={initialPathname}
-          seedArtifactE2e={seedArtifactE2e}
-        >
-          {children}
-        </RuntimeShellBody>
-      </ChatArtifactProvider>
+      <RuntimeBrowserProvider>
+        <ChatArtifactProvider>
+          <RuntimeShellBody
+            projectName={projectName}
+            initialPathname={initialPathname}
+            seedArtifactE2e={seedArtifactE2e}
+          >
+            {children}
+          </RuntimeShellBody>
+        </ChatArtifactProvider>
+      </RuntimeBrowserProvider>
     </RuntimeHubProvider>
   );
 }

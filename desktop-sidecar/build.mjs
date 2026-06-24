@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Build sidecar wrapper script with target-triple suffix for Tauri externalBin.
+ * Prepare Tauri desktop artifacts:
+ * - externalBin wrapper for the current host triple (production sidecar)
+ * - bundle resource path stubs so tauri-build succeeds before `astro build` (dev)
  */
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -10,6 +12,20 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(root, '..');
 const binariesDir = path.join(appRoot, 'src-tauri', 'binaries');
+
+function ensureDir(relativePath) {
+  const dirPath = path.join(appRoot, relativePath);
+  fs.mkdirSync(dirPath, { recursive: true });
+  const keepPath = path.join(dirPath, '.keep');
+  if (!fs.existsSync(keepPath)) {
+    fs.writeFileSync(keepPath, '');
+  }
+  console.log(`[desktop-sidecar] ensured ${relativePath}/`);
+}
+
+for (const relativePath of ['dist/server', 'dist/client']) {
+  ensureDir(relativePath);
+}
 
 const triple = execSync('rustc -vV', { encoding: 'utf8' })
   .split('\n')
@@ -37,5 +53,15 @@ export PORT="\${TAURI_APP_PORT:-\${PORT:-4321}}"
 exec node "$HERE/../../../desktop-sidecar/index.cjs"
 `;
 
-fs.writeFileSync(wrapperPath, script, { mode: 0o755 });
-console.log(`[desktop-sidecar] wrote ${wrapperPath}`);
+if (fs.existsSync(wrapperPath)) {
+  const existing = fs.readFileSync(wrapperPath, 'utf8');
+  if (existing === script) {
+    console.log(`[desktop-sidecar] unchanged ${wrapperPath}`);
+  } else {
+    fs.writeFileSync(wrapperPath, script, { mode: 0o755 });
+    console.log(`[desktop-sidecar] wrote ${wrapperPath}`);
+  }
+} else {
+  fs.writeFileSync(wrapperPath, script, { mode: 0o755 });
+  console.log(`[desktop-sidecar] wrote ${wrapperPath}`);
+}

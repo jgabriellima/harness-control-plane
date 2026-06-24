@@ -336,27 +336,8 @@ export async function loadBusinessConfig(workspaceRoot?: string): Promise<Busine
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const { listProjectsFromIndex } = await import('./project-store');
-  const projects = await listProjectsFromIndex();
-
-  if (projects.length > 0) {
-    return projects;
-  }
-
-  const config = await loadBusinessConfig();
-  const primaryId = slugify(config.project.name) || 'default';
-
-  return [
-    {
-      id: primaryId,
-      name: config.project.name,
-      description: config.project.description,
-      status: config.status,
-      initialized: config.initialized,
-      active: true,
-      sessionCount: 0,
-    },
-  ];
+  const { listWorkspaceProjects } = await import('./workspace-manager');
+  return listWorkspaceProjects();
 }
 
 const STUB_PROJECT_MEMBERS: ProjectMember[] = [

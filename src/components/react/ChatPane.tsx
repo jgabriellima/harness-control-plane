@@ -10,6 +10,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
+import RuntimeActivityIndicator from '@/components/react/RuntimeActivityIndicator';
 import { Button } from '@/components/ui/button';
 import {
   PromptInput,
@@ -20,8 +21,40 @@ import {
 import type { HarnessCommand, ReadinessSlot } from '@/lib/harness-types';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 import { useRuntimeConversation } from '@/hooks/useRuntimeConversation';
+import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
+import {
+  hideEmptyStateCommand,
+  readHiddenEmptyStateCommands,
+} from '@/lib/empty-state-commands';
+import { formatSessionTimestamp } from '@/lib/format-session-time';
+import { isDraftConversationId } from '@/lib/draft-conversation';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
+
+function ChatPaneMessagesSkeleton({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`mx-auto w-full max-w-4xl space-y-4 px-4 ${compact ? 'py-4' : 'py-8'}`}
+      data-testid="chat-pane-loading"
+      aria-busy="true"
+      aria-label="Loading runtime session"
+    >
+      <div className="space-y-3 animate-pulse">
+        <div className="flex justify-end">
+          <div className="h-10 w-2/5 max-w-xs rounded-2xl bg-gray-100" />
+        </div>
+        <div className="space-y-2">
+          <div className="h-3 w-full rounded bg-gray-100" />
+          <div className="h-3 w-11/12 rounded bg-gray-100" />
+          <div className="h-3 w-4/5 rounded bg-gray-100" />
+        </div>
+        <div className="flex justify-end">
+          <div className="h-10 w-1/3 max-w-[12rem] rounded-2xl bg-gray-100" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface ChatPaneProps {
   conversationId: string | null;
@@ -67,6 +100,7 @@ export default function ChatPane({
     visibleMessages,
     hasConversationContent,
   } = useRuntimeConversation(conversationId);
+  const hub = useRuntimeHub();
 
   const [input, setInput] = useState('');
   const [commands, setCommands] = useState<HarnessCommand[]>([]);
@@ -76,7 +110,13 @@ export default function ChatPane({
   const [deepResearch, setDeepResearch] = useState(false);
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
-  const [isBootstrapping, setIsBootstrapping] = useState(Boolean(conversationId) && !state.hydrated);
+  const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
+  const [isBootstrapping, setIsBootstrapping] = useState(
+    () =>
+      Boolean(conversationId) &&
+      !isDraftConversationId(conversationId) &&
+      !(hub.getConversationState(conversationId ?? '')?.hydrated ?? false),
+  );
   const { openArtifact, selection: selectedArtifact } = useChatArtifact();
 
   const artifactPanelOpen = selectedArtifact !== null;
@@ -84,13 +124,38 @@ export default function ChatPane({
   const conversationTitle = state.title;
   const projectId = state.projectId;
   const agentId = state.agentId;
+  const conversationUpdatedAt = state.updatedAt;
   const toolActivity = state.toolActivity;
   const error = state.error;
   const runPhase = state.runPhase;
+  const runActivity = state.runActivity;
+  const activeRunId = state.activeRunId;
+  const isStreaming = runPhase === 'streaming';
+
+  const sessionTimestamp =
+    conversationId && !isDraftConversationId(conversationId)
+      ? formatSessionTimestamp(conversationId, conversationUpdatedAt)
+      : null;
+
+  const sessionSubtitle = [
+    `Runtime session ${agentId ? '· resumed' : '· new'}`,
+    runPhase === 'streaming' ? 'active' : null,
+    `Project ${projectId}`,
+    sessionTimestamp,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  useEffect(() => {
+    setHiddenCommands(readHiddenEmptyStateCommands(projectId));
+  }, [projectId]);
 
   const suggestedCommands = useMemo(
-    () => commands.slice(0, EMPTY_STATE_COMMAND_LIMIT),
-    [commands],
+    () =>
+      commands
+        .filter((item) => !hiddenCommands.has(item.command))
+        .slice(0, EMPTY_STATE_COMMAND_LIMIT),
+    [commands, hiddenCommands],
   );
 
   const displayMessages = useMemo(() => {
@@ -108,6 +173,7 @@ export default function ChatPane({
 
   const showMessageList =
     hasConversationContent ||
+    isStreaming ||
     (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant'));
 
   const consoleGridClass = compact
@@ -144,6 +210,15 @@ export default function ChatPane({
   }, [selectedSuggestionIndex, slashSuggestions.length]);
 
   useEffect(() => {
+    if (!conversationId || isDraftConversationId(conversationId)) {
+      setIsBootstrapping(false);
+      return;
+    }
+
+    setIsBootstrapping(!(hub.getConversationState(conversationId)?.hydrated ?? false));
+  }, [conversationId, hub, state.hydrated]);
+
+  useEffect(() => {
     if (state.hydrated) {
       setIsBootstrapping(false);
     }
@@ -152,6 +227,15 @@ export default function ChatPane({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [visibleMessages]);
+
+  useEffect(() => {
+    function onScheduleCompose(event: Event): void {
+      const detail = (event as CustomEvent<{ prefix?: string }>).detail;
+      setInput(detail?.prefix ?? '/schedule ');
+    }
+    window.addEventListener('runtime:schedule-compose', onScheduleCompose);
+    return () => window.removeEventListener('runtime:schedule-compose', onScheduleCompose);
+  }, []);
 
   useEffect(() => {
     function handleFileReferenceClick(event: MouseEvent): void {
@@ -295,10 +379,30 @@ export default function ChatPane({
     );
   }
 
+  function handleDismissSuggestedCommand(command: string): void {
+    hideEmptyStateCommand(projectId, command);
+    setHiddenCommands((current) => new Set([...current, command]));
+  }
+
   if (isBootstrapping) {
     return (
-      <div className="flex h-full items-center justify-center" data-testid="chat-pane-loading">
-        <p className="text-sm text-gray-500">Loading runtime session...</p>
+      <div className={consoleGridClass} data-testid="chat-pane">
+        {conversationTitle && !compact ? (
+          <header className="border-b border-gray-200 bg-white px-4 py-3">
+            <h2 className="truncate text-sm font-semibold text-gray-900">
+              {conversationTitle ?? 'Loading session…'}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500">Runtime session · loading</p>
+          </header>
+        ) : null}
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
+          <ChatPaneMessagesSkeleton compact={compact} />
+        </div>
+        <div className="pointer-events-none opacity-60" aria-hidden="true">
+          <PromptInput>
+            <PromptInputTextarea disabled placeholder="Loading session…" value="" readOnly />
+          </PromptInput>
+        </div>
       </div>
     );
   }
@@ -308,11 +412,7 @@ export default function ChatPane({
       {conversationTitle && !compact ? (
         <header className="border-b border-gray-200 bg-white px-4 py-3">
           <h2 className="truncate text-sm font-semibold text-gray-900">{conversationTitle}</h2>
-          <p className="mt-0.5 text-xs text-gray-500">
-            Runtime session {agentId ? '· resumed' : '· new'}
-            {runPhase === 'streaming' ? ' · streaming' : ''}
-            · Project {projectId}
-          </p>
+          <p className="mt-0.5 text-xs text-gray-500">{sessionSubtitle}</p>
         </header>
       ) : null}
 
@@ -332,6 +432,7 @@ export default function ChatPane({
                     command={item.command}
                     description={item.description}
                     onSelect={(command) => setInput(command)}
+                    onDismiss={handleDismissSuggestedCommand}
                   />
                 ))}
               </div>
@@ -341,6 +442,9 @@ export default function ChatPane({
           <>
             <AgentMessageStack
               messages={displayMessages}
+              showStreamingIndicator={isStreaming}
+              runActivity={runActivity}
+              toolActivity={toolActivity}
               onFileClick={(filePath) => {
                 void openArtifact(filePath);
               }}
@@ -352,7 +456,29 @@ export default function ChatPane({
 
       <div className="border-t border-gray-200 bg-white px-4 py-3">
         <div className="relative mx-auto max-w-3xl">
-          {toolActivity.length > 0 ? (
+          {isStreaming ? (
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <RuntimeActivityIndicator
+                activity={runActivity}
+                toolActivity={toolActivity}
+                compact={compact}
+              />
+              {activeRunId && conversationId ? (
+                <button
+                  type="button"
+                  data-testid="chat-stop-run"
+                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                  onClick={() => {
+                    if (window.confirm('Stop the active runtime run?')) {
+                      void hub.cancelActiveRun(conversationId);
+                    }
+                  }}
+                >
+                  Stop
+                </button>
+              ) : null}
+            </div>
+          ) : toolActivity.length > 0 ? (
             <div
               className="mb-2 max-h-20 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
               data-testid="chat-pane-tool-activity"

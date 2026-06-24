@@ -17,7 +17,29 @@ export const GET: APIRoute = async ({ params, request }) => {
 
   try {
     const activeId = parseActiveProjectId(request.headers.get('cookie'));
-    const project = await getProjectDetail(projectId, activeId);
+    const workspaceProject = await getWorkspaceProject(projectId, projectId);
+    if (workspaceProject) {
+      return jsonOk({
+        id: workspaceProject.id,
+        name: workspaceProject.name,
+        description: workspaceProject.description,
+        status: workspaceProject.status,
+        initialized: workspaceProject.initialized,
+        active: workspaceProject.id === (activeId ?? workspaceProject.id),
+        path: workspaceProject.path,
+        members: [],
+        runtime_profile: {
+          profile_id: workspaceProject.id,
+          runtime: 'cursor',
+          baseline: 'business',
+          permissions: [],
+          tools: [],
+          limits: {},
+        },
+      });
+    }
+
+    const project = await getProjectDetail(projectId);
 
     if (!project) {
       return jsonError('Project not found', 404);

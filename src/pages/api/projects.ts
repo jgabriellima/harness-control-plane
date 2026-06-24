@@ -1,10 +1,10 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../lib/api-json';
-import { listProjects } from '../../lib/harness-reader';
 import {
   activeProjectCookieHeader,
   createWorkspaceProject,
+  listWorkspaceProjects,
   parseActiveProjectId,
 } from '../../lib/workspace-manager';
 
@@ -15,7 +15,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export const GET: APIRoute = async ({ request }) => {
   try {
     const activeId = parseActiveProjectId(request.headers.get('cookie'));
-    const projects = await listProjects(activeId);
+    const projects = await listWorkspaceProjects(activeId ?? undefined);
     return jsonOk({ projects });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load projects';

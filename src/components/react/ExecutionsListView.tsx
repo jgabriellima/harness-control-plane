@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 
 import { formatStatusLabel } from '../../lib/execution-events';
 import type { ExecutionStatus, ExecutionSummary } from '../../lib/harness-types';
+import { readStaleSidebarCache, writeSidebarCache } from '../../lib/sidebar-cache';
+
+const EXECUTIONS_CACHE_KEY = 'executions-list';
 
 interface ExecutionsResponse {
   executions: ExecutionSummary[];
@@ -44,14 +47,23 @@ function formatTimestamp(value: string): string {
 }
 
 export default function ExecutionsListView() {
-  const [executions, setExecutions] = useState<ExecutionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [executions, setExecutions] = useState<ExecutionSummary[]>(
+    () => readStaleSidebarCache<ExecutionSummary[]>(EXECUTIONS_CACHE_KEY) ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => (readStaleSidebarCache<ExecutionSummary[]>(EXECUTIONS_CACHE_KEY) ?? []).length === 0,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadExecutions(): Promise<void> {
+      const cached = readStaleSidebarCache<ExecutionSummary[]>(EXECUTIONS_CACHE_KEY);
+      if (!cached || cached.length === 0) {
+        setLoading(true);
+      }
+
       try {
         const response = await fetch('/api/executions');
         const payload = (await response.json()) as ExecutionsResponse;
@@ -61,6 +73,7 @@ export default function ExecutionsListView() {
         }
 
         if (!cancelled) {
+          writeSidebarCache(EXECUTIONS_CACHE_KEY, payload.executions);
           setExecutions(payload.executions);
           setError(null);
         }
