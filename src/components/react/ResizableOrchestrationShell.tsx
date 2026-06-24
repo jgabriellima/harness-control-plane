@@ -12,6 +12,7 @@ import {
 } from 'react-resizable-panels';
 
 import { usePanelCollapsed } from '@/lib/panel-layout-store';
+import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import {
   SHELL_LAYOUT_DEFAULTS,
   SHELL_LAYOUT_GROUP_ID,
@@ -46,7 +47,7 @@ function FixedOrchestrationShell({
 }: ResizableOrchestrationShellProps) {
   return (
     <div
-      className="grid h-screen grid-cols-[280px_minmax(0,1fr)_320px] overflow-hidden [&>*]:min-h-0"
+      className="grid h-screen grid-cols-[56px_minmax(0,1fr)_320px] overflow-hidden [&>*]:min-h-0"
       data-testid="orchestration-layout"
     >
       {sidebar}
@@ -62,8 +63,10 @@ function ResizableOrchestrationShellInner({
   context,
 }: ResizableOrchestrationShellProps) {
   const groupRef = useGroupRef();
+  const sidebarPanelRef = usePanelRef();
   const contextPanelRef = usePanelRef();
   const contextCollapsed = usePanelCollapsed();
+  const sidebarExpanded = useSidebarExpanded();
   const [manifestLayout, setManifestLayout] = useState<ShellLayoutSizes | null>(null);
   const repairedRef = useRef(false);
 
@@ -98,6 +101,8 @@ function ResizableOrchestrationShellInner({
 
   useEffect(() => {
     let cancelled = false;
+
+    void sidebarLayoutStore.loadManifest().catch(() => undefined);
 
     void fetch('/api/ui/shell-layout')
       .then(async (response) => {
@@ -157,6 +162,24 @@ function ResizableOrchestrationShellInner({
     }
   }, [contextCollapsed, contextPanelRef]);
 
+  useEffect(() => {
+    const panel = sidebarPanelRef.current as PanelImperativeHandle | null;
+    if (!panel) {
+      return;
+    }
+
+    if (sidebarExpanded) {
+      if (panel.isCollapsed()) {
+        panel.expand();
+      }
+      return;
+    }
+
+    if (!panel.isCollapsed()) {
+      panel.collapse();
+    }
+  }, [sidebarExpanded, sidebarPanelRef]);
+
   const handleLayoutChanged = useCallback(
     (layout: Record<string, number>) => {
       const sanitized = sanitizePanelLayout(layout, manifestLayout ?? undefined);
@@ -183,9 +206,12 @@ function ResizableOrchestrationShellInner({
     >
       <Panel
         id={SHELL_PANEL_IDS.sidebar}
+        panelRef={sidebarPanelRef}
         minSize={SHELL_LAYOUT_MIN.sidebar}
+        collapsible
+        collapsedSize={4}
         defaultSize={initialLayout[SHELL_PANEL_IDS.sidebar] ?? SHELL_LAYOUT_DEFAULTS.sidebar}
-        className="min-h-0 min-w-[220px] [&>*]:min-h-0"
+        className="min-h-0 min-w-[56px] [&>*]:min-h-0"
       >
         {sidebar}
       </Panel>

@@ -34,6 +34,8 @@ export const PATCH: APIRoute = async ({ request }) => {
     const manifest = await patchShellLayoutManifest({
       sidebarSize: typeof body.sidebarSize === 'number' ? body.sidebarSize : undefined,
       contextSize: typeof body.contextSize === 'number' ? body.contextSize : undefined,
+      sidebarExpanded:
+        typeof body.sidebarExpanded === 'boolean' ? body.sidebarExpanded : undefined,
     });
     return jsonOk(manifest);
   } catch (error) {
