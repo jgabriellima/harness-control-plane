@@ -248,6 +248,19 @@ export async function navigateBrowserSession(sessionId: string, url: string): Pr
   return handle.record;
 }
 
+export async function refreshBrowserSession(sessionId: string): Promise<RuntimeBrowserSession> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+
+  await handle.page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+  handle.record.url = handle.page.url();
+  handle.record.updatedAt = new Date().toISOString();
+  await persistCdpManifest(handle.record);
+  return handle.record;
+}
+
 export function getBrowserSession(sessionId: string): RuntimeBrowserSession | null {
   return sessions.get(sessionId)?.record ?? null;
 }

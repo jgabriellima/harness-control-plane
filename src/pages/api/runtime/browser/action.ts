@@ -4,6 +4,7 @@ import { jsonError, jsonOk } from '../../../../lib/api-json';
 import {
   navigateBrowserSession,
   performBrowserClick,
+  refreshBrowserSession,
   setBrowserControlMode,
   type BrowserControlMode,
 } from '../../../../lib/runtime-browser-bridge';
@@ -51,6 +52,11 @@ export const POST: APIRoute = async ({ request }) => {
     if (action === 'navigate' && url) {
       const session = await navigateBrowserSession(sessionId, url);
       return jsonOk({ ok: true, action: 'navigate', session });
+    }
+
+    if (action === 'refresh') {
+      const session = await refreshBrowserSession(sessionId);
+      return jsonOk({ ok: true, action: 'refresh', session });
     }
 
     if (action === 'set_control_mode' && controlMode) {

@@ -17,6 +17,7 @@ interface RuntimeBrowserContextValue {
   openBrowser: (url: string, conversationId?: string | null) => Promise<void>;
   closeBrowser: () => Promise<void>;
   navigateBrowser: (url: string) => Promise<void>;
+  refreshBrowser: () => Promise<void>;
   setControlMode: (mode: BrowserControlMode) => Promise<void>;
   selection: RuntimeBrowserSelection | null;
 }
@@ -147,6 +148,25 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
     }
   }, []);
 
+  const refreshBrowser = useCallback(async (): Promise<void> => {
+    const sessionId = selectionRef.current?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    const payload = await postBrowserAction(sessionId, { action: 'refresh' });
+    if (payload.session) {
+      setSelection((current) =>
+        current
+          ? {
+              ...current,
+              url: payload.session?.url ?? current.url,
+            }
+          : current,
+      );
+    }
+  }, []);
+
   const setControlMode = useCallback(async (mode: BrowserControlMode): Promise<void> => {
     const sessionId = selectionRef.current?.sessionId;
     if (!sessionId) {
@@ -248,10 +268,11 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
       openBrowser,
       closeBrowser,
       navigateBrowser,
+      refreshBrowser,
       setControlMode,
       selection,
     }),
-    [closeBrowser, navigateBrowser, openBrowser, selection, setControlMode],
+    [closeBrowser, navigateBrowser, openBrowser, refreshBrowser, selection, setControlMode],
   );
 
   return <RuntimeBrowserContext.Provider value={value}>{children}</RuntimeBrowserContext.Provider>;
@@ -270,7 +291,7 @@ interface RuntimeBrowserSplitShellProps {
 }
 
 export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellProps) {
-  const { selection, closeBrowser, navigateBrowser, setControlMode } = useRuntimeBrowser();
+  const { selection, closeBrowser, navigateBrowser, refreshBrowser, setControlMode } = useRuntimeBrowser();
   const browserPanelOpen = selection !== null;
 
   return (
@@ -288,6 +309,7 @@ export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellP
             void closeBrowser();
           }}
           onNavigate={navigateBrowser}
+          onRefresh={refreshBrowser}
           onControlModeChange={setControlMode}
         />
       ) : null}

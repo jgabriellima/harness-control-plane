@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, Hand, Loader2, X } from 'lucide-react';
+import { ArrowRight, Bot, Hand, Loader2, RotateCw, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ interface RuntimeBrowserPanelProps {
   selection: RuntimeBrowserSelection;
   onClose: () => void;
   onNavigate: (url: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
   onControlModeChange: (mode: BrowserControlMode) => Promise<void>;
 }
 
@@ -30,6 +31,7 @@ export default function RuntimeBrowserPanel({
   selection,
   onClose,
   onNavigate,
+  onRefresh,
   onControlModeChange,
 }: RuntimeBrowserPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -37,6 +39,7 @@ export default function RuntimeBrowserPanel({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [addressValue, setAddressValue] = useState(selection.url);
   const [navigating, setNavigating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [controlPending, setControlPending] = useState(false);
 
   useEffect(() => {
@@ -105,6 +108,15 @@ export default function RuntimeBrowserPanel({
     }
   }
 
+  async function handleRefresh(): Promise<void> {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function handleControlMode(mode: BrowserControlMode): Promise<void> {
     if (mode === selection.controlMode) {
       return;
@@ -140,6 +152,22 @@ export default function RuntimeBrowserPanel({
         </div>
 
         <div className="flex items-center gap-1.5 px-3 pb-2">
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-gray-200 bg-white p-1.5 text-gray-500 hover:bg-gray-100 hover:text-violet-600 disabled:opacity-40"
+            aria-label="Refresh page"
+            data-testid="runtime-browser-refresh"
+            disabled={selection.loading || Boolean(selection.error) || refreshing || navigating}
+            onClick={() => {
+              void handleRefresh();
+            }}
+          >
+            {refreshing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCw className="h-3.5 w-3.5" />
+            )}
+          </button>
           <div
             className="flex min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1"
             data-testid="runtime-browser-address-bar"
