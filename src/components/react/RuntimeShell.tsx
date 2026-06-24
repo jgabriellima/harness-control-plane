@@ -13,7 +13,34 @@ import { RuntimeBrowserProvider, RuntimeBrowserSplitShell } from './RuntimeBrows
 import SidebarPanel from './SidebarPanel';
 import WorkspaceHeader from './WorkspaceHeader';
 import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
+import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
 import { conversationIdFromPath, isChatRoute, useShellPathname } from '@/lib/shell-navigation';
+
+function resolveSinglePaneConversationId(
+  pathname: string,
+  foregroundId: string | null,
+  paneIds: string[],
+): string {
+  const fromPath = conversationIdFromPath(pathname);
+  if (fromPath) {
+    return fromPath;
+  }
+
+  if (pathname === '/') {
+    return DRAFT_CONVERSATION_ID;
+  }
+
+  if (foregroundId) {
+    return foregroundId;
+  }
+
+  const paneCandidate = paneIds[0];
+  if (paneCandidate && !isDraftConversationId(paneCandidate)) {
+    return paneCandidate;
+  }
+
+  return DRAFT_CONVERSATION_ID;
+}
 
 interface RuntimeShellProps {
   projectName: string;
@@ -39,7 +66,7 @@ function ChatWorkspaceGrid({
 
   const workspace = (() => {
     if (mode === 'single') {
-      const singleId = foregroundId ?? paneIds[0] ?? null;
+      const singleId = resolveSinglePaneConversationId(pathname, foregroundId, paneIds);
       return (
         <div className="h-full min-h-0">
           <ChatPane conversationId={singleId} seedArtifactE2e={seedArtifactE2e} />

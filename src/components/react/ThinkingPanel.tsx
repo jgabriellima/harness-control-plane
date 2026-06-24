@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+
+const REASONING_CONTENT_DEFAULT_HEIGHT = 72;
+const REASONING_CONTENT_MIN_HEIGHT = 72;
 
 interface ThinkingPanelProps {
   content: string;
@@ -18,7 +21,71 @@ function formatDuration(durationMs: number): string {
 
 export default function ThinkingPanel({ content, streaming = false, durationMs }: ThinkingPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [contentHeight, setContentHeight] = useState(REASONING_CONTENT_DEFAULT_HEIGHT);
+  const [hasOverflow, setHasOverflow] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const hasContent = content.trim().length > 0;
+
+  const measureOverflow = useCallback(() => {
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+    setHasOverflow(element.scrollHeight > element.clientHeight + 1);
+  }, []);
+
+  useEffect(() => {
+    setContentHeight(REASONING_CONTENT_DEFAULT_HEIGHT);
+  }, [content]);
+
+  useEffect(() => {
+    measureOverflow();
+  }, [content, contentHeight, collapsed, measureOverflow]);
+
+  useEffect(() => {
+    const element = contentRef.current;
+    if (!element || collapsed) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      measureOverflow();
+    });
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [collapsed, measureOverflow]);
+
+  function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeRef.current = { startY: event.clientY, startHeight: contentHeight };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleResizePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
+    if (!resizeRef.current || !contentRef.current) {
+      return;
+    }
+    const delta = event.clientY - resizeRef.current.startY;
+    const fullHeight = contentRef.current.scrollHeight;
+    const nextHeight = Math.max(
+      REASONING_CONTENT_MIN_HEIGHT,
+      Math.min(fullHeight, resizeRef.current.startHeight + delta),
+    );
+    setContentHeight(nextHeight);
+  }
+
+  function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>): void {
+    if (!resizeRef.current) {
+      return;
+    }
+    resizeRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   return (
     <div
@@ -53,11 +120,30 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
         ) : null}
       </button>
       {!collapsed ? (
-        <div className="border-t border-gray-200/80 px-3 py-2">
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-500">
-            {hasContent ? content : streaming ? 'Processing…' : ''}
-          </p>
-        </div>
+        <>
+          <div
+            ref={contentRef}
+            className="overflow-y-auto border-t border-gray-200/80 px-3 py-2"
+            style={{ height: contentHeight }}
+            data-testid="chat-message-thinking-content"
+          >
+            <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-500">
+              {hasContent ? content : streaming ? 'Processing…' : ''}
+            </p>
+          </div>
+          {hasOverflow ? (
+            <div
+              className="h-1.5 shrink-0 cursor-row-resize rounded-b-lg bg-gray-100 hover:bg-violet-200"
+              onPointerDown={handleResizePointerDown}
+              onPointerMove={handleResizePointerMove}
+              onPointerUp={handleResizePointerUp}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Expand reasoning panel"
+              data-testid="chat-message-thinking-resize"
+            />
+          ) : null}
+        </>
       ) : null}
     </div>
   );

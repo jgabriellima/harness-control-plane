@@ -26,8 +26,8 @@ import {
   hideEmptyStateCommand,
   readHiddenEmptyStateCommands,
 } from '@/lib/empty-state-commands';
-import { formatSessionTimestamp } from '@/lib/format-session-time';
 import { isDraftConversationId } from '@/lib/draft-conversation';
+import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
 
@@ -123,7 +123,6 @@ export default function ChatPane({
 
   const conversationTitle = state.title;
   const projectId = state.projectId;
-  const agentId = state.agentId;
   const conversationUpdatedAt = state.updatedAt;
   const toolActivity = state.toolActivity;
   const error = state.error;
@@ -131,20 +130,6 @@ export default function ChatPane({
   const runActivity = state.runActivity;
   const activeRunId = state.activeRunId;
   const isStreaming = runPhase === 'streaming';
-
-  const sessionTimestamp =
-    conversationId && !isDraftConversationId(conversationId)
-      ? formatSessionTimestamp(conversationId, conversationUpdatedAt)
-      : null;
-
-  const sessionSubtitle = [
-    `Runtime session ${agentId ? '· resumed' : '· new'}`,
-    runPhase === 'streaming' ? 'active' : null,
-    `Project ${projectId}`,
-    sessionTimestamp,
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
   useEffect(() => {
     setHiddenCommands(readHiddenEmptyStateCommands(projectId));
@@ -176,11 +161,10 @@ export default function ChatPane({
     isStreaming ||
     (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant'));
 
-  const consoleGridClass = compact
-    ? 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden'
-    : conversationTitle
-      ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
-      : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
+  const showHeader = Boolean(conversationId);
+  const consoleGridClass = showHeader
+    ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
+    : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
 
   const slashSuggestions = useMemo(() => {
     const trimmed = input.trim();
@@ -387,13 +371,14 @@ export default function ChatPane({
   if (isBootstrapping) {
     return (
       <div className={consoleGridClass} data-testid="chat-pane">
-        {conversationTitle && !compact ? (
-          <header className="border-b border-gray-200 bg-white px-4 py-3">
-            <h2 className="truncate text-sm font-semibold text-gray-900">
-              {conversationTitle ?? 'Loading session…'}
-            </h2>
-            <p className="mt-0.5 text-xs text-gray-500">Runtime session · loading</p>
-          </header>
+        {showHeader && conversationId ? (
+          <ChatPaneHeader
+            conversationId={conversationId}
+            title={conversationTitle ?? 'Loading session…'}
+            updatedAt={conversationUpdatedAt}
+            messages={visibleMessages}
+            compact={compact}
+          />
         ) : null}
         <div className="min-h-0 overflow-y-auto overscroll-contain">
           <ChatPaneMessagesSkeleton compact={compact} />
@@ -409,11 +394,14 @@ export default function ChatPane({
 
   const chatColumn = (
     <div className={consoleGridClass} data-testid="chat-pane">
-      {conversationTitle && !compact ? (
-        <header className="border-b border-gray-200 bg-white px-4 py-3">
-          <h2 className="truncate text-sm font-semibold text-gray-900">{conversationTitle}</h2>
-          <p className="mt-0.5 text-xs text-gray-500">{sessionSubtitle}</p>
-        </header>
+      {showHeader && conversationId ? (
+        <ChatPaneHeader
+          conversationId={conversationId}
+          title={conversationTitle}
+          updatedAt={conversationUpdatedAt}
+          messages={visibleMessages}
+          compact={compact}
+        />
       ) : null}
 
       <div className="min-h-0 overflow-y-auto overscroll-contain" data-testid="chat-pane-messages">
@@ -630,7 +618,7 @@ export default function ChatPane({
             </PromptInputActions>
           </PromptInput>
 
-          {error ? (
+          {error && !isDraftConversationId(conversationId) ? (
             <p className="mt-2 text-xs text-red-600" role="alert">
               {error}
             </p>

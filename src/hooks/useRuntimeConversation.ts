@@ -24,9 +24,8 @@ export function useRuntimeConversation(conversationId: string | null): UseRuntim
   const storageKey = conversationId ?? DRAFT_CONVERSATION_ID;
 
   useEffect(() => {
-    if (conversationId) {
-      void hydrateConversationRef.current(conversationId);
-    }
+    const targetId = conversationId ?? DRAFT_CONVERSATION_ID;
+    void hydrateConversationRef.current(targetId);
   }, [conversationId]);
 
   const state = hub.getConversationState(storageKey) ?? createConversationState(storageKey);

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Columns2, LayoutGrid, PanelRightClose, PanelRightOpen, Square } from 'lucide-react';
 
 import { panelLayoutStore, usePanelCollapsed } from '../../lib/panel-layout-store';
 
@@ -13,15 +13,26 @@ interface WorkspaceHeaderProps {
   projectName: string;
 }
 
-function layoutButtonClass(active: boolean): string {
+const LAYOUT_MODES: Array<{
+  mode: WorkspaceLayoutMode;
+  label: string;
+  icon: typeof Square;
+}> = [
+  { mode: 'single', label: 'Single pane', icon: Square },
+  { mode: 'split-2', label: 'Split two panes', icon: Columns2 },
+  { mode: 'grid-4', label: 'Grid four panes', icon: LayoutGrid },
+];
+
+function layoutIconButtonClass(active: boolean): string {
   return active
     ? 'bg-violet-100 text-violet-800 ring-violet-300'
-    : 'bg-white text-gray-600 ring-gray-200 hover:bg-gray-50';
+    : 'bg-white text-gray-500 ring-gray-200 hover:bg-gray-50 hover:text-gray-700';
 }
 
 export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
   const hub = useRuntimeHub();
   const collapsed = usePanelCollapsed();
+  const showProjectTitle = hub.layoutMode === 'single';
 
   function setMode(mode: WorkspaceLayoutMode): void {
     hub.setLayoutMode(mode);
@@ -50,7 +61,9 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
       data-testid="workspace-header"
     >
       <div className="flex min-w-0 items-center gap-3">
-        <h1 className="truncate text-sm font-medium text-gray-700">{projectName}</h1>
+        {showProjectTitle ? (
+          <h1 className="truncate text-sm font-medium text-gray-700">{projectName}</h1>
+        ) : null}
         {hub.activeRunCount > 0 ? (
           <span
             className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-800"
@@ -63,39 +76,38 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
 
       <div className="flex items-center gap-2">
         <div
-          className="hidden items-center gap-1 lg:flex"
+          className="flex items-center gap-0.5"
           data-testid="workspace-layout-toggle"
+          role="group"
           aria-label="Workspace layout mode"
         >
-          <button
-            type="button"
-            className={`rounded-md px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${layoutButtonClass(hub.layoutMode === 'single')}`}
-            onClick={() => setMode('single')}
-          >
-            Single
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${layoutButtonClass(hub.layoutMode === 'split-2')}`}
-            onClick={() => setMode('split-2')}
-          >
-            Split 2
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${layoutButtonClass(hub.layoutMode === 'grid-4')}`}
-            onClick={() => setMode('grid-4')}
-          >
-            Grid 4
-          </button>
+          {LAYOUT_MODES.map(({ mode, label, icon: Icon }) => (
+            <button
+              key={mode}
+              type="button"
+              data-testid={`workspace-layout-${mode}`}
+              aria-label={label}
+              aria-pressed={hub.layoutMode === mode}
+              title={label}
+              className={`rounded-md p-1.5 ring-1 ring-inset ${layoutIconButtonClass(hub.layoutMode === mode)}`}
+              onClick={() => setMode(mode)}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
         </div>
 
         <button
           type="button"
           data-testid="toggle-context-panel"
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          className={`rounded-md p-1.5 ring-1 ring-inset ${
+            collapsed
+              ? 'bg-white text-gray-500 ring-gray-200 hover:bg-gray-50'
+              : 'bg-violet-100 text-violet-800 ring-violet-300'
+          }`}
           aria-label={collapsed ? 'Expand context panel' : 'Collapse context panel'}
-          aria-pressed={collapsed}
+          aria-pressed={!collapsed}
+          title={collapsed ? 'Show context panel' : 'Hide context panel'}
           onClick={() => {
             void panelLayoutStore.persistManifest({ collapsed: !collapsed }).catch(() => {
               panelLayoutStore.setCollapsed(!collapsed);
@@ -107,7 +119,6 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
           ) : (
             <PanelRightClose className="h-3.5 w-3.5" />
           )}
-          <span>Context</span>
         </button>
 
         <WorkspaceHeaderMenu />

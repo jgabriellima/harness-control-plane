@@ -125,6 +125,7 @@ export function applyHubEvent(
                   content: `${message.content}${text}`,
                   streaming: true,
                   durationMs: durationMs ?? message.durationMs,
+                  recordedAt: message.recordedAt ?? event.timestamp,
                 }
               : message,
           ),
@@ -140,6 +141,7 @@ export function applyHubEvent(
       content: text,
       streaming: true,
       durationMs,
+      recordedAt: event.timestamp,
     };
 
     const withThinking =
@@ -180,7 +182,7 @@ export function applyHubEvent(
                 streaming: status === 'running',
                 toolInput: args ?? message.toolInput,
                 toolOutput: result ?? message.toolOutput,
-                recordedAt: event.timestamp,
+                recordedAt: message.recordedAt ?? event.timestamp,
               }
             : message,
         )

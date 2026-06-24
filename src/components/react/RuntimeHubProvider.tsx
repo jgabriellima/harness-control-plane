@@ -25,7 +25,9 @@ import {
   purgeStaleActiveRun,
   resolveTurnTrackingForActiveRun,
 } from '@/lib/active-run-sync';
+import { mapHydratedMessages } from '@/lib/chat-message-mapper';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
+import { isTransientHydrateFailure, waitForRuntimeReady } from '@/lib/runtime-readiness-client';
 import {
   extractBrowserNavigateUrl,
   isBrowserToolName,
@@ -293,6 +295,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     const { mode, panes } = readLayoutFromUrl();
     setLayoutModeState(mode);
 
+    if (pathname === '/' && mode === 'single') {
+      setPaneConversationIdsState([]);
+      persistLayout('single', []);
+      syncUrlLayout('single', []);
+      return;
+    }
+
     const normalizedPanes =
       panes.length > 0
         ? panes
@@ -358,6 +367,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           ...state,
           title: 'New chat',
           hydrated: true,
+          error: null,
         }));
         return;
       }
@@ -366,9 +376,53 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       if (!alreadyHydrated) {
         try {
-          const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
-          if (!response.ok) {
+          await waitForRuntimeReady();
+
+          let response: Response | null = null;
+          let lastStatus: number | null = null;
+
+          for (let attempt = 0; attempt < 4; attempt += 1) {
+            try {
+              response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`);
+              lastStatus = response.status;
+              if (response.ok || response.status === 404) {
+                break;
+              }
+              if (!isTransientHydrateFailure(response.status)) {
+                break;
+              }
+            } catch {
+              lastStatus = null;
+              if (attempt === 3) {
+                throw new Error('Failed to load conversation session');
+              }
+            }
+
+            await new Promise((resolve) => {
+              window.setTimeout(resolve, 250 * (attempt + 1));
+            });
+          }
+
+          if (!response) {
             throw new Error('Failed to load conversation session');
+          }
+
+          if (response.status === 404) {
+            hydratedIdsRef.current.add(conversationId);
+            updateConversation(conversationId, (state) => ({
+              ...state,
+              error: 'Conversation not found',
+              hydrated: true,
+            }));
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(
+              lastStatus && isTransientHydrateFailure(lastStatus)
+                ? 'Runtime server is starting — retry in a moment'
+                : 'Failed to load conversation session',
+            );
           }
 
           const payload = (await response.json()) as {
@@ -377,16 +431,14 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             projectId: string;
             agentId: string | null;
             updatedAt: string;
-            messages: ConversationRuntimeState['messages'];
+            messages: import('@/lib/conversation-store').StoredChatMessage[];
           };
 
           hydratedIdsRef.current.add(conversationId);
 
           updateConversation(conversationId, (state) => {
             const restored =
-              payload.messages.length > 0
-                ? payload.messages.filter((message) => message.role !== 'tool')
-                : [];
+              payload.messages.length > 0 ? mapHydratedMessages(payload.messages) : [];
             return {
               ...state,
               title: payload.title,
@@ -395,6 +447,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
               updatedAt: payload.updatedAt,
               messages: restored.length > 0 ? [WELCOME_MESSAGE, ...restored] : [WELCOME_MESSAGE],
               hydrated: true,
+              error: null,
             };
           });
         } catch (error) {

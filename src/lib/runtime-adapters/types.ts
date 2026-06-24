@@ -42,16 +42,19 @@ export interface SessionRegistryIndex {
   }>;
 }
 
-export type NormalizedMessageRole = 'user' | 'assistant' | 'system' | 'tool';
+export type NormalizedMessageRole = 'user' | 'assistant' | 'system' | 'thinking' | 'tool';
 
 export interface NormalizedMessage {
   id: string;
   role: NormalizedMessageRole;
   content: string;
+  recordedAt?: string;
+  durationMs?: number;
   toolName?: string;
   toolStatus?: string;
   toolArgs?: unknown;
   toolResult?: unknown;
+  toolUseId?: string;
 }
 
 export interface NormalizedTranscript {

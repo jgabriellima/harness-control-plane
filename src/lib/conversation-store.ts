@@ -17,6 +17,8 @@ export interface StoredChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool' | 'thinking';
   content: string;
+  recordedAt?: string;
+  durationMs?: number;
   toolName?: string;
   toolStatus?: string;
   toolArgs?: unknown;
@@ -233,6 +235,8 @@ export async function loadConversationTranscript(
     id: message.id,
     role: message.role,
     content: message.content,
+    recordedAt: message.recordedAt,
+    durationMs: message.durationMs,
     toolName: message.toolName,
     toolStatus: message.toolStatus,
     toolArgs: message.toolArgs,

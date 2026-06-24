@@ -4,12 +4,14 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { formatInspectable } from '@/lib/format-inspect';
+import { formatRecordedAt } from '@/lib/format-recorded-at';
 
 export interface ToolRecord {
   name: string;
   status: string;
   args?: unknown;
   result?: unknown;
+  recordedAt?: string;
 }
 
 function statusClasses(status: string): string {
@@ -48,6 +50,7 @@ function ToolRow({ tool, streaming }: { tool: ToolRecord; streaming?: boolean })
     tool.args !== undefined ||
     tool.result !== undefined ||
     streaming === true;
+  const formattedAt = formatRecordedAt(tool.recordedAt);
 
   return (
     <li className="border-b border-gray-100 last:border-b-0">
@@ -71,9 +74,22 @@ function ToolRow({ tool, streaming }: { tool: ToolRecord; streaming?: boolean })
         ) : (
           <span className="inline-block h-3 w-3 shrink-0" />
         )}
-        <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-violet-700">
-          {tool.name}
-        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-violet-700">
+              {tool.name}
+            </span>
+            {formattedAt ? (
+              <time
+                dateTime={tool.recordedAt}
+                className="truncate text-[10px] text-gray-400"
+                data-testid="tool-row-timestamp"
+              >
+                {formattedAt}
+              </time>
+            ) : null}
+          </div>
+        </div>
         <span
           className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${statusClasses(tool.status)}`}
         >
@@ -97,11 +113,16 @@ function ToolRow({ tool, streaming }: { tool: ToolRecord; streaming?: boolean })
 export function ToolInspectorGroup({
   tools,
   defaultCollapsed,
+  groupRecordedAt,
 }: {
   tools: Array<{ id: string; tool: ToolRecord; streaming?: boolean }>;
   defaultCollapsed: boolean;
+  groupRecordedAt?: string;
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const headerTimestamp =
+    formatRecordedAt(groupRecordedAt) ??
+    formatRecordedAt(tools.find((entry) => entry.tool.recordedAt)?.tool.recordedAt);
 
   return (
     <div
@@ -120,7 +141,16 @@ export function ToolInspectorGroup({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
         <span>Tool activity</span>
-        <span className="rounded-full bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+        {headerTimestamp ? (
+          <time
+            dateTime={groupRecordedAt ?? tools.find((entry) => entry.tool.recordedAt)?.tool.recordedAt}
+            className="text-[10px] font-normal text-gray-400"
+            data-testid="tool-group-timestamp"
+          >
+            {headerTimestamp}
+          </time>
+        ) : null}
+        <span className="ml-auto rounded-full bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
           {tools.length}
         </span>
       </button>

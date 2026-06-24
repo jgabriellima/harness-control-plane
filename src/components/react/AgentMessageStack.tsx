@@ -9,6 +9,7 @@ import RuntimeActivityIndicator, { StreamingPlaceholder } from './RuntimeActivit
 import ThinkingPanel from './ThinkingPanel';
 import { ToolInspectorGroup, type ToolRecord } from './ToolInspector';
 import type { RunActivityPhase } from '@/lib/runtime-hub-types';
+import { formatRecordedAt } from '@/lib/format-recorded-at';
 
 type ChatMessageRole = 'user' | 'assistant' | 'system' | 'thinking' | 'tool';
 
@@ -85,24 +86,30 @@ function resolveToolRecord(message: StackMessage): ToolRecord {
     status: status.trim(),
     args,
     result,
+    recordedAt: message.recordedAt,
   };
 }
 
-function formatRecordedAt(value: string | undefined): string | null {
-  if (!value) {
+function MessageTimestamp({
+  value,
+  className = 'text-gray-400',
+}: {
+  value: string | undefined;
+  className?: string;
+}) {
+  const formatted = formatRecordedAt(value);
+  if (!formatted) {
     return null;
   }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return (
+    <time
+      dateTime={value}
+      className={`mb-1 block text-[10px] ${className}`}
+      data-testid="chat-message-timestamp"
+    >
+      {formatted}
+    </time>
+  );
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -146,16 +153,19 @@ export default function AgentMessageStack({
       ) : null}
       {segments.map((segment) => {
         if (segment.kind === 'tool-group') {
+          const groupTimestamp = segment.messages.find((message) => message.recordedAt)?.recordedAt;
           return (
-            <ToolInspectorGroup
-              key={segment.groupId}
-              tools={segment.messages.map((message) => ({
-                id: message.id,
-                tool: resolveToolRecord(message),
-                streaming: message.streaming,
-              }))}
-              defaultCollapsed={false}
-            />
+            <div key={segment.groupId}>
+              <ToolInspectorGroup
+                groupRecordedAt={groupTimestamp}
+                tools={segment.messages.map((message) => ({
+                  id: message.id,
+                  tool: resolveToolRecord(message),
+                  streaming: message.streaming,
+                }))}
+                defaultCollapsed={false}
+              />
+            </div>
           );
         }
 
@@ -163,12 +173,14 @@ export default function AgentMessageStack({
 
         if (message.role === 'thinking') {
           return (
-            <ThinkingPanel
-              key={message.id}
-              content={message.content}
-              streaming={message.streaming}
-              durationMs={message.durationMs}
-            />
+            <div key={message.id}>
+              <MessageTimestamp value={message.recordedAt} />
+              <ThinkingPanel
+                content={message.content}
+                streaming={message.streaming}
+                durationMs={message.durationMs}
+              />
+            </div>
           );
         }
 
@@ -176,6 +188,7 @@ export default function AgentMessageStack({
           return (
             <Message key={message.id} data-testid="chat-message-system">
               <MessageContent className="border border-amber-100 bg-amber-50 text-sm text-amber-900">
+                <MessageTimestamp value={message.recordedAt} />
                 {message.content}
               </MessageContent>
             </Message>
@@ -188,20 +201,18 @@ export default function AgentMessageStack({
               <AvatarFallback className="text-xs">{avatarLabel(message.role)}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              {formatRecordedAt(message.recordedAt) ? (
-                <div className="mb-1 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                  <span className="text-[10px] text-gray-400">{formatRecordedAt(message.recordedAt)}</span>
-                  <button
-                    type="button"
-                    className="text-[10px] font-medium text-violet-600 hover:text-violet-700"
-                    onClick={() => {
-                      void copyToClipboard(message.content);
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-              ) : null}
+              <div className="mb-1 flex items-center gap-2">
+                <MessageTimestamp value={message.recordedAt} />
+                <button
+                  type="button"
+                  className="text-[10px] font-medium text-violet-600 opacity-0 transition-opacity hover:text-violet-700 group-hover:opacity-100"
+                  onClick={() => {
+                    void copyToClipboard(message.content);
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
               {message.role === 'assistant' ? (
                 <MessageContent
                   markdown={!message.streaming}
