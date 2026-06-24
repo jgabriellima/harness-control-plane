@@ -7,6 +7,7 @@ import { panelLayoutStore, usePanelCollapsed } from '../../lib/panel-layout-stor
 
 import type { WorkspaceLayoutMode } from '@/lib/runtime-hub-types';
 import { useRuntimeHub } from './RuntimeHubProvider';
+import WorkspaceHeaderMenu from './WorkspaceHeaderMenu';
 
 interface WorkspaceHeaderProps {
   projectName: string;
@@ -108,6 +109,8 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
           )}
           <span>Context</span>
         </button>
+
+        <WorkspaceHeaderMenu />
       </div>
     </header>
   );
