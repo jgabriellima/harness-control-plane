@@ -177,9 +177,7 @@ export default function ChatPane({
       return [];
     }
 
-    return commands
-      .filter((item) => item.command.startsWith(token))
-      .slice(0, 8);
+    return commands.filter((item) => item.command.startsWith(token));
   }, [commands, input]);
 
   const isSelectingSlashCommand = slashSuggestions.length > 0;
@@ -484,8 +482,10 @@ export default function ChatPane({
 
           {slashSuggestions.length > 0 ? (
             <div
-              className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+              className="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-lg"
               data-testid="slash-command-suggestions"
+              role="listbox"
+              aria-label="Harness slash commands"
             >
               {slashSuggestions.map((item, index) => (
                 <button
@@ -494,6 +494,7 @@ export default function ChatPane({
                     suggestionRefs.current[index] = element;
                   }}
                   type="button"
+                  role="option"
                   className={`flex w-full flex-col items-start px-4 py-2 text-left ${
                     index === selectedSuggestionIndex
                       ? 'bg-violet-100 text-violet-900'

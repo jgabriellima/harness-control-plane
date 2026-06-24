@@ -25,6 +25,12 @@ test.describe('runtime console stream QA', () => {
     const suggestions = page.getByTestId('slash-command-suggestions');
     await expect(suggestions).toBeVisible({ timeout: 15_000 });
     await expect(suggestions.getByText(body.commands[0]?.command ?? '/business:')).toBeVisible();
+    await expect(suggestions.getByRole('option')).toHaveCount(body.commands.length);
+    if (body.commands.length > 8) {
+      const scrollHeight = await suggestions.evaluate((element) => element.scrollHeight);
+      const clientHeight = await suggestions.evaluate((element) => element.clientHeight);
+      expect(scrollHeight).toBeGreaterThan(clientHeight);
+    }
   });
 
   test('hub events endpoint accepts SSE connection', async ({ page }) => {
