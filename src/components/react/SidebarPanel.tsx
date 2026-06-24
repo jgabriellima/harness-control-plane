@@ -8,6 +8,7 @@ import {
 } from '../../lib/sidebar-cache';
 import { DRAFT_CONVERSATION_ID } from '@/lib/draft-conversation';
 import { navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 
@@ -65,8 +66,119 @@ function isRunsSectionActive(pathname: string): boolean {
   return pathname === '/executions' || pathname.startsWith('/execution/');
 }
 
+function settingsHref(): string {
+  return '/settings';
+}
+
+function isSettingsActive(pathname: string): boolean {
+  return pathname === '/settings' || pathname.startsWith('/settings/');
+}
+
+function toggleSidebarExpanded(expanded: boolean): void {
+  void sidebarLayoutStore.persistExpanded(expanded).catch(() => {
+    sidebarLayoutStore.setExpanded(expanded);
+  });
+}
+
 function runsHref(): string {
   return '/executions';
+}
+
+function SidebarIconButton({
+  label,
+  active,
+  testId,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  testId?: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+        active
+          ? 'bg-violet-100 text-violet-700'
+          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+      }`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CollapsedSidebarRail({
+  runsSectionActive,
+  settingsActive,
+  onNewChat,
+}: {
+  runsSectionActive: boolean;
+  settingsActive: boolean;
+  onNewChat: () => void;
+}) {
+  return (
+    <aside
+      className="relative z-20 flex h-full min-h-0 w-14 flex-col items-center border-r border-gray-200 bg-white py-3"
+      data-testid="sidebar-panel-collapsed"
+    >
+      <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-md bg-violet-600 text-white">
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6z" />
+        </svg>
+      </div>
+
+      <div className="flex flex-1 flex-col items-center gap-2">
+        <SidebarIconButton label="New chat" testId="sidebar-rail-new-chat" onClick={onNewChat}>
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </SidebarIconButton>
+
+        <SidebarIconButton
+          label="Workflow runs"
+          active={runsSectionActive}
+          testId="sidebar-rail-runs"
+          onClick={() => navigateShell('/executions')}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+        </SidebarIconButton>
+      </div>
+
+      <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-200 pt-3">
+        <SidebarIconButton
+          label="Harness settings"
+          active={settingsActive}
+          testId="sidebar-rail-settings"
+          onClick={() => navigateShell(settingsHref())}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </SidebarIconButton>
+
+        <SidebarIconButton
+          label="Expand sidebar"
+          testId="sidebar-rail-expand"
+          onClick={() => toggleSidebarExpanded(true)}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M13 17l5-5-5-5M6 17l5-5-5-5" />
+          </svg>
+        </SidebarIconButton>
+      </div>
+    </aside>
+  );
 }
 
 function formatSessionTitle(conversation: ConversationItem): string {
@@ -139,6 +251,7 @@ function ConversationSidebarLink({
 export default function SidebarPanel() {
   const pathname = useShellPathname();
   const hub = useRuntimeHub();
+  const sidebarExpanded = useSidebarExpanded();
   const [harnessSpec, setHarnessSpec] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectItem[]>(() => readStaleSidebarCache<ProjectItem[]>('projects') ?? []);
   const [conversations, setConversations] = useState<ConversationItem[]>(
@@ -152,6 +265,7 @@ export default function SidebarPanel() {
 
   const activeExecutionId = activeExecutionFromPath(pathname);
   const runsSectionActive = isRunsSectionActive(pathname);
+  const settingsActive = isSettingsActive(pathname);
 
   async function loadSidebarData(projectId?: string, options?: { background?: boolean }): Promise<void> {
     const background = options?.background ?? false;
@@ -313,9 +427,21 @@ export default function SidebarPanel() {
     hub.navigateToConversation(DRAFT_CONVERSATION_ID);
   }
 
+  if (!sidebarExpanded) {
+    return (
+      <CollapsedSidebarRail
+        runsSectionActive={runsSectionActive}
+        settingsActive={settingsActive}
+        onNewChat={() => {
+          void handleNewChat();
+        }}
+      />
+    );
+  }
+
   return (
     <aside
-      className="flex h-full min-h-0 flex-col border-r border-gray-200 bg-white"
+      className="relative z-20 flex h-full min-h-0 flex-col border-r border-gray-200 bg-white"
       data-testid="sidebar-panel"
     >
       <div className="flex h-9 items-center gap-2 border-b border-gray-200 px-4">
@@ -324,9 +450,21 @@ export default function SidebarPanel() {
             <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6z" />
           </svg>
         </div>
-        <span className="truncate text-xs font-semibold text-gray-900">
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-900">
           {activeProject?.name ?? 'Business Runtime'}
         </span>
+        <button
+          type="button"
+          data-testid="sidebar-collapse"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          onClick={() => toggleSidebarExpanded(false)}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+          </svg>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-3">
@@ -450,19 +588,32 @@ export default function SidebarPanel() {
       </div>
 
       <div className="border-t border-gray-200 p-2">
-        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+        <button
+          type="button"
+          data-testid="sidebar-operator-settings"
+          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
+            settingsActive ? 'bg-violet-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => navigateShell(settingsHref())}
+        >
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700">
             SG
           </div>
-          <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-xs font-medium text-gray-900">Operator</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-gray-900">Operator · Settings</p>
             {harnessSpec ? (
               <p className="mt-0.5 line-clamp-2 text-[10px] text-gray-500" data-testid="sidebar-harness-spec">
                 {harnessSpec}
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-0.5 text-[10px] text-gray-500">Configure harness from business.yaml</p>
+            )}
           </div>
-        </div>
+          <svg className="h-4 w-4 shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </button>
       </div>
     </aside>
   );

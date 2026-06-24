@@ -13,12 +13,14 @@ export interface ShellLayoutManifest {
   version: number;
   sidebarSize: number;
   contextSize: number;
+  sidebarExpanded: boolean;
 }
 
 export const DEFAULT_SHELL_LAYOUT: ShellLayoutManifest = {
   version: 1,
   sidebarSize: SHELL_LAYOUT_DEFAULTS.sidebar,
   contextSize: SHELL_LAYOUT_DEFAULTS.context,
+  sidebarExpanded: false,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +44,7 @@ function normalizeManifest(raw: unknown): ShellLayoutManifest {
       DEFAULT_SHELL_LAYOUT.contextSize,
       SHELL_LAYOUT_MIN.context,
     ),
+    sidebarExpanded: typeof raw.sidebarExpanded === 'boolean' ? raw.sidebarExpanded : false,
   };
 }
 

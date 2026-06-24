@@ -33,7 +33,13 @@ export function isChatRoute(pathname: string): boolean {
 }
 
 export function isShellClientRoute(path: string): boolean {
-  return isChatRoute(path) || path === '/executions' || path.startsWith('/execution/');
+  return (
+    isChatRoute(path) ||
+    path === '/executions' ||
+    path.startsWith('/execution/') ||
+    path === '/settings' ||
+    path.startsWith('/settings/')
+  );
 }
 
 export function navigateShell(nextPath: string): void {
