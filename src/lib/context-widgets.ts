@@ -92,7 +92,7 @@ export async function collectContextWidgets(): Promise<ContextWidgetsSnapshot> {
     const readySlots = slots.filter((slot) => slot.ready).length;
     const healthSlots: ContextHealthSlot[] = slots.map((slot) => ({
       ...slot,
-      connectAvailable: !slot.ready && composioConnectAvailable(slot.slotId),
+      connectAvailable: !slot.ready && composioConnectAvailable(slot.provider),
     }));
 
     return {
