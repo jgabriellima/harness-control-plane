@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Maximize2, Pin, PinOff } from 'lucide-react';
+import { Maximize2, Pin, PinOff, X } from 'lucide-react';
 
 import EventDistributionChart from '@/components/react/EventDistributionChart';
 import {
@@ -24,6 +24,7 @@ interface ChatPaneHeaderProps {
   updatedAt: string | null;
   messages: ChatMessage[];
   compact?: boolean;
+  paneIndex?: number;
 }
 
 function formatHeaderDate(conversationId: string, updatedAt: string | null): string | null {
@@ -45,6 +46,7 @@ export default function ChatPaneHeader({
   updatedAt,
   messages,
   compact = false,
+  paneIndex,
 }: ChatPaneHeaderProps) {
   const hub = useRuntimeHub();
   const [pinned, setPinned] = useState(() => isConversationPinned(conversationId));
@@ -61,6 +63,10 @@ export default function ChatPaneHeader({
   function handleTogglePin(): void {
     const nextPinned = togglePinnedConversation(conversationId);
     setPinned(nextPinned);
+  }
+
+  function handleClose(): void {
+    hub.closePane(paneIndex);
   }
 
   return (
@@ -119,7 +125,7 @@ export default function ChatPaneHeader({
           aria-pressed={pinned}
           className={`rounded p-1.5 transition-colors ${
             pinned
-              ? 'text-violet-600 hover:bg-violet-50'
+              ? 'text-gray-600 hover:bg-gray-100'
               : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
           }`}
           onClick={handleTogglePin}
@@ -138,6 +144,16 @@ export default function ChatPaneHeader({
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         ) : null}
+
+        <button
+          type="button"
+          data-testid="chat-pane-close"
+          aria-label="Close session and return to start"
+          className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          onClick={handleClose}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     </header>
   );

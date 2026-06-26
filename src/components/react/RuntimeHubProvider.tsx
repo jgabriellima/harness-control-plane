@@ -27,10 +27,12 @@ import {
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
-import { isTransientHydrateFailure, waitForRuntimeReady } from '@/lib/runtime-readiness-client';
+import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
+import { isTransientHydrateFailure, waitForRuntimeReady, fetchDispatchHealth } from '@/lib/runtime-readiness-client';
 import {
   extractBrowserNavigateUrl,
   isBrowserToolName,
+  resolveBrowserPanelTarget,
 } from '@/lib/runtime-browser-types';
 import type {
   ConversationRuntimeState,
@@ -72,11 +74,18 @@ function dispatchBrowserToolSideEffect(event: RuntimeHubWireEvent): void {
 
   const navigateUrl = extractBrowserNavigateUrl(event.payload.args);
   if (navigateUrl) {
+    const resolved = resolveBrowserPanelTarget(navigateUrl, window.location.origin);
+    if (resolved.harnessSelf && resolved.url === 'about:blank') {
+      window.dispatchEvent(new CustomEvent('runtime:sync-browser'));
+      return;
+    }
+
     window.dispatchEvent(
       new CustomEvent('runtime:open-browser', {
         detail: {
-          url: navigateUrl,
+          url: resolved.url,
           conversationId: event.conversation_id,
+          interactive: resolved.interactive,
         },
       }),
     );
@@ -360,15 +369,53 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     void syncActiveRunForConversation(foreground);
   }, [pathname, syncActiveRunForConversation]);
 
+  const ensureSdkHealth = useCallback(
+    async (
+      conversationId: string,
+      projectId: string,
+      options?: { force?: boolean },
+    ): Promise<boolean> => {
+      updateConversation(conversationId, (state) => ({
+        ...state,
+        sdkHealth: 'checking',
+      }));
+
+      try {
+        const health = await fetchDispatchHealth(projectId, { force: options?.force });
+        updateConversation(conversationId, (state) => ({
+          ...state,
+          sdkHealth: health.ready ? 'ready' : 'unavailable',
+          sdkHealthMessage: health.message,
+        }));
+        return health.ready;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível verificar conectividade com o runtime Cursor';
+        updateConversation(conversationId, (state) => ({
+          ...state,
+          sdkHealth: 'unavailable',
+          sdkHealthMessage: message,
+        }));
+        return false;
+      }
+    },
+    [updateConversation],
+  );
+
   const hydrateConversation = useCallback(
     async (conversationId: string): Promise<void> => {
       if (isDraftConversationId(conversationId)) {
-        updateConversation(conversationId, (state) => ({
-          ...state,
+        const draftProjectId =
+          conversations.get(conversationId)?.projectId ?? DEFAULT_WORKSPACE_ID;
+        updateConversation(conversationId, (current) => ({
+          ...current,
           title: 'New chat',
           hydrated: true,
           error: null,
         }));
+        void ensureSdkHealth(conversationId, draftProjectId);
         return;
       }
 
@@ -450,6 +497,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
               error: null,
             };
           });
+
+          void ensureSdkHealth(conversationId, payload.projectId);
         } catch (error) {
           hydratedIdsRef.current.add(conversationId);
           const message = error instanceof Error ? error.message : 'Failed to load conversation';
@@ -463,7 +512,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       await syncActiveRunForConversation(conversationId);
     },
-    [syncActiveRunForConversation, updateConversation],
+    [conversations, ensureSdkHealth, syncActiveRunForConversation, updateConversation],
   );
 
   const ensurePersistedConversation = useCallback(
@@ -563,12 +612,29 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
-      const resumedActiveRun = await syncActiveRunForConversation(targetId);
-      if (resumedActiveRun) {
+      const sdkReady =
+        state.sdkHealth === 'ready'
+          ? true
+          : await ensureSdkHealth(targetId, payload.projectId, {
+              force: state.sdkHealth === 'unavailable',
+            });
+
+      if (!sdkReady) {
+        const healthMessage =
+          conversations.get(targetId)?.sdkHealthMessage ??
+          'Runtime Cursor indisponível — verifique conectividade antes de enviar mensagens';
+        updateConversation(targetId, (current) => ({
+          ...current,
+          error: healthMessage,
+          runPhase: 'failed',
+          runActivity: 'idle',
+        }));
         return;
       }
 
-      const commandsResponse = await fetch('/api/runtime/commands');
+      const commandsResponse = await fetch(
+        `/api/runtime/commands?project_id=${encodeURIComponent(payload.projectId)}`,
+      );
       if (!commandsResponse.ok) {
         throw new Error('Failed to load harness commands');
       }
@@ -638,11 +704,24 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         const body = (await response.json()) as {
           run_id: string;
           agent_id: string;
+          request_id?: string;
           error?: string;
+          phase?: string;
+          detail?: string;
         };
 
         if (!response.ok) {
-          throw new Error(body.error ?? 'Runtime dispatch failed');
+          const parts = [body.error ?? 'Runtime dispatch failed'];
+          if (body.phase) {
+            parts.push(`phase: ${body.phase}`);
+          }
+          if (body.request_id) {
+            parts.push(`request_id: ${body.request_id}`);
+          }
+          if (body.detail) {
+            parts.push(body.detail);
+          }
+          throw new Error(parts.join('\n'));
         }
 
         updateConversation(targetId, (current) => ({
@@ -650,6 +729,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           activeRunId: body.run_id,
           agentId: body.agent_id,
           projectId: payload.projectId,
+          lastRequestId: body.request_id ?? null,
         }));
       } catch (error) {
         turnTrackingRef.current.delete(targetId);
@@ -668,7 +748,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         }));
       }
     },
-    [conversations, ensurePersistedConversation, syncActiveRunForConversation, updateConversation],
+    [conversations, ensurePersistedConversation, ensureSdkHealth, updateConversation],
   );
 
   const cancelActiveRun = useCallback(
@@ -754,6 +834,31 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [assignConversationToPane],
   );
 
+  const closePane = useCallback(
+    (paneIndex?: number) => {
+      if (layoutMode === 'single') {
+        navigateShell('/');
+        setForegroundConversationId(null);
+        return;
+      }
+
+      const index = paneIndex ?? 0;
+      setPaneConversationIdsState((current) => {
+        const normalized = normalizePaneIds(current, layoutMode);
+        normalized[index] = '';
+        persistLayout(layoutMode, normalized);
+        syncUrlLayout(layoutMode, normalized);
+        return normalized;
+      });
+
+      if (index === 0) {
+        setForegroundConversationId(null);
+        navigateShell('/');
+      }
+    },
+    [layoutMode],
+  );
+
   const activeRunCount = useMemo(() => countStreamingConversations(conversations), [conversations]);
 
   const getConversationPhase = useCallback(
@@ -782,11 +887,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       assignConversationToPane,
       navigateToConversation,
       startSessionInPane,
+      closePane,
       getConversationPhase,
       getConversationState,
       dispatchMessage,
       cancelActiveRun,
       hydrateConversation,
+      ensureSdkHealth,
     }),
     [
       foregroundConversationId,
@@ -798,11 +905,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       assignConversationToPane,
       navigateToConversation,
       startSessionInPane,
+      closePane,
       getConversationPhase,
       getConversationState,
       dispatchMessage,
       cancelActiveRun,
       hydrateConversation,
+      ensureSdkHealth,
     ],
   );
 
