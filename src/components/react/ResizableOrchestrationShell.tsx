@@ -211,11 +211,11 @@ function ResizableOrchestrationShellInner({
         collapsible
         collapsedSize={4}
         defaultSize={initialLayout[SHELL_PANEL_IDS.sidebar] ?? SHELL_LAYOUT_DEFAULTS.sidebar}
-        className="min-h-0 min-w-[56px] [&>*]:min-h-0"
+        className="relative z-30 isolate min-h-0 min-w-[56px] overflow-hidden bg-white [&>*]:min-h-0"
       >
         {sidebar}
       </Panel>
-      <Separator className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-violet-300" />
+      <Separator className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-gray-300" />
       <Panel
         id={SHELL_PANEL_IDS.main}
         minSize={SHELL_LAYOUT_MIN.main}
@@ -223,7 +223,7 @@ function ResizableOrchestrationShellInner({
       >
         {main}
       </Panel>
-      <Separator className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-violet-300" />
+      <Separator className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-gray-300" />
       <Panel
         id={SHELL_PANEL_IDS.context}
         panelRef={contextPanelRef}
