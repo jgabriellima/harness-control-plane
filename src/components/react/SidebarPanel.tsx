@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
+import type { ExecutionSummary } from '../../lib/harness-types';
+
+import BrandLogo from './BrandLogo';
 import {
   invalidateSidebarCache,
   readSidebarCache,
@@ -75,9 +78,81 @@ function isSettingsActive(pathname: string): boolean {
 }
 
 function toggleSidebarExpanded(expanded: boolean): void {
-  void sidebarLayoutStore.persistExpanded(expanded).catch(() => {
-    sidebarLayoutStore.setExpanded(expanded);
-  });
+  sidebarLayoutStore.setExpanded(expanded);
+  void sidebarLayoutStore.persistExpanded(expanded).catch(() => undefined);
+}
+
+const EXECUTIONS_CACHE_KEY = 'executions-list';
+
+function useDismissOnOutside(open: boolean, onClose: () => void, containerRef: React.RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function onPointerDown(event: MouseEvent): void {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [containerRef, onClose, open]);
+}
+
+function SidebarRailFlyout({
+  label,
+  testId,
+  active,
+  menuTestId,
+  onToggle,
+  open,
+  menu,
+  children,
+}: {
+  label: string;
+  testId: string;
+  active?: boolean;
+  menuTestId: string;
+  open: boolean;
+  onToggle: () => void;
+  menu: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(open, () => {
+    if (open) {
+      onToggle();
+    }
+  }, containerRef);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <SidebarIconButton label={label} active={active || open} testId={testId} onClick={onToggle}>
+        {children}
+      </SidebarIconButton>
+      {open ? (
+        <div
+          role="menu"
+          data-testid={menuTestId}
+          className="absolute left-full top-0 z-50 ml-2 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+        >
+          {menu}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function runsHref(): string {
@@ -105,7 +180,7 @@ function SidebarIconButton({
       data-testid={testId}
       className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
         active
-          ? 'bg-violet-100 text-violet-700'
+          ? 'bg-gray-100 text-gray-700'
           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
       }`}
       onClick={onClick}
@@ -118,22 +193,29 @@ function SidebarIconButton({
 function CollapsedSidebarRail({
   runsSectionActive,
   settingsActive,
+  projects,
+  executions,
+  activeProjectId,
   onNewChat,
+  onActivateProject,
 }: {
   runsSectionActive: boolean;
   settingsActive: boolean;
+  projects: ProjectItem[];
+  executions: ExecutionSummary[];
+  activeProjectId: string | null;
   onNewChat: () => void;
+  onActivateProject: (projectId: string) => void;
 }) {
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [runsOpen, setRunsOpen] = useState(false);
+
   return (
     <aside
-      className="relative z-20 flex h-full min-h-0 w-14 flex-col items-center border-r border-gray-200 bg-white py-3"
+      className="relative z-30 flex h-full min-h-0 w-full flex-col items-center isolate overflow-hidden border-r border-gray-200 bg-white py-3"
       data-testid="sidebar-panel-collapsed"
     >
-      <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-md bg-violet-600 text-white">
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6z" />
-        </svg>
-      </div>
+      <BrandLogo variant="icon" className="mb-4 shrink-0" />
 
       <div className="flex flex-1 flex-col items-center gap-2">
         <SidebarIconButton label="New chat" testId="sidebar-rail-new-chat" onClick={onNewChat}>
@@ -142,16 +224,104 @@ function CollapsedSidebarRail({
           </svg>
         </SidebarIconButton>
 
-        <SidebarIconButton
+        <SidebarRailFlyout
+          label="Projects"
+          testId="sidebar-rail-projects"
+          menuTestId="sidebar-rail-projects-menu"
+          open={projectsOpen}
+          onToggle={() => {
+            setRunsOpen(false);
+            setProjectsOpen((current) => !current);
+          }}
+          menu={
+            <>
+              {projects.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No projects</p>
+              ) : (
+                projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    role="menuitem"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                      project.id === activeProjectId
+                        ? 'bg-gray-100 font-medium text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      setProjectsOpen(false);
+                      onActivateProject(project.id);
+                    }}
+                  >
+                    <span className="truncate">{project.name}</span>
+                  </button>
+                ))
+              )}
+              <a
+                href={projectsHref()}
+                role="menuitem"
+                className="block border-t border-gray-100 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => setProjectsOpen(false)}
+              >
+                Manage projects
+              </a>
+            </>
+          }
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 7h18M3 12h18M3 17h18" />
+          </svg>
+        </SidebarRailFlyout>
+
+        <SidebarRailFlyout
           label="Workflow runs"
-          active={runsSectionActive}
           testId="sidebar-rail-runs"
-          onClick={() => navigateShell('/executions')}
+          menuTestId="sidebar-rail-runs-menu"
+          active={runsSectionActive}
+          open={runsOpen}
+          onToggle={() => {
+            setProjectsOpen(false);
+            setRunsOpen((current) => !current);
+          }}
+          menu={
+            <>
+              {executions.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No workflow runs</p>
+              ) : (
+                executions.slice(0, 8).map((execution) => (
+                  <button
+                    key={execution.id}
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full flex-col px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setRunsOpen(false);
+                      navigateShell(`/execution/${encodeURIComponent(execution.id)}`);
+                    }}
+                  >
+                    <span className="truncate font-medium">{execution.intent || execution.workflowId}</span>
+                    <span className="truncate text-[10px] text-gray-400">{execution.status}</span>
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full border-t border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  setRunsOpen(false);
+                  navigateShell('/executions');
+                }}
+              >
+                View all runs
+              </button>
+            </>
+          }
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-        </SidebarIconButton>
+        </SidebarRailFlyout>
       </div>
 
       <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-200 pt-3">
@@ -228,7 +398,7 @@ function ConversationSidebarLink({
       onClick={handleClick}
       className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
         isActive
-          ? 'bg-violet-50 font-medium text-violet-700'
+          ? 'bg-gray-100 font-medium text-gray-700'
           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
       }`}
       aria-current={isActive ? 'page' : undefined}
@@ -239,7 +409,7 @@ function ConversationSidebarLink({
       <span className="truncate">{formatSessionTitle(conversation)}</span>
       {isStreaming ? (
         <span
-          className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-violet-500"
+          className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-gray-400"
           aria-label="Streaming"
           data-testid={`sidebar-streaming-${conversation.id}`}
         />
@@ -256,6 +426,9 @@ export default function SidebarPanel() {
   const [projects, setProjects] = useState<ProjectItem[]>(() => readStaleSidebarCache<ProjectItem[]>('projects') ?? []);
   const [conversations, setConversations] = useState<ConversationItem[]>(
     () => readStaleSidebarCache<ConversationItem[]>('conversations') ?? [],
+  );
+  const [executions, setExecutions] = useState<ExecutionSummary[]>(
+    () => readStaleSidebarCache<ExecutionSummary[]>(EXECUTIONS_CACHE_KEY) ?? [],
   );
   const [activeConversationId, setActiveConversationId] = useState<string | null>(() =>
     activeConversationFromPath(pathname),
@@ -310,6 +483,27 @@ export default function SidebarPanel() {
   }
 
   const activeProject = projects.find((project) => project.active) ?? projects[0];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch('/api/executions')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { executions: ExecutionSummary[] };
+        if (!cancelled) {
+          setExecutions(payload.executions);
+          writeSidebarCache(EXECUTIONS_CACHE_KEY, payload.executions);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void fetch('/api/runtime/harness-spec')
@@ -427,13 +621,33 @@ export default function SidebarPanel() {
     hub.navigateToConversation(DRAFT_CONVERSATION_ID);
   }
 
+  async function handleActivateProject(projectId: string): Promise<void> {
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'POST' });
+      if (!response.ok) {
+        throw new Error('Failed to activate project');
+      }
+      invalidateSidebarCache('projects');
+      invalidateSidebarCache('conversations');
+      await loadSidebarData(projectId);
+    } catch {
+      setLoadError('Failed to activate project');
+    }
+  }
+
   if (!sidebarExpanded) {
     return (
       <CollapsedSidebarRail
         runsSectionActive={runsSectionActive}
         settingsActive={settingsActive}
+        projects={projects}
+        executions={executions}
+        activeProjectId={activeProject?.id ?? null}
         onNewChat={() => {
           void handleNewChat();
+        }}
+        onActivateProject={(projectId) => {
+          void handleActivateProject(projectId);
         }}
       />
     );
@@ -441,18 +655,11 @@ export default function SidebarPanel() {
 
   return (
     <aside
-      className="relative z-20 flex h-full min-h-0 flex-col border-r border-gray-200 bg-white"
+      className="relative z-30 flex h-full min-h-0 flex-col isolate overflow-hidden border-r border-gray-200 bg-white"
       data-testid="sidebar-panel"
     >
       <div className="flex h-9 items-center gap-2 border-b border-gray-200 px-4">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-600 text-white">
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6z" />
-          </svg>
-        </div>
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-900">
-          {activeProject?.name ?? 'Business Runtime'}
-        </span>
+        <BrandLogo variant="full" className="min-w-0 flex-1" />
         <button
           type="button"
           data-testid="sidebar-collapse"
@@ -482,7 +689,7 @@ export default function SidebarPanel() {
                 type="button"
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors ${
                   project.active
-                    ? 'bg-violet-50 text-violet-700'
+                    ? 'bg-gray-100 text-gray-700'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
                 onClick={() => {
@@ -534,7 +741,7 @@ export default function SidebarPanel() {
           <button
             type="button"
             data-testid="sidebar-new-chat"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-violet-600 hover:bg-violet-50"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
             onClick={() => {
               void handleNewChat();
             }}
@@ -568,7 +775,7 @@ export default function SidebarPanel() {
                 }}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                   runsSectionActive
-                    ? 'bg-violet-50 font-medium text-violet-700'
+                    ? 'bg-gray-100 font-medium text-gray-700'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
                 aria-current={runsSectionActive ? 'page' : undefined}
@@ -579,7 +786,7 @@ export default function SidebarPanel() {
                 </svg>
                 <span className="truncate">Workflow Runs</span>
                 {activeExecutionId ? (
-                  <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-violet-500" aria-hidden="true" />
+                  <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-gray-400" aria-hidden="true" />
                 ) : null}
               </a>
             </li>
@@ -592,11 +799,11 @@ export default function SidebarPanel() {
           type="button"
           data-testid="sidebar-operator-settings"
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
-            settingsActive ? 'bg-violet-50' : 'hover:bg-gray-50'
+            settingsActive ? 'bg-gray-100' : 'hover:bg-gray-50'
           }`}
           onClick={() => navigateShell(settingsHref())}
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-700">
             SG
           </div>
           <div className="min-w-0 flex-1">
