@@ -6,10 +6,11 @@ import {
   Send,
   Sparkles,
 } from 'lucide-react';
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
+import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import RuntimeActivityIndicator from '@/components/react/RuntimeActivityIndicator';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +31,8 @@ import { isDraftConversationId } from '@/lib/draft-conversation';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
+import RunDiagnosticsPanel from './RunDiagnosticsPanel';
+import SdkHealthBanner from './SdkHealthBanner';
 
 function ChatPaneMessagesSkeleton({ compact = false }: { compact?: boolean }) {
   return (
@@ -59,6 +62,7 @@ function ChatPaneMessagesSkeleton({ compact = false }: { compact?: boolean }) {
 interface ChatPaneProps {
   conversationId: string | null;
   compact?: boolean;
+  paneIndex?: number;
   seedArtifactE2e?: boolean;
 }
 
@@ -86,6 +90,7 @@ const E2E_ARTIFACT_DEMO_MESSAGE: ChatMessage = {
 export default function ChatPane({
   conversationId,
   compact = false,
+  paneIndex,
   seedArtifactE2e = false,
 }: ChatPaneProps) {
   const fileInputId = useId();
@@ -118,6 +123,18 @@ export default function ChatPane({
       !(hub.getConversationState(conversationId ?? '')?.hydrated ?? false),
   );
   const { openArtifact, selection: selectedArtifact } = useChatArtifact();
+  const { openBrowser, navigateBrowser, selection: browserSelection } = useRuntimeBrowser();
+
+  const handleBrowserLinkClick = useCallback(
+    (url: string) => {
+      if (browserSelection?.sessionId) {
+        void navigateBrowser(url);
+        return;
+      }
+      void openBrowser(url, conversationId);
+    },
+    [browserSelection?.sessionId, conversationId, navigateBrowser, openBrowser],
+  );
 
   const artifactPanelOpen = selectedArtifact !== null;
 
@@ -129,7 +146,11 @@ export default function ChatPane({
   const runPhase = state.runPhase;
   const runActivity = state.runActivity;
   const activeRunId = state.activeRunId;
+  const lastRequestId = state.lastRequestId;
+  const sdkHealth = state.sdkHealth;
+  const sdkHealthMessage = state.sdkHealthMessage;
   const isStreaming = runPhase === 'streaming';
+  const dispatchBlocked = sdkHealth === 'unavailable' || sdkHealth === 'checking';
 
   useEffect(() => {
     setHiddenCommands(readHiddenEmptyStateCommands(projectId));
@@ -337,7 +358,7 @@ export default function ChatPane({
 
   async function handleSubmit(): Promise<void> {
     const trimmed = input.trim();
-    if (!trimmed || isLoading) {
+    if (!trimmed || isLoading || dispatchBlocked) {
       return;
     }
 
@@ -399,6 +420,7 @@ export default function ChatPane({
           updatedAt={conversationUpdatedAt}
           messages={visibleMessages}
           compact={compact}
+          paneIndex={paneIndex}
         />
       ) : null}
 
@@ -434,6 +456,7 @@ export default function ChatPane({
               onFileClick={(filePath) => {
                 void openArtifact(filePath);
               }}
+              onLinkClick={handleBrowserLinkClick}
             />
             <div ref={messagesEndRef} className="h-px shrink-0" />
           </>
@@ -497,14 +520,14 @@ export default function ChatPane({
                   role="option"
                   className={`flex w-full flex-col items-start px-4 py-2 text-left ${
                     index === selectedSuggestionIndex
-                      ? 'bg-violet-100 text-violet-900'
-                      : 'hover:bg-violet-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'hover:bg-gray-100'
                   }`}
                   aria-selected={index === selectedSuggestionIndex}
                   onMouseEnter={() => setSelectedSuggestionIndex(index)}
                   onClick={() => applySlashSuggestion(item.command)}
                 >
-                  <span className="font-mono text-xs font-semibold text-violet-700">{item.command}</span>
+                  <span className="font-mono text-xs font-semibold text-gray-700">{item.command}</span>
                   <span className="text-xs text-gray-500">{item.description}</span>
                 </button>
               ))}
@@ -539,7 +562,7 @@ export default function ChatPane({
                       type="button"
                       className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${
                         selectedIntegrations.includes(slot.slotId)
-                          ? 'bg-violet-100 text-violet-800 ring-violet-300'
+                          ? 'bg-gray-100 text-gray-800 ring-gray-200'
                           : 'bg-white text-gray-600 ring-gray-200'
                       }`}
                       onClick={() => toggleIntegration(slot.slotId)}
@@ -550,6 +573,24 @@ export default function ChatPane({
                 )}
               </div>
             </div>
+          ) : null}
+
+          {sdkHealth !== 'ready' && sdkHealthMessage ? (
+            <SdkHealthBanner
+              message={
+                sdkHealth === 'checking'
+                  ? 'Verificando conectividade com a API Cursor…'
+                  : sdkHealthMessage
+              }
+              checking={sdkHealth === 'checking'}
+              onRetry={
+                conversationId
+                  ? () => {
+                      void hub.ensureSdkHealth(conversationId, projectId, { force: true });
+                    }
+                  : undefined
+              }
+            />
           ) : null}
 
           <PromptInput
@@ -596,7 +637,7 @@ export default function ChatPane({
                 </PromptInputAction>
                 <PromptInputAction
                   tooltip="Deep research mode"
-                  className={deepResearch ? 'bg-violet-100 text-violet-700' : undefined}
+                  className={deepResearch ? 'bg-gray-100 text-gray-700' : undefined}
                   onClick={() => setDeepResearch((current) => !current)}
                 >
                   <Sparkles className="h-4 w-4" />
@@ -608,7 +649,7 @@ export default function ChatPane({
                 type="button"
                 size="sm"
                 data-testid="chat-pane-send"
-                disabled={isLoading || input.trim().length === 0}
+                disabled={isLoading || dispatchBlocked || input.trim().length === 0}
                 onClick={() => {
                   void handleSubmit();
                 }}
@@ -619,7 +660,14 @@ export default function ChatPane({
             </PromptInputActions>
           </PromptInput>
 
-          {error && !isDraftConversationId(conversationId) ? (
+          {error && !isDraftConversationId(conversationId) && runPhase === 'failed' ? (
+            <RunDiagnosticsPanel
+              runId={activeRunId}
+              projectId={projectId}
+              requestId={lastRequestId}
+              errorMessage={error}
+            />
+          ) : error && !isDraftConversationId(conversationId) ? (
             <p className="mt-2 text-xs text-red-600" role="alert">
               {error}
             </p>

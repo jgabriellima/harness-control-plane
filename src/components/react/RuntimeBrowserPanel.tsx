@@ -35,6 +35,7 @@ export default function RuntimeBrowserPanel({
   onControlModeChange,
 }: RuntimeBrowserPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [addressValue, setAddressValue] = useState(selection.url);
@@ -77,25 +78,71 @@ export default function RuntimeBrowserPanel({
 
   const userControl = selection.controlMode === 'user';
 
-  async function handleViewportClick(event: React.MouseEvent<HTMLDivElement>): Promise<void> {
-    if (!userControl || !selection.sessionId || !viewportRef.current) {
+  async function postAction(body: Record<string, unknown>): Promise<void> {
+    if (!selection.sessionId) {
       return;
     }
-
-    const rect = viewportRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
     await fetch('/api/runtime/browser/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: selection.sessionId,
-        action: 'click',
-        x: Math.round(x),
-        y: Math.round(y),
-      }),
+      body: JSON.stringify({ session_id: selection.sessionId, ...body }),
     }).catch(() => undefined);
+  }
+
+  function pageCoordsFromEvent(event: React.MouseEvent<HTMLImageElement>): { x: number; y: number } | null {
+    const img = imgRef.current;
+    if (!img) {
+      return null;
+    }
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const contentWidth = img.naturalWidth || selection.viewportWidth;
+    const contentHeight = img.naturalHeight || selection.viewportHeight;
+    const scale = Math.min(rect.width / contentWidth, rect.height / contentHeight);
+    const renderedWidth = contentWidth * scale;
+    const renderedHeight = contentHeight * scale;
+    const offsetX = (rect.width - renderedWidth) / 2;
+    const offsetY = (rect.height - renderedHeight) / 2;
+    const localX = event.clientX - rect.left - offsetX;
+    const localY = event.clientY - rect.top - offsetY;
+
+    if (localX < 0 || localY < 0 || localX > renderedWidth || localY > renderedHeight) {
+      return null;
+    }
+
+    const x = (localX / renderedWidth) * selection.viewportWidth;
+    const y = (localY / renderedHeight) * selection.viewportHeight;
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  async function handleViewportClick(event: React.MouseEvent<HTMLImageElement>): Promise<void> {
+    if (!userControl || !selection.sessionId) {
+      return;
+    }
+    const coords = pageCoordsFromEvent(event);
+    if (!coords) {
+      return;
+    }
+    await postAction({ action: 'click', x: coords.x, y: coords.y });
+    viewportRef.current?.focus();
+  }
+
+  async function handleViewportKeyDown(event: React.KeyboardEvent<HTMLDivElement>): Promise<void> {
+    if (!userControl || !selection.sessionId) {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    if (event.key.length === 1) {
+      await postAction({ action: 'type', text: event.key });
+      return;
+    }
+    await postAction({ action: 'keydown', key: event.key });
   }
 
   async function handleNavigate(): Promise<void> {
@@ -131,13 +178,13 @@ export default function RuntimeBrowserPanel({
 
   return (
     <aside
-      className="flex min-h-0 min-w-0 flex-col border-l border-gray-200 bg-gray-50"
+      className="flex min-h-0 min-w-0 flex-col border-l border-gray-200 bg-white"
       data-testid="runtime-browser-panel"
       aria-label={`Runtime browser: ${selection.url}`}
     >
       <header className="shrink-0 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-600">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
             Runtime Browser
           </p>
           <button
@@ -154,7 +201,7 @@ export default function RuntimeBrowserPanel({
         <div className="flex items-center gap-1.5 px-3 pb-2">
           <button
             type="button"
-            className="shrink-0 rounded-md border border-gray-200 bg-white p-1.5 text-gray-500 hover:bg-gray-100 hover:text-violet-600 disabled:opacity-40"
+            className="shrink-0 rounded-md border border-gray-200 bg-white p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
             aria-label="Refresh page"
             data-testid="runtime-browser-refresh"
             disabled={selection.loading || Boolean(selection.error) || refreshing || navigating}
@@ -190,7 +237,7 @@ export default function RuntimeBrowserPanel({
             />
             <button
               type="button"
-              className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-violet-600 disabled:opacity-40"
+              className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
               aria-label="Navigate"
               data-testid="runtime-browser-navigate"
               disabled={selection.loading || Boolean(selection.error) || navigating}
@@ -208,10 +255,11 @@ export default function RuntimeBrowserPanel({
         </div>
 
         <div
-          className="flex items-center justify-between gap-2 border-t border-gray-100 px-3 py-2"
+          className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2"
           data-testid="runtime-browser-control-toggle"
         >
           <p className="text-[10px] text-gray-500">Control</p>
+          <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md border border-gray-200 bg-white p-0.5">
             <Button
               type="button"
@@ -242,18 +290,20 @@ export default function RuntimeBrowserPanel({
               Agent
             </Button>
           </div>
+          </div>
         </div>
       </header>
 
       <div
         ref={viewportRef}
-        className={`relative min-h-0 flex-1 overflow-hidden bg-white ${
-          userControl ? 'cursor-crosshair' : 'cursor-default'
+        className={`relative min-h-0 flex-1 overflow-hidden bg-white outline-none ${
+          userControl ? 'cursor-crosshair ring-1 ring-inset ring-blue-200' : 'cursor-default'
         }`}
         data-testid="runtime-browser-viewport"
         data-control-mode={selection.controlMode}
-        onClick={(event) => {
-          void handleViewportClick(event);
+        tabIndex={userControl ? 0 : -1}
+        onKeyDown={(event) => {
+          void handleViewportKeyDown(event);
         }}
       >
         {selection.loading ? (
@@ -281,12 +331,16 @@ export default function RuntimeBrowserPanel({
         ) : null}
 
         {!selection.loading && !selection.error && frameSrc ? (
-          <div className="flex h-full w-full items-center justify-center bg-gray-100">
+          <div className="flex h-full w-full items-center justify-center bg-white">
             <img
+              ref={imgRef}
               src={frameSrc}
               alt={`Browser view of ${selection.url}`}
               className="max-h-full max-w-full object-contain"
               data-testid="runtime-browser-screencast"
+              onClick={(event) => {
+                void handleViewportClick(event);
+              }}
             />
           </div>
         ) : null}
@@ -303,6 +357,15 @@ export default function RuntimeBrowserPanel({
             data-testid="runtime-browser-agent-control-badge"
           >
             Agent control — MCP uses shared CDP
+          </div>
+        ) : null}
+
+        {!selection.loading && !selection.error && userControl ? (
+          <div
+            className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-blue-700/90 px-2 py-1 text-[10px] font-medium text-white"
+            data-testid="runtime-browser-user-control-badge"
+          >
+            Click a field, then type — panel stays focused for keyboard
           </div>
         ) : null}
       </div>

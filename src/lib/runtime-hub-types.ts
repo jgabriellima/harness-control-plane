@@ -17,6 +17,8 @@ export type RunActivityPhase = 'idle' | 'dispatching' | 'thinking' | 'tool' | 'r
 
 export type WorkspaceLayoutMode = 'single' | 'split-2' | 'grid-4';
 
+export type SdkHealthStatus = 'unknown' | 'checking' | 'ready' | 'unavailable';
+
 export interface ConversationRuntimeState {
   conversationId: string;
   agentId: string | null;
@@ -29,6 +31,9 @@ export interface ConversationRuntimeState {
   runActivity: RunActivityPhase;
   toolActivity: string[];
   error: string | null;
+  lastRequestId?: string | null;
+  sdkHealth: SdkHealthStatus;
+  sdkHealthMessage: string | null;
   hydrated: boolean;
 }
 
@@ -60,11 +65,13 @@ export interface RuntimeHubContextValue {
   assignConversationToPane: (paneIndex: number, conversationId: string) => void;
   navigateToConversation: (conversationId: string, options?: { paneIndex?: number }) => void;
   startSessionInPane: (paneIndex: number, projectId?: string) => Promise<string | null>;
+  closePane: (paneIndex?: number) => void;
   getConversationPhase: (conversationId: string) => RunPhase;
   getConversationState: (conversationId: string) => ConversationRuntimeState | undefined;
   dispatchMessage: (conversationId: string | null, payload: DispatchMessagePayload) => Promise<void>;
   cancelActiveRun: (conversationId: string) => Promise<void>;
   hydrateConversation: (conversationId: string) => Promise<void>;
+  ensureSdkHealth: (conversationId: string, projectId: string, options?: { force?: boolean }) => Promise<boolean>;
 }
 
 export const WELCOME_MESSAGE: ChatMessage = {

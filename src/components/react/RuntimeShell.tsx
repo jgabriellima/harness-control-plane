@@ -87,7 +87,7 @@ function ChatWorkspaceGrid({
         {cells.map((paneConversationId, index) => (
           <div key={`pane-${index}`} className="min-h-0 bg-white">
             {paneConversationId ? (
-              <ChatPane conversationId={paneConversationId} compact />
+              <ChatPane conversationId={paneConversationId} compact paneIndex={index} />
             ) : (
               <ChatPaneEmptySlot
                 paneIndex={index}
