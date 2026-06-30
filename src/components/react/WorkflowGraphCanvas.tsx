@@ -184,19 +184,19 @@ function WorkflowGraphFlow({
     };
 
     const statusBorderClasses: Record<string, string> = {
-      pending: 'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-slate-600',
+      pending: 'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-slate-600',
       running:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-cyan-400 ring-2 ring-cyan-400/30',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-cyan-400 ring-2 ring-cyan-400/30',
       completed:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-emerald-500',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-emerald-500',
       failed:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-rose-500',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-rose-500',
       blocked:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-amber-500',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-amber-500',
       skipped:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-slate-600 opacity-60',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-slate-600 opacity-60',
       retry:
-        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 border-orange-400',
+        'flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 border-orange-400',
     };
 
     async function refreshRunStatus(): Promise<void> {

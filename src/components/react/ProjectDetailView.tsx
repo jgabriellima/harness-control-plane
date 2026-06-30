@@ -102,7 +102,7 @@ export default function ProjectDetailView({ projectId }: ProjectDetailViewProps)
 
         <a
           href={`/settings?project=${encodeURIComponent(project.id)}`}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-gray-200 hover:bg-gray-100 hover:text-gray-700"
           data-testid="project-settings-link"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

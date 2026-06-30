@@ -76,7 +76,7 @@ function ToolRow({ tool, streaming }: { tool: ToolRecord; streaming?: boolean })
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-violet-700">
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
               {tool.name}
             </span>
             {formattedAt ? (

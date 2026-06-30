@@ -37,6 +37,7 @@ export default function BrandLogo({ variant = 'full', className }: BrandLogoProp
       width={asset.width}
       height={asset.height}
       decoding="async"
+      data-testid={variant === 'icon' ? 'sidebar-rail-logo' : 'brand-wordmark'}
     />
   );
 }

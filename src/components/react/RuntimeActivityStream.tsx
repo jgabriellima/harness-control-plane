@@ -26,7 +26,7 @@ function eventTone(type: RuntimeEventType): string {
   switch (type) {
     case 'execution_started':
     case 'execution_completed':
-      return 'border-violet-200 bg-violet-50 text-violet-700';
+      return 'border-gray-200 bg-gray-100 text-gray-700';
     case 'execution_failed':
       return 'border-red-200 bg-red-50 text-red-700';
     case 'node_started':
@@ -128,7 +128,7 @@ export default function RuntimeActivityStream({ events }: RuntimeActivityStreamP
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search events..."
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
             />
 
             <div className="flex flex-wrap gap-1.5">
@@ -141,7 +141,7 @@ export default function RuntimeActivityStream({ events }: RuntimeActivityStreamP
                     onClick={() => toggleFilter(type)}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
                       active
-                        ? 'bg-violet-100 text-violet-700'
+                        ? 'bg-gray-100 text-gray-700'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
                   >

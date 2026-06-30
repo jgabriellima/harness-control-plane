@@ -22,7 +22,7 @@ function iconColorClass(kind: WorkflowFlowNodeData['kind']): string {
     case 'deterministic':
       return 'text-slate-600';
     default:
-      return 'text-violet-600';
+      return 'text-gray-600';
   }
 }
 
@@ -92,7 +92,7 @@ export default function WorkflowGraphNode({ id, data }: NodeProps) {
           handleSelect();
         }
       }}
-      className={`flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-400 ${statusBorderClass(nodeData.status)}`}
+      className={`flex h-[88px] w-[200px] cursor-pointer flex-col rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300 ${statusBorderClass(nodeData.status)}`}
     >
       <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-slate-400 !bg-white" />
       <div className="flex items-start gap-2">

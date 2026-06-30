@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import type { Browser, Page } from 'playwright';
 import { chromium } from 'playwright';
 
-import { resolveHarnessBinding } from './harness-binding';
 import { resolveAppRoot } from './app-root';
+import { resolveHarnessBinding } from './harness-binding';
+import { normalizeBrowserUrl, resolveBrowserPanelTarget } from './runtime-browser-types';
 
 export type BrowserSessionStatus = 'starting' | 'ready' | 'closed' | 'error';
 export type BrowserControlMode = 'user' | 'agent';
@@ -21,6 +22,9 @@ export interface RuntimeBrowserSession {
   cdpEndpoint: string;
   renderMode: 'screencast';
   controlMode: BrowserControlMode;
+  viewportWidth: number;
+  viewportHeight: number;
+  interactive: boolean;
   error: string | null;
 }
 
@@ -61,15 +65,12 @@ async function allocatePort(): Promise<number> {
   });
 }
 
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return 'about:blank';
+function sanitizePlaywrightNavigationUrl(raw: string): string {
+  const resolved = resolveBrowserPanelTarget(raw);
+  if (resolved.harnessSelf) {
+    return resolved.url;
   }
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('about:')) {
-    return trimmed;
-  }
-  return `https://${trimmed}`;
+  return normalizeBrowserUrl(raw);
 }
 
 function generateSessionId(): string {
@@ -161,19 +162,27 @@ async function disposeSession(handle: BrowserSessionHandle): Promise<void> {
   await clearCdpManifest();
 }
 
+const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+
 export async function createBrowserSession(input: {
   url: string;
   conversationId?: string;
+  interactive?: boolean;
 }): Promise<RuntimeBrowserSession> {
   const conversationId = input.conversationId?.trim() || 'default';
-  const url = normalizeUrl(input.url);
+  const url = sanitizePlaywrightNavigationUrl(input.url);
+  const interactive = Boolean(input.interactive);
 
   const existingId = sessionsByConversation.get(conversationId);
   if (existingId) {
     const existing = sessions.get(existingId);
     if (existing && existing.record.status === 'ready') {
-      await navigateBrowserSession(existingId, url);
-      return existing.record;
+      if (existing.record.interactive !== interactive) {
+        await disposeSession(existing);
+      } else {
+        await navigateBrowserSession(existingId, url);
+        return existing.record;
+      }
     }
   }
 
@@ -191,16 +200,19 @@ export async function createBrowserSession(input: {
     updatedAt: now,
     cdpEndpoint,
     renderMode: 'screencast',
-    controlMode: 'agent',
+    controlMode: interactive ? 'user' : 'agent',
+    viewportWidth: DEFAULT_VIEWPORT.width,
+    viewportHeight: DEFAULT_VIEWPORT.height,
+    interactive,
     error: null,
   };
 
   try {
     const browser = await chromium.launch({
-      headless: true,
+      headless: !interactive,
       args: [`--remote-debugging-port=${cdpPort}`],
     });
-    const context = await browser.newContext();
+    const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT });
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
@@ -240,7 +252,7 @@ export async function navigateBrowserSession(sessionId: string, url: string): Pr
     throw new Error(`Browser session ${sessionId} not found`);
   }
 
-  const normalized = normalizeUrl(url);
+  const normalized = sanitizePlaywrightNavigationUrl(url);
   await handle.page.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   handle.record.url = handle.page.url();
   handle.record.updatedAt = new Date().toISOString();
@@ -262,7 +274,23 @@ export async function refreshBrowserSession(sessionId: string): Promise<RuntimeB
 }
 
 export function getBrowserSession(sessionId: string): RuntimeBrowserSession | null {
-  return sessions.get(sessionId)?.record ?? null;
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    return null;
+  }
+
+  try {
+    const liveUrl = handle.page.url();
+    if (liveUrl !== handle.record.url) {
+      handle.record.url = liveUrl;
+      handle.record.updatedAt = new Date().toISOString();
+      void persistCdpManifest(handle.record);
+    }
+  } catch {
+    // Page may be navigating or closed.
+  }
+
+  return handle.record;
 }
 
 export function getBrowserSessionForConversation(conversationId: string): RuntimeBrowserSession | null {
@@ -343,6 +371,60 @@ export async function performBrowserClick(
     throw new Error('Browser control is with the agent — switch to User control to click');
   }
   await handle.page.mouse.click(x, y);
+  try {
+    await handle.page.evaluate(
+      (coords) => {
+        const element = document.elementFromPoint(coords.x, coords.y);
+        if (element instanceof HTMLElement) {
+          element.focus();
+        }
+      },
+      { x, y },
+    );
+  } catch {
+    // Best-effort focus for form fields after click.
+  }
+  handle.record.updatedAt = new Date().toISOString();
+}
+
+export async function enableUserBrowserWindow(sessionId: string): Promise<RuntimeBrowserSession> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+  if (handle.record.interactive) {
+    return handle.record;
+  }
+
+  const { url, conversationId } = handle.record;
+  await disposeSession(handle);
+  return createBrowserSession({ url, conversationId, interactive: true });
+}
+
+export async function performBrowserType(sessionId: string, text: string): Promise<void> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+  if (handle.record.controlMode !== 'user') {
+    throw new Error('Browser control is with the agent — switch to User control to type');
+  }
+  if (!text) {
+    return;
+  }
+  await handle.page.keyboard.type(text);
+  handle.record.updatedAt = new Date().toISOString();
+}
+
+export async function performBrowserKeyPress(sessionId: string, key: string): Promise<void> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+  if (handle.record.controlMode !== 'user') {
+    throw new Error('Browser control is with the agent — switch to User control to type');
+  }
+  await handle.page.keyboard.press(key);
   handle.record.updatedAt = new Date().toISOString();
 }
 
@@ -356,5 +438,5 @@ export function extractBrowserNavigateUrl(args: unknown): string | null {
   }
   const record = args as Record<string, unknown>;
   const url = record.url ?? record.href ?? record.link;
-  return typeof url === 'string' && url.trim().length > 0 ? normalizeUrl(url) : null;
+  return typeof url === 'string' && url.trim().length > 0 ? normalizeBrowserUrl(url.trim()) : null;
 }

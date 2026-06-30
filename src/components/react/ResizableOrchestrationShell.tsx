@@ -207,11 +207,11 @@ function ResizableOrchestrationShellInner({
       <Panel
         id={SHELL_PANEL_IDS.sidebar}
         panelRef={sidebarPanelRef}
-        minSize={SHELL_LAYOUT_MIN.sidebar}
+        minSize="56px"
         collapsible
-        collapsedSize={4}
+        collapsedSize="56px"
         defaultSize={initialLayout[SHELL_PANEL_IDS.sidebar] ?? SHELL_LAYOUT_DEFAULTS.sidebar}
-        className="relative z-30 isolate min-h-0 min-w-[56px] overflow-hidden bg-white [&>*]:min-h-0"
+        className="relative min-h-0 overflow-hidden bg-white [&>*]:min-h-0"
       >
         {sidebar}
       </Panel>
@@ -219,7 +219,7 @@ function ResizableOrchestrationShellInner({
       <Panel
         id={SHELL_PANEL_IDS.main}
         minSize={SHELL_LAYOUT_MIN.main}
-        className="min-h-0 [&>*]:min-h-0"
+        className="relative z-0 min-h-0 min-w-0 [&>*]:min-h-0"
       >
         {main}
       </Panel>

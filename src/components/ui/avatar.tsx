@@ -24,7 +24,7 @@ export function AvatarFallback({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('flex h-full w-full items-center justify-center rounded-full bg-violet-100 text-xs font-medium text-violet-700', className)}
+      className={cn('flex h-full w-full items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-700', className)}
       {...props}
     >
       {children}

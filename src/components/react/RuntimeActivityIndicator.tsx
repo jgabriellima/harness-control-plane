@@ -33,8 +33,8 @@ export default function RuntimeActivityIndicator({
     <div
       className={
         compact
-          ? 'flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2'
-          : 'flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 shadow-sm'
+          ? 'flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2'
+          : 'flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 shadow-sm'
       }
       data-testid="runtime-activity-indicator"
       role="status"
@@ -42,11 +42,11 @@ export default function RuntimeActivityIndicator({
       aria-label={label}
     >
       <Loader2
-        className={`shrink-0 animate-spin text-violet-600 ${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}`}
+        className={`shrink-0 animate-spin text-gray-600 ${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}`}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <p className={`font-medium text-violet-900 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</p>
+        <p className={`font-medium text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</p>
         {!compact && toolActivity.length > 0 ? (
           <ul className="mt-2 space-y-1">
             {toolActivity.slice(-4).map((line, index) => {
@@ -55,15 +55,15 @@ export default function RuntimeActivityIndicator({
               return (
                 <li
                   key={`${index}-${line}`}
-                  className="flex items-center gap-2 font-mono text-[11px] text-violet-800/80"
+                  className="flex items-center gap-2 font-mono text-[11px] text-gray-800/80"
                 >
                   {running ? (
-                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-violet-500" aria-hidden />
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-500" aria-hidden />
                   ) : (
                     <span className="inline-block h-3 w-3 shrink-0 rounded-full bg-emerald-400" aria-hidden />
                   )}
                   <span className="truncate">{name}</span>
-                  <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-violet-600/70">
+                  <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-gray-600/70">
                     {status}
                   </span>
                 </li>
@@ -79,7 +79,7 @@ export default function RuntimeActivityIndicator({
 export function StreamingPlaceholder(): React.ReactElement {
   return (
     <span className="inline-flex items-center gap-2 text-sm text-gray-500" data-testid="streaming-placeholder">
-      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" aria-hidden />
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" aria-hidden />
       <span className="animate-pulse">Working…</span>
     </span>
   );

@@ -131,12 +131,14 @@ function avatarLabel(role: ChatMessageRole): string {
 export default function AgentMessageStack({
   messages,
   onFileClick,
+  onLinkClick,
   showStreamingIndicator = false,
   runActivity = 'idle',
   toolActivity = [],
 }: {
   messages: StackMessage[];
   onFileClick?: (filePath: string) => void;
+  onLinkClick?: (url: string) => void;
   showStreamingIndicator?: boolean;
   runActivity?: RunActivityPhase;
   toolActivity?: string[];
@@ -205,7 +207,7 @@ export default function AgentMessageStack({
                 <MessageTimestamp value={message.recordedAt} />
                 <button
                   type="button"
-                  className="text-[10px] font-medium text-violet-600 opacity-0 transition-opacity hover:text-violet-700 group-hover:opacity-100"
+                  className="text-[10px] font-medium text-gray-600 opacity-0 transition-opacity hover:text-gray-700 group-hover:opacity-100"
                   onClick={() => {
                     void copyToClipboard(message.content);
                   }}
@@ -218,11 +220,12 @@ export default function AgentMessageStack({
                   markdown={!message.streaming}
                   className="border border-gray-100 bg-white text-gray-900 shadow-sm"
                   onFileClick={onFileClick}
+                  onLinkClick={onLinkClick}
                 >
                   {message.content || (message.streaming ? <StreamingPlaceholder /> : '')}
                 </MessageContent>
               ) : (
-                <MessageContent className="bg-violet-600 text-sm text-white shadow-sm">
+                <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
                   {message.content}
                 </MessageContent>
               )}

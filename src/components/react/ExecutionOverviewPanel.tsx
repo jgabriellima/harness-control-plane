@@ -18,7 +18,7 @@ function statusTone(status: ExecutionStatus): string {
     case 'paused':
       return 'border-amber-200 bg-amber-50 text-amber-800';
     default:
-      return 'border-violet-200 bg-violet-50 text-violet-800';
+      return 'border-gray-200 bg-gray-100 text-gray-800';
   }
 }
 

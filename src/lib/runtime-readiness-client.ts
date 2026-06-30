@@ -1,4 +1,7 @@
+import type { SdkDispatchHealth } from './runtime-sdk-probe';
+
 const READINESS_PATH = '/api/runtime/readiness';
+const DISPATCH_HEALTH_PATH = '/api/runtime/dispatch-health';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 300;
 
@@ -55,4 +58,24 @@ export async function waitForRuntimeReady(timeoutMs = DEFAULT_TIMEOUT_MS): Promi
 
 export function isTransientHydrateFailure(status: number | null): boolean {
   return status === null || status === 502 || status === 503 || status === 504;
+}
+
+export async function fetchDispatchHealth(
+  projectId: string,
+  options?: { force?: boolean },
+): Promise<SdkDispatchHealth> {
+  const params = new URLSearchParams({ project_id: projectId });
+  if (options?.force) {
+    params.set('force', '1');
+  }
+
+  const response = await fetch(`${DISPATCH_HEALTH_PATH}?${params.toString()}`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to verify Cursor runtime connectivity');
+  }
+
+  return (await response.json()) as SdkDispatchHealth;
 }

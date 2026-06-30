@@ -23,7 +23,7 @@ function statusTone(status: ExecutionStatus): string {
       return 'bg-amber-50 text-amber-700 ring-amber-600/20';
     case 'running':
     case 'in_progress':
-      return 'bg-violet-50 text-violet-700 ring-violet-600/20';
+      return 'bg-gray-100 text-gray-700 ring-gray-200';
     default:
       return 'bg-gray-50 text-gray-600 ring-gray-500/20';
   }
@@ -96,7 +96,7 @@ export default function ExecutionHeader({ model, tick }: ExecutionHeaderProps) {
         </div>
         <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100">
           <div
-            className="h-full rounded-full bg-violet-600 transition-all duration-500"
+            className="h-full rounded-full bg-gray-900 transition-all duration-500"
             style={{ width: `${model.progress.percentComplete}%` }}
             role="progressbar"
             aria-valuenow={model.progress.percentComplete}

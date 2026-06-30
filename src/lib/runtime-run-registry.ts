@@ -35,8 +35,8 @@ async function runRegistryPaths(workspaceRoot?: string) {
   };
 }
 
-export async function readRunsIndex(): Promise<RunsIndex> {
-  const paths = await runRegistryPaths();
+export async function readRunsIndex(workspaceRoot?: string): Promise<RunsIndex> {
+  const paths = await runRegistryPaths(workspaceRoot);
   try {
     const raw = await readFile(paths.runsIndexPath, 'utf8');
     const parsed = JSON.parse(raw) as unknown;
@@ -72,8 +72,9 @@ export async function appendRunStarted(input: {
   conversationId: string;
   agentId: string;
   vendor?: string;
+  workspaceRoot?: string;
 }): Promise<void> {
-  const paths = await runRegistryPaths();
+  const paths = await runRegistryPaths(input.workspaceRoot);
   await execFileAsync(
     'python3',
     [
@@ -98,8 +99,9 @@ export async function appendRunTerminal(input: {
   status?: string;
   message?: string;
   reason?: string;
+  workspaceRoot?: string;
 }): Promise<void> {
-  const paths = await runRegistryPaths();
+  const paths = await runRegistryPaths(input.workspaceRoot);
   const args = [
     paths.runRegistryScript,
     'append-terminal',

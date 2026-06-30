@@ -126,13 +126,13 @@ export default function ProjectsListView() {
           value={newProjectName}
           onChange={(event) => setNewProjectName(event.target.value)}
           placeholder="BASA_Project"
-          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
           data-testid="new-project-name"
         />
         <button
           type="submit"
           disabled={creating || newProjectName.trim().length === 0}
-          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           data-testid="create-project-button"
         >
           {creating ? 'Creating...' : 'Create Project'}
@@ -152,11 +152,11 @@ export default function ProjectsListView() {
             <a
               key={project.id}
               href={`/project/${encodeURIComponent(project.id)}`}
-              className="group flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:border-violet-200 hover:shadow-md"
+              className="group flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:border-gray-200 hover:shadow-md"
               data-testid={`project-card-${project.id}`}
             >
               <div className="mb-3 flex items-start justify-between gap-3">
-                <h2 className="truncate text-base font-semibold text-gray-900 group-hover:text-violet-700">
+                <h2 className="truncate text-base font-semibold text-gray-900 group-hover:text-gray-700">
                   {project.name}
                 </h2>
                 <span
@@ -173,8 +173,8 @@ export default function ProjectsListView() {
               <div className="flex items-center justify-between text-xs text-gray-400">
                 <span className="font-mono truncate">{project.path ?? project.id}</span>
                 {project.active ? (
-                  <span className="flex items-center gap-1.5 font-medium text-violet-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden="true" />
+                  <span className="flex items-center gap-1.5 font-medium text-gray-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-gray-1000" aria-hidden="true" />
                     Active
                   </span>
                 ) : null}

@@ -8,6 +8,7 @@ import { parse as parseYaml } from 'yaml';
 function parseArgs(argv) {
   const positional = [];
   let projectRoot;
+  let verbose = false;
   let passthrough = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -15,6 +16,10 @@ function parseArgs(argv) {
     if (token === '--') {
       passthrough = argv.slice(index + 1);
       break;
+    }
+    if (token === '--verbose') {
+      verbose = true;
+      continue;
     }
     if (token === '--project-root') {
       const value = argv[index + 1];
@@ -28,7 +33,7 @@ function parseArgs(argv) {
     positional.push(token);
   }
 
-  return { positional, projectRoot, passthrough };
+  return { positional, projectRoot, verbose, passthrough };
 }
 
 async function loadCoreModules() {
@@ -75,11 +80,11 @@ function cliUsage() {
   return [
     'Usage:',
     '  hcp start [--project-root <path>] [-- <dev args>]',
-    '  hcp doctor [--project-root <path>]',
+    '  hcp doctor [--project-root <path>] [--verbose]',
   ].join('\n');
 }
 
-async function commandDoctor(projectRootArg) {
+async function commandDoctor(projectRootArg, verbose) {
   const core = await loadCoreModules();
   const projectRoot = core.resolveProjectRoot({ projectRoot: projectRootArg });
   const [uiConfig] = await Promise.all([core.loadUIConfig(projectRoot)]);
@@ -90,6 +95,76 @@ async function commandDoctor(projectRootArg) {
   console.log(`harnessRoot: ${runtime.harnessRoot}`);
   console.log(`uiConfig: ${core.uiConfigPath(projectRoot)}`);
   console.log(`surface: ${uiConfig.distribution?.surface ?? 'embedded'}`);
+
+  if (verbose) {
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const dispatchLogPath = join(runtime.harnessRoot, 'runtime-sessions', 'dispatch-log.jsonl');
+    const runsLogPath = join(runtime.harnessRoot, 'runtime-sessions', 'runs.jsonl');
+
+    console.log('--- observability ---');
+    console.log(`CURSOR_API_KEY: ${process.env.CURSOR_API_KEY?.trim() ? 'present' : 'missing'}`);
+    console.log(`SENTRY_DSN: ${process.env.SENTRY_DSN?.trim() ? 'present' : 'missing'}`);
+    console.log(
+      `CONTROL_PLANE_LOG_LEVEL: ${process.env.CONTROL_PLANE_LOG_LEVEL?.trim() || 'debug (dev default)'}`,
+    );
+    console.log(`dispatch_log: ${dispatchLogPath}`);
+
+    if (existsSync(dispatchLogPath)) {
+      const lines = readFileSync(dispatchLogPath, 'utf8').trim().split('\n').filter(Boolean);
+      const failures = lines
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (entry) =>
+            entry &&
+            (entry.event === 'chat.sdk.dispatch.error' ||
+              entry.event === 'chat.response.error' ||
+              entry.event === 'chat.fanout.error'),
+        )
+        .slice(-5);
+      if (failures.length > 0) {
+        console.log('recent dispatch failures:');
+        for (const failure of failures) {
+          console.log(
+            `  ${failure.ts} ${failure.event} phase=${failure.phase ?? '-'} ${failure.error_message ?? failure.detail ?? ''}`,
+          );
+        }
+      } else {
+        console.log('recent dispatch failures: none');
+      }
+    } else {
+      console.log('recent dispatch failures: dispatch-log.jsonl not found');
+    }
+
+    if (existsSync(runsLogPath)) {
+      const registryFailures = readFileSync(runsLogPath, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry) => entry?.event === 'run.failed')
+        .slice(-5);
+      if (registryFailures.length > 0) {
+        console.log('recent registry failures:');
+        for (const failure of registryFailures) {
+          console.log(`  ${failure.ts} ${failure.runId} ${failure.message ?? ''}`);
+        }
+      }
+    }
+  }
+
   console.log('doctor: ok');
 }
 
@@ -122,7 +197,7 @@ async function main() {
   }
 
   if (command === 'doctor') {
-    await commandDoctor(parsed.projectRoot);
+    await commandDoctor(parsed.projectRoot, parsed.verbose);
     return;
   }
 

@@ -60,8 +60,8 @@ export default function IntegrationConnectButton({
   }
 
   const buttonClassName = compact
-    ? 'rounded bg-violet-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-violet-700 disabled:opacity-50'
-    : 'rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50';
+    ? 'rounded bg-gray-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-gray-800 disabled:opacity-50'
+    : 'rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50';
 
   return (
     <div data-testid={`integration-connect-${slotId}`} className={compact ? 'shrink-0' : undefined}>

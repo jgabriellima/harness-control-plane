@@ -140,14 +140,14 @@ export default function SessionListItem({
     <li className="group relative" data-testid={`sidebar-session-${session.id}`}>
       <div
         className={`flex items-center gap-1 rounded-lg pr-1 ${
-          isActive ? 'bg-violet-50' : 'hover:bg-gray-50'
+          isActive ? 'bg-gray-100' : 'hover:bg-gray-50'
         }`}
       >
         <a
           href={sessionHref(session.id)}
           className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
             isActive
-              ? 'font-medium text-violet-700'
+              ? 'font-medium text-gray-700'
               : 'text-gray-600 group-hover:text-gray-900'
           }`}
           aria-current={isActive ? 'page' : undefined}

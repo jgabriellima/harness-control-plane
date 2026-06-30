@@ -9,12 +9,16 @@ import {
   emptyBrowserSelection,
   extractBrowserNavigateUrl,
   isBrowserToolName,
+  normalizeBrowserUrl,
+  resolveBrowserPanelTarget,
   type BrowserControlMode,
   type RuntimeBrowserSelection,
 } from '@/lib/runtime-browser-types';
 
 interface RuntimeBrowserContextValue {
   openBrowser: (url: string, conversationId?: string | null) => Promise<void>;
+  /** External Chromium window — no embedded panel. Operator/agent must request explicitly. */
+  openUserBrowser: (url: string, conversationId?: string | null) => Promise<void>;
   closeBrowser: () => Promise<void>;
   navigateBrowser: (url: string) => Promise<void>;
   refreshBrowser: () => Promise<void>;
@@ -24,22 +28,14 @@ interface RuntimeBrowserContextValue {
 
 const RuntimeBrowserContext = React.createContext<RuntimeBrowserContextValue | null>(null);
 
-function normalizeBrowserUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return 'about:blank';
-  }
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('about:')) {
-    return trimmed;
-  }
-  return `https://${trimmed}`;
-}
-
 interface SessionPayload {
   sessionId: string;
   url: string;
   renderMode?: 'screencast' | 'iframe';
   controlMode?: BrowserControlMode;
+  viewportWidth?: number;
+  viewportHeight?: number;
+  interactive?: boolean;
 }
 
 function selectionFromSession(
@@ -54,6 +50,9 @@ function selectionFromSession(
     renderMode: session.renderMode ?? 'screencast',
     streamUrl: `/api/runtime/browser/stream?session_id=${encodeURIComponent(session.sessionId)}`,
     controlMode: session.controlMode ?? 'agent',
+    viewportWidth: session.viewportWidth ?? 1280,
+    viewportHeight: session.viewportHeight ?? 720,
+    interactive: session.interactive ?? false,
   };
 }
 
@@ -73,6 +72,18 @@ async function postBrowserAction(
   return payload;
 }
 
+function stripBrowserOpenQueryParams(): void {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('browser-open') && !params.has('browser-interactive')) {
+    return;
+  }
+  params.delete('browser-open');
+  params.delete('browser-interactive');
+  const nextSearch = params.toString();
+  const next = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+  window.history.replaceState({}, '', next);
+}
+
 export function RuntimeBrowserProvider({ children }: { children: React.ReactNode }) {
   const pathname = useShellPathname();
   const hub = useRuntimeHub();
@@ -83,12 +94,45 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
 
-  const openBrowser = useCallback(
-    async (url: string, conversationId?: string | null): Promise<void> => {
-      const normalized = normalizeBrowserUrl(url);
-      const resolvedConversationId = conversationId ?? foregroundConversationId ?? 'default';
+  const attachExistingSession = useCallback(
+    async (conversationId: string): Promise<boolean> => {
+      const response = await fetch(
+        `/api/runtime/browser/session?conversation_id=${encodeURIComponent(conversationId)}`,
+      );
+      if (!response.ok) {
+        return false;
+      }
+      const payload = (await response.json()) as { session?: SessionPayload | null };
+      if (!payload.session?.sessionId || payload.session.interactive) {
+        return false;
+      }
+      setSelection(selectionFromSession(payload.session, payload.session.url));
+      return true;
+    },
+    [],
+  );
 
-      setSelection(emptyBrowserSelection(normalized));
+  const startBrowserSession = useCallback(
+    async (
+      rawUrl: string,
+      conversationId: string,
+      interactive: boolean,
+    ): Promise<void> => {
+      const resolved = resolveBrowserPanelTarget(rawUrl, window.location.origin);
+
+      if (resolved.harnessSelf && resolved.url === 'about:blank') {
+        const attached = await attachExistingSession(conversationId);
+        if (attached) {
+          return;
+        }
+      }
+
+      const normalized = normalizeBrowserUrl(resolved.url);
+      if (interactive) {
+        setSelection(null);
+      } else {
+        setSelection(emptyBrowserSelection(normalized));
+      }
 
       try {
         const response = await fetch('/api/runtime/browser/session', {
@@ -96,7 +140,8 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             url: normalized,
-            conversation_id: resolvedConversationId,
+            conversation_id: conversationId,
+            interactive,
           }),
         });
 
@@ -106,20 +151,33 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
         };
 
         if (!response.ok || !payload.session?.sessionId) {
-          setSelection({
-            url: normalized,
-            sessionId: null,
-            loading: false,
-            error: payload.error ?? 'Failed to open browser session',
-            renderMode: 'screencast',
-            streamUrl: null,
-            controlMode: 'agent',
-          });
+          if (!interactive) {
+            setSelection({
+              url: normalized,
+              sessionId: null,
+              loading: false,
+              error: payload.error ?? 'Failed to open browser session',
+              renderMode: 'screencast',
+              streamUrl: null,
+              controlMode: 'agent',
+              viewportWidth: 1280,
+              viewportHeight: 720,
+              interactive: false,
+            });
+          }
+          return;
+        }
+
+        if (interactive) {
+          setSelection(null);
           return;
         }
 
         setSelection(selectionFromSession(payload.session, normalized));
       } catch (openError) {
+        if (interactive) {
+          return;
+        }
         const message = openError instanceof Error ? openError.message : 'Failed to open browser';
         setSelection({
           url: normalized,
@@ -129,10 +187,29 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
           renderMode: 'screencast',
           streamUrl: null,
           controlMode: 'agent',
+          viewportWidth: 1280,
+          viewportHeight: 720,
+          interactive: false,
         });
       }
     },
-    [foregroundConversationId],
+    [attachExistingSession],
+  );
+
+  const openBrowser = useCallback(
+    async (url: string, conversationId?: string | null): Promise<void> => {
+      const resolvedConversationId = conversationId ?? foregroundConversationId ?? 'default';
+      await startBrowserSession(url, resolvedConversationId, false);
+    },
+    [foregroundConversationId, startBrowserSession],
+  );
+
+  const openUserBrowser = useCallback(
+    async (url: string, conversationId?: string | null): Promise<void> => {
+      const resolvedConversationId = conversationId ?? foregroundConversationId ?? 'default';
+      await startBrowserSession(url, resolvedConversationId, true);
+    },
+    [foregroundConversationId, startBrowserSession],
   );
 
   const navigateBrowser = useCallback(async (url: string): Promise<void> => {
@@ -141,7 +218,12 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
       return;
     }
 
-    const normalized = normalizeBrowserUrl(url);
+    const resolved = resolveBrowserPanelTarget(url, window.location.origin);
+    if (resolved.harnessSelf) {
+      return;
+    }
+
+    const normalized = normalizeBrowserUrl(resolved.url);
     const payload = await postBrowserAction(sessionId, { action: 'navigate', url: normalized });
     if (payload.session) {
       setSelection(selectionFromSession(payload.session, normalized));
@@ -203,22 +285,123 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const autoOpenUrl = params.get('browser-open');
-    if (autoOpenUrl) {
-      void openBrowser(autoOpenUrl, foregroundConversationId);
+    if (!autoOpenUrl) {
+      return;
     }
-  }, [foregroundConversationId, openBrowser]);
+
+    const interactive = params.get('browser-interactive') === '1';
+    stripBrowserOpenQueryParams();
+
+    if (interactive) {
+      void openUserBrowser(autoOpenUrl, foregroundConversationId);
+      return;
+    }
+    void openBrowser(autoOpenUrl, foregroundConversationId);
+  }, [foregroundConversationId, openBrowser, openUserBrowser]);
 
   useEffect(() => {
     function onOpenBrowser(event: Event): void {
-      const detail = (event as CustomEvent<{ url?: string; conversationId?: string }>).detail;
-      if (detail?.url) {
-        void openBrowser(detail.url, detail.conversationId ?? foregroundConversationId);
+      const detail = (event as CustomEvent<{ url?: string; conversationId?: string; interactive?: boolean }>)
+        .detail;
+      if (!detail?.url) {
+        return;
       }
+
+      const resolved = resolveBrowserPanelTarget(detail.url, window.location.origin);
+      const conversationId = detail.conversationId ?? foregroundConversationId;
+
+      if (resolved.harnessSelf && resolved.url === 'about:blank') {
+        if (conversationId) {
+          void attachExistingSession(conversationId);
+        }
+        return;
+      }
+
+      if (detail.interactive || resolved.interactive) {
+        void openUserBrowser(resolved.url, conversationId);
+        return;
+      }
+      void openBrowser(resolved.url, conversationId);
     }
 
     window.addEventListener('runtime:open-browser', onOpenBrowser);
     return () => window.removeEventListener('runtime:open-browser', onOpenBrowser);
-  }, [foregroundConversationId, openBrowser]);
+  }, [attachExistingSession, foregroundConversationId, openBrowser, openUserBrowser]);
+
+  useEffect(() => {
+    function onSyncBrowser(): void {
+      const conversationId = foregroundConversationId ?? 'default';
+      void attachExistingSession(conversationId);
+    }
+
+    window.addEventListener('runtime:sync-browser', onSyncBrowser);
+    return () => window.removeEventListener('runtime:sync-browser', onSyncBrowser);
+  }, [attachExistingSession, foregroundConversationId]);
+
+  useEffect(() => {
+    if (selection !== null || !foregroundConversationId) {
+      return;
+    }
+
+    let cancelled = false;
+    async function syncExistingSession(): Promise<void> {
+      if (cancelled) {
+        return;
+      }
+      await attachExistingSession(foregroundConversationId);
+    }
+
+    void syncExistingSession();
+    const timer = window.setInterval(() => {
+      void syncExistingSession();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [attachExistingSession, foregroundConversationId, selection]);
+
+  useEffect(() => {
+    const sessionId = selection?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncLiveUrl(): Promise<void> {
+      if (cancelled) {
+        return;
+      }
+      const response = await fetch(
+        `/api/runtime/browser/session?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      if (!response.ok || cancelled) {
+        return;
+      }
+      const payload = (await response.json()) as { session?: SessionPayload | null };
+      const liveUrl = payload.session?.url;
+      if (!liveUrl || cancelled) {
+        return;
+      }
+      setSelection((current) =>
+        current && current.sessionId === sessionId && current.url !== liveUrl
+          ? { ...current, url: liveUrl }
+          : current,
+      );
+    }
+
+    void syncLiveUrl();
+    const timer = window.setInterval(() => {
+      void syncLiveUrl();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selection?.sessionId]);
 
   useEffect(() => {
     function onBrowserTool(event: Event): void {
@@ -243,7 +426,14 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
 
       const navigateUrl = extractBrowserNavigateUrl(detail.args);
       if (navigateUrl) {
-        void openBrowser(navigateUrl, targetConversation ?? foregroundConversationId);
+        const resolved = resolveBrowserPanelTarget(navigateUrl, window.location.origin);
+        if (resolved.harnessSelf && resolved.url === 'about:blank') {
+          if (targetConversation) {
+            void attachExistingSession(targetConversation);
+          }
+          return;
+        }
+        void openBrowser(resolved.url, targetConversation ?? foregroundConversationId);
         return;
       }
 
@@ -261,18 +451,27 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
 
     window.addEventListener('runtime:browser-tool', onBrowserTool);
     return () => window.removeEventListener('runtime:browser-tool', onBrowserTool);
-  }, [foregroundConversationId, openBrowser]);
+  }, [attachExistingSession, foregroundConversationId, openBrowser]);
 
   const value = useMemo(
     () => ({
       openBrowser,
+      openUserBrowser,
       closeBrowser,
       navigateBrowser,
       refreshBrowser,
       setControlMode,
       selection,
     }),
-    [closeBrowser, navigateBrowser, openBrowser, refreshBrowser, selection, setControlMode],
+    [
+      closeBrowser,
+      navigateBrowser,
+      openBrowser,
+      openUserBrowser,
+      refreshBrowser,
+      selection,
+      setControlMode,
+    ],
   );
 
   return <RuntimeBrowserContext.Provider value={value}>{children}</RuntimeBrowserContext.Provider>;
@@ -291,7 +490,8 @@ interface RuntimeBrowserSplitShellProps {
 }
 
 export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellProps) {
-  const { selection, closeBrowser, navigateBrowser, refreshBrowser, setControlMode } = useRuntimeBrowser();
+  const { selection, closeBrowser, navigateBrowser, refreshBrowser, setControlMode } =
+    useRuntimeBrowser();
   const browserPanelOpen = selection !== null;
 
   return (

@@ -5,19 +5,23 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import { isLikelyFilePath } from '@/lib/file-reference';
+import { isChatBrowserLink } from '@/lib/runtime-browser-types';
 import { cn } from '@/lib/utils';
 
 export type MarkdownProps = {
   children: string;
   className?: string;
   onFileClick?: (filePath: string) => void;
+  onLinkClick?: (url: string) => void;
 };
 
 type ElementProps = ComponentPropsWithoutRef<'div'>;
 
-function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) {
+function MarkdownComponent({ children, className, onFileClick, onLinkClick }: MarkdownProps) {
   const onFileClickRef = useRef(onFileClick);
   onFileClickRef.current = onFileClick;
+  const onLinkClickRef = useRef(onLinkClick);
+  onLinkClickRef.current = onLinkClick;
 
   const components = useMemo(
     () => ({
@@ -48,7 +52,7 @@ function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) 
       em: ({ children: emChildren }: ElementProps) => <em className="text-gray-700">{emChildren}</em>,
       hr: () => <hr className="my-3 border-gray-200" />,
       blockquote: ({ children: quoteChildren }: ElementProps) => (
-        <blockquote className="mb-2 border-l-2 border-violet-200 pl-3 text-sm text-gray-600">
+        <blockquote className="mb-2 border-l-2 border-gray-200 pl-3 text-sm text-gray-600">
           {quoteChildren}
         </blockquote>
       ),
@@ -86,7 +90,7 @@ function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) 
           return (
             <button
               type="button"
-              className="cursor-pointer rounded bg-violet-50 px-1 py-0.5 font-mono text-[11px] text-violet-700 underline decoration-violet-300 underline-offset-2 hover:bg-violet-100"
+              className="cursor-pointer rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-gray-700 underline decoration-gray-300 underline-offset-2 hover:bg-gray-200"
               data-testid="chat-file-reference"
               data-file-path={text}
               onClick={() => onFileClickRef.current?.(text)}
@@ -105,7 +109,7 @@ function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) 
         }
 
         return (
-          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-violet-700">
+          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-gray-700">
             {text}
           </code>
         );
@@ -120,7 +124,7 @@ function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) 
           return (
             <button
               type="button"
-              className="cursor-pointer font-mono text-xs text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-900"
+              className="cursor-pointer font-mono text-xs text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-900"
               data-testid="chat-file-reference"
               data-file-path={hrefValue}
               onClick={() => onFileClickRef.current?.(hrefValue)}
@@ -130,10 +134,29 @@ function MarkdownComponent({ children, className, onFileClick }: MarkdownProps) 
           );
         }
 
+        if (
+          onLinkClickRef.current &&
+          isChatBrowserLink(hrefValue, typeof window !== 'undefined' ? window.location.origin : undefined)
+        ) {
+          return (
+            <a
+              href={hrefValue}
+              className="cursor-pointer font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+              data-testid="chat-browser-link"
+              onClick={(event) => {
+                event.preventDefault();
+                onLinkClickRef.current?.(hrefValue);
+              }}
+            >
+              {linkChildren}
+            </a>
+          );
+        }
+
         return (
           <a
             href={hrefValue}
-            className="font-medium text-violet-600 underline-offset-2 hover:underline"
+            className="font-medium text-gray-700 underline-offset-2 hover:text-gray-900 hover:underline"
             target="_blank"
             rel="noreferrer"
           >

@@ -96,7 +96,9 @@ export function PromptInput({
       >
         <div
           className={cn(
-            'rounded-2xl border-2 border-violet-200 bg-white p-3 shadow-sm',
+            'rounded-2xl border border-gray-200/70 bg-white/45 p-3 shadow-sm backdrop-blur-md transition-[background-color,border-color,box-shadow,opacity] duration-200',
+            'hover:border-gray-200 hover:bg-white/85 hover:shadow-md',
+            'focus-within:border-gray-200 focus-within:bg-white/95 focus-within:shadow-md',
             disabled && 'opacity-60',
             className,
           )}
@@ -155,6 +157,7 @@ export function PromptInputTextarea({
       ref={textareaRef}
       value={value}
       disabled={disabled}
+      data-testid="chat-input"
       className={cn('min-h-[44px] resize-none', className)}
       onChange={(event) => {
         adjustHeight(event.target);

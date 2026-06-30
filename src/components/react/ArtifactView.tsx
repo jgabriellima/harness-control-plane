@@ -86,7 +86,7 @@ export default function ArtifactView({ artifactId }: ArtifactViewProps) {
   return (
     <div className="flex flex-1 flex-col gap-4 p-6" data-testid="artifact-view">
       <header className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Artifact</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Artifact</p>
         <h1 className="mt-1 text-xl font-semibold text-gray-900">{artifact.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
           <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium uppercase">{artifact.type}</span>
@@ -94,7 +94,7 @@ export default function ArtifactView({ artifactId }: ArtifactViewProps) {
           <span>{formatTimestamp(artifact.createdAt)}</span>
           <a
             href={`/execution/${encodeURIComponent(artifact.executionId)}`}
-            className="font-mono text-xs text-violet-600 hover:underline"
+            className="font-mono text-xs text-gray-600 hover:underline"
           >
             {artifact.executionId}
           </a>
@@ -137,12 +137,12 @@ export default function ArtifactView({ artifactId }: ArtifactViewProps) {
                 {version.artifactId !== artifact.id ? (
                   <a
                     href={`/artifact/${encodeURIComponent(version.artifactId)}`}
-                    className="mt-1 inline-block text-xs font-medium text-violet-600 hover:underline"
+                    className="mt-1 inline-block text-xs font-medium text-gray-600 hover:underline"
                   >
                     View version
                   </a>
                 ) : (
-                  <span className="mt-1 inline-block text-xs text-violet-600">Current</span>
+                  <span className="mt-1 inline-block text-xs text-gray-600">Current</span>
                 )}
               </li>
             ))}

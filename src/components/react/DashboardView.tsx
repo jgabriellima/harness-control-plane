@@ -19,7 +19,7 @@ function statusTone(status: ExecutionStatus): string {
       return 'bg-amber-50 text-amber-700';
     case 'running':
     case 'in_progress':
-      return 'bg-violet-50 text-violet-700';
+      return 'bg-gray-100 text-gray-700';
     default:
       return 'bg-gray-50 text-gray-600';
   }
@@ -114,7 +114,7 @@ export default function DashboardView() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6" data-testid="dashboard-view">
       <header className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Observability</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Observability</p>
         <h1 className="mt-1 text-xl font-semibold text-gray-900">Execution Dashboard</h1>
         <p className="mt-2 text-sm text-gray-500">
           Ledger-derived metrics — updated {new Date(metrics.generatedAt).toLocaleString()}
@@ -150,7 +150,7 @@ export default function DashboardView() {
                 <div className="min-w-0">
                   <a
                     href={`/execution/${encodeURIComponent(execution.id)}`}
-                    className="truncate text-sm font-medium text-gray-900 hover:text-violet-700"
+                    className="truncate text-sm font-medium text-gray-900 hover:text-gray-700"
                   >
                     {execution.objective || execution.id}
                   </a>

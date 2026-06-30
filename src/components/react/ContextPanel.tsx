@@ -304,7 +304,7 @@ function ContextWidget({
             {widget.actionLabel ? (
               <button
                 type="button"
-                className="mt-3 text-sm font-medium text-violet-600 hover:text-violet-700"
+                className="mt-3 text-sm font-medium text-gray-600 hover:text-gray-700"
                 onClick={() => {
                   window.dispatchEvent(
                     new CustomEvent('runtime:schedule-compose', { detail: { prefix: '/schedule ' } }),
@@ -325,7 +325,7 @@ function ContextWidget({
       </div>
 
       <div
-        className="h-1.5 shrink-0 cursor-row-resize bg-gray-100 hover:bg-violet-200"
+        className="h-1.5 shrink-0 cursor-row-resize bg-gray-100 hover:bg-gray-200"
         onPointerDown={handleResizePointerDown}
         onPointerMove={handleResizePointerMove}
         onPointerUp={handleResizePointerUp}

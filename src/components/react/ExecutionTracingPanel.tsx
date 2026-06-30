@@ -114,10 +114,10 @@ export default function ExecutionTracingPanel({
               {analytics.typeCounts.map(({ type, count }) => (
                 <li
                   key={type}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-800"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800"
                 >
                   <span>{RUNTIME_EVENT_LABELS[type]}</span>
-                  <span className="rounded-full bg-violet-200 px-1.5 py-0.5 text-[10px] font-semibold">{count}</span>
+                  <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold">{count}</span>
                 </li>
               ))}
             </ul>

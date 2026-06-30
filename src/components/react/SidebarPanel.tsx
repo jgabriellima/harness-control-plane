@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { ExecutionSummary } from '../../lib/harness-types';
 
@@ -83,17 +84,48 @@ function toggleSidebarExpanded(expanded: boolean): void {
 }
 
 const EXECUTIONS_CACHE_KEY = 'executions-list';
+const SIDEBAR_FLYOUT_WIDTH_PX = 224;
+const SIDEBAR_FLYOUT_GAP_PX = 8;
 
-function useDismissOnOutside(open: boolean, onClose: () => void, containerRef: React.RefObject<HTMLElement | null>): void {
+function computeSidebarFlyoutPosition(
+  triggerRect: DOMRect,
+  menuWidth: number,
+  menuHeight: number,
+): { left: number; top: number } {
+  const viewportPadding = SIDEBAR_FLYOUT_GAP_PX;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let left = triggerRect.right + SIDEBAR_FLYOUT_GAP_PX;
+  let top = triggerRect.top;
+
+  if (left + menuWidth > viewportWidth - viewportPadding) {
+    left = triggerRect.left - menuWidth - SIDEBAR_FLYOUT_GAP_PX;
+  }
+
+  left = Math.max(viewportPadding, Math.min(left, viewportWidth - menuWidth - viewportPadding));
+  top = Math.max(viewportPadding, Math.min(top, viewportHeight - menuHeight - viewportPadding));
+
+  return { left, top };
+}
+
+function useDismissOnOutside(
+  open: boolean,
+  onClose: () => void,
+  containerRef: React.RefObject<HTMLElement | null>,
+  menuRef: React.RefObject<HTMLElement | null>,
+): void {
   useEffect(() => {
     if (!open) {
       return;
     }
 
     function onPointerDown(event: MouseEvent): void {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        onClose();
+      const target = event.target as Node;
+      if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
       }
+      onClose();
     }
 
     function onKeyDown(event: KeyboardEvent): void {
@@ -108,7 +140,7 @@ function useDismissOnOutside(open: boolean, onClose: () => void, containerRef: R
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [containerRef, onClose, open]);
+  }, [containerRef, menuRef, onClose, open]);
 }
 
 function SidebarRailFlyout({
@@ -131,26 +163,88 @@ function SidebarRailFlyout({
   children: React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+
   useDismissOnOutside(open, () => {
     if (open) {
       onToggle();
     }
-  }, containerRef);
+  }, containerRef, menuRef);
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) {
+      setMenuPosition(null);
+      return;
+    }
+
+    function updatePosition(): void {
+      const trigger = triggerRef.current;
+      if (!trigger) {
+        return;
+      }
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const menuWidth = menuRef.current?.offsetWidth ?? SIDEBAR_FLYOUT_WIDTH_PX;
+      const menuHeight = menuRef.current?.offsetHeight ?? 256;
+      setMenuPosition(computeSidebarFlyoutPosition(triggerRect, menuWidth, menuHeight));
+    }
+
+    updatePosition();
+    const frameId = window.requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, menu]);
+
+  const resolvedPosition =
+    menuPosition ??
+    (open && triggerRef.current
+      ? computeSidebarFlyoutPosition(
+          triggerRef.current.getBoundingClientRect(),
+          SIDEBAR_FLYOUT_WIDTH_PX,
+          256,
+        )
+      : null);
+
+  const flyoutMenu =
+    open && resolvedPosition && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            data-testid={menuTestId}
+            style={{
+              position: 'fixed',
+              left: resolvedPosition.left,
+              top: resolvedPosition.top,
+              zIndex: 100,
+            }}
+            className="max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          >
+            {menu}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="relative" ref={containerRef}>
-      <SidebarIconButton label={label} active={active || open} testId={testId} onClick={onToggle}>
+      <SidebarIconButton
+        ref={triggerRef}
+        label={label}
+        active={active || open}
+        testId={testId}
+        onClick={onToggle}
+      >
         {children}
       </SidebarIconButton>
-      {open ? (
-        <div
-          role="menu"
-          data-testid={menuTestId}
-          className="absolute left-full top-0 z-50 ml-2 max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-        >
-          {menu}
-        </div>
-      ) : null}
+      {flyoutMenu}
     </div>
   );
 }
@@ -159,21 +253,19 @@ function runsHref(): string {
   return '/executions';
 }
 
-function SidebarIconButton({
-  label,
-  active,
-  testId,
-  onClick,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  testId?: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+const SidebarIconButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    label: string;
+    active?: boolean;
+    testId?: string;
+    onClick: () => void;
+    children: React.ReactNode;
+  }
+>(function SidebarIconButton({ label, active, testId, onClick, children }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       title={label}
@@ -188,7 +280,7 @@ function SidebarIconButton({
       {children}
     </button>
   );
-}
+});
 
 function CollapsedSidebarRail({
   runsSectionActive,
@@ -212,7 +304,7 @@ function CollapsedSidebarRail({
 
   return (
     <aside
-      className="relative z-30 flex h-full min-h-0 w-full flex-col items-center isolate overflow-hidden border-r border-gray-200 bg-white py-3"
+      className="relative flex h-full min-h-0 w-full flex-col items-center overflow-x-visible overflow-y-auto border-r border-gray-200 bg-white py-3"
       data-testid="sidebar-panel-collapsed"
     >
       <BrandLogo variant="icon" className="mb-4 shrink-0" />
@@ -655,7 +747,7 @@ export default function SidebarPanel() {
 
   return (
     <aside
-      className="relative z-30 flex h-full min-h-0 flex-col isolate overflow-hidden border-r border-gray-200 bg-white"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 bg-white"
       data-testid="sidebar-panel"
     >
       <div className="flex h-9 items-center gap-2 border-b border-gray-200 px-4">

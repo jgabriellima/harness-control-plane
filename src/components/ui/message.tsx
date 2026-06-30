@@ -22,6 +22,7 @@ export type MessageContentProps = {
   markdown?: boolean;
   className?: string;
   onFileClick?: (filePath: string) => void;
+  onLinkClick?: (url: string) => void;
 };
 
 export function MessageContent({
@@ -29,13 +30,16 @@ export function MessageContent({
   markdown = false,
   className,
   onFileClick,
+  onLinkClick,
 }: MessageContentProps) {
   const classNames = cn('rounded-2xl px-4 py-3 text-sm', className);
 
   if (markdown && typeof children === 'string') {
     return (
       <div className={cn(classNames, 'bg-gray-50')}>
-        <Markdown onFileClick={onFileClick}>{children}</Markdown>
+        <Markdown onFileClick={onFileClick} onLinkClick={onLinkClick}>
+          {children}
+        </Markdown>
       </div>
     );
   }
