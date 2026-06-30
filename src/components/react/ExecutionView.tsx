@@ -213,11 +213,11 @@ export default function ExecutionView({ executionId }: ExecutionViewProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="execution-view">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="execution-view">
       <ExecutionHeader model={model} tick={tick} />
 
       <nav
-        className="border-b border-gray-200 bg-white px-6"
+        className="shrink-0 border-b border-gray-200 bg-white px-6"
         aria-label="Execution detail tabs"
         data-testid="execution-tabs"
       >
@@ -244,7 +244,9 @@ export default function ExecutionView({ executionId }: ExecutionViewProps) {
         </ul>
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">{tabContent}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="execution-tab-content">
+        {tabContent}
+      </div>
     </div>
   );
 }

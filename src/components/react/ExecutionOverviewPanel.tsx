@@ -58,6 +58,28 @@ export default function ExecutionOverviewPanel({ model }: ExecutionOverviewPanel
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-gray-900">Current execution</h2>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Current node
+            </dt>
+            <dd className="mt-1 text-sm font-medium text-gray-900">
+              {model.progress.currentNodeLabel ?? '—'}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Current activity
+            </dt>
+            <dd className="mt-1 line-clamp-3 text-sm text-gray-900">
+              {model.progress.currentActivity ?? '—'}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-gray-900">Execution summary</h2>
         <dl className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
