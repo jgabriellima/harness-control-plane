@@ -230,6 +230,7 @@ export interface ChatDispatchResponse {
   agent_id: string;
   stream_url: string;
   conversation_id?: string;
+  request_id?: string;
 }
 
 /** Gateway input — maps to ExecutionJob after validation (start-point.md). */

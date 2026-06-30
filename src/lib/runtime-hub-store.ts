@@ -22,6 +22,9 @@ export function createConversationState(conversationId: string): ConversationRun
     runActivity: 'idle',
     toolActivity: [],
     error: null,
+    lastRequestId: null,
+    sdkHealth: 'unknown',
+    sdkHealthMessage: null,
     hydrated: false,
   };
 }

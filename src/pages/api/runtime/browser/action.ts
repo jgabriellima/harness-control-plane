@@ -3,7 +3,10 @@ import type { APIRoute } from 'astro';
 import { jsonError, jsonOk } from '../../../../lib/api-json';
 import {
   navigateBrowserSession,
+  enableUserBrowserWindow,
   performBrowserClick,
+  performBrowserKeyPress,
+  performBrowserType,
   refreshBrowserSession,
   setBrowserControlMode,
   type BrowserControlMode,
@@ -38,6 +41,8 @@ export const POST: APIRoute = async ({ request }) => {
   const y = typeof body.y === 'number' ? body.y : null;
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   const controlMode = parseControlMode(body.control_mode);
+  const text = typeof body.text === 'string' ? body.text : '';
+  const key = typeof body.key === 'string' ? body.key.trim() : '';
 
   if (!sessionId) {
     return jsonError('session_id is required', 400);
@@ -62,6 +67,21 @@ export const POST: APIRoute = async ({ request }) => {
     if (action === 'set_control_mode' && controlMode) {
       const session = await setBrowserControlMode(sessionId, controlMode);
       return jsonOk({ ok: true, action: 'set_control_mode', session });
+    }
+
+    if (action === 'type' && text) {
+      await performBrowserType(sessionId, text);
+      return jsonOk({ ok: true, action: 'type' });
+    }
+
+    if (action === 'keydown' && key) {
+      await performBrowserKeyPress(sessionId, key);
+      return jsonOk({ ok: true, action: 'keydown' });
+    }
+
+    if (action === 'open_user_browser') {
+      const session = await enableUserBrowserWindow(sessionId);
+      return jsonOk({ ok: true, action: 'open_user_browser', session });
     }
 
     return jsonError('Unsupported action', 400);

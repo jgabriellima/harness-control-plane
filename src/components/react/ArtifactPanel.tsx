@@ -58,7 +58,7 @@ export default function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
           {artifacts.map((artifact) => (
             <li key={artifact.id} className="px-4 py-3" data-testid={`artifact-${artifact.id}`}>
               <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-[10px] font-bold text-violet-700">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[10px] font-bold text-gray-700">
                   {artifactIcon(artifact.type)}
                 </div>
 
@@ -87,7 +87,7 @@ export default function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
                   {artifact.uri ? (
                     <a
                       href={artifact.uri}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-violet-600 hover:bg-violet-50"
+                      className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
                       aria-label={`Open ${artifact.name}`}
                       download
                     >

@@ -40,9 +40,9 @@ export default function ChatPaneEmptySlot({ paneIndex, paneLabel }: ChatPaneEmpt
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-4 px-8 py-10 text-center"
-      data-testid="chat-pane-picker"
+      data-testid={paneIndex === 1 ? 'split-pane-right-empty' : 'chat-pane-picker'}
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600">
         <MessageSquarePlus className="h-5 w-5" aria-hidden="true" />
       </div>
       <div className="max-w-xs space-y-1">

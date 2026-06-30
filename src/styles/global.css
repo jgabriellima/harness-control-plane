@@ -1,18 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: rgb(249 250 251);
+  /* Jambu brand — accent only (logo + primary CTA). Not for body text or surfaces. */
+  --color-brand-50: rgb(245 248 242);
+  --color-brand-100: rgb(232 240 224);
+  --color-brand-200: rgb(210 224 196);
+  --color-brand-300: rgb(180 204 156);
+  --color-brand-400: rgb(145 178 115);
+  --color-brand-500: rgb(118 155 82);
+  --color-brand-600: rgb(94 130 65);
+  --color-brand-700: rgb(76 107 52);
+  --color-brand-800: rgb(58 84 40);
+  --color-brand-900: rgb(42 62 29);
+
+  --color-bg-primary: rgb(250 250 250);
   --color-bg-surface: rgb(255 255 255);
   --color-sidebar-bg: rgb(255 255 255);
-  --color-brand: rgb(124 58 237);
-  --color-brand-hover: rgb(109 40 217);
-  --color-brand-light: rgb(237 233 254);
-  --color-brand-muted: rgb(196 181 253);
-  --color-text-primary: rgb(17 24 39);
-  --color-text-secondary: rgb(107 114 128);
-  --color-text-muted: rgb(156 163 175);
-  --color-border: rgb(229 231 235);
-  --color-border-strong: rgb(209 213 219);
+  --color-brand: rgb(94 130 65);
+  --color-brand-hover: rgb(76 107 52);
+  --color-text-primary: rgb(23 23 23);
+  --color-text-secondary: rgb(115 115 115);
+  --color-text-muted: rgb(163 163 163);
+  --color-border: rgb(229 229 229);
+  --color-border-strong: rgb(212 212 212);
 }
 
 @layer base {
@@ -20,12 +30,14 @@
   body {
     height: 100%;
     overflow: hidden;
+    color-scheme: light;
   }
 
   body {
     @apply antialiased;
     font-family: system-ui, Inter, sans-serif;
     color: var(--color-text-primary);
+    background-color: var(--color-bg-primary);
   }
 
   .bg-primary {
@@ -38,5 +50,16 @@
 
   .orchestration-grid.panel-collapsed [data-testid='context-panel'] {
     display: none;
+  }
+}
+
+@layer components {
+  /* Work UI — neutral chrome; brand reserved for logo + one primary action */
+  .nav-item-active {
+    @apply bg-gray-100 font-medium text-gray-900;
+  }
+
+  .nav-item-idle {
+    @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900;
   }
 }

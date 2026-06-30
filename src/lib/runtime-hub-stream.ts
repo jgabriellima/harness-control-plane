@@ -1,6 +1,9 @@
 import type { Run, SDKMessage } from '@cursor/sdk';
 
+import { appendDispatchLog } from './runtime-dispatch-log';
 import { appendRunTerminal, readRunsIndex } from './runtime-run-registry';
+import { errorFields, runtimeLogger } from './runtime-logger';
+import { localGetRunOptions } from './runtime-sdk-local';
 import {
   getActiveRunIds,
   getRuntimeRunEntry,
@@ -8,6 +11,7 @@ import {
   releaseAgentSlot,
   releaseRuntimeRun,
   retainRuntimeRun,
+  runWithWorkspaceCwdAsync,
   workspaceCwd,
 } from './runtime-sessions';
 import type { RuntimeHubWireEvent } from './runtime-hub-types';
@@ -136,6 +140,7 @@ async function completeRunFanout(
         runId,
         event: 'run.failed',
         message: errorMessage,
+        workspaceRoot: workspaceCwd(),
       });
     } catch {
       // Registry append is best-effort on terminal path.
@@ -155,6 +160,7 @@ async function completeRunFanout(
         runId,
         event: 'run.completed',
         status,
+        workspaceRoot: workspaceCwd(),
       });
     } catch {
       // Registry append is best-effort on terminal path.
@@ -200,6 +206,7 @@ export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; me
       runId,
       event: 'run.aborted',
       status: 'cancelled',
+      workspaceRoot: workspaceCwd(),
     });
   } catch {
     // Registry append is best-effort.
@@ -238,13 +245,42 @@ async function streamRunToHub(
   await completeRunFanout(runId, agentId, conversationId, status);
 }
 
-export function startRunHubFanout(runId: string, agentId: string, conversationId: string): void {
+export function startRunHubFanout(
+  runId: string,
+  agentId: string,
+  conversationId: string,
+  harnessWorkspaceCwd?: string,
+  requestId?: string,
+): void {
   if (fanoutStarted.has(runId)) {
     return;
   }
   fanoutStarted.add(runId);
 
-  void (async () => {
+  const cwd = harnessWorkspaceCwd ?? workspaceCwd();
+
+  runtimeLogger.debug('chat.fanout.started', {
+    request_id: requestId,
+    run_id: runId,
+    agent_id: agentId,
+    conversation_id: conversationId,
+    cwd,
+  });
+
+  void appendDispatchLog(
+    {
+      event: 'chat.fanout.started',
+      request_id: requestId ?? `fanout-${runId}`,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      cwd,
+      phase: 'chat.fanout',
+    },
+    cwd,
+  );
+
+  void runWithWorkspaceCwdAsync(cwd, async () => {
     try {
       const entry = getRuntimeRunEntry(runId);
       let run = entry?.run;
@@ -254,24 +290,50 @@ export function startRunHubFanout(runId: string, agentId: string, conversationId
       }
 
       if (!run) {
-        const apiKey = process.env.CURSOR_API_KEY?.trim();
-        if (!apiKey) {
-          throw new Error('CURSOR_API_KEY is required');
-        }
         const { Agent } = await import('@cursor/sdk');
-        run = await Agent.getRun(runId, {
-          runtime: 'local',
-          cwd: workspaceCwd(),
-        });
+        run = await Agent.getRun(runId, localGetRunOptions(workspaceCwd()));
         registerRuntimeRun(runId, run, conversationId, agentId);
       }
 
       await streamRunToHub(runId, agentId, conversationId, run);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Runtime stream failed';
+      runtimeLogger.error('chat.fanout.error', {
+        request_id: requestId,
+        run_id: runId,
+        agent_id: agentId,
+        conversation_id: conversationId,
+        phase: 'chat.fanout',
+        ...errorFields(error),
+      });
+      void appendDispatchLog(
+        {
+          event: 'chat.fanout.error',
+          request_id: requestId ?? `fanout-${runId}`,
+          run_id: runId,
+          agent_id: agentId,
+          conversation_id: conversationId,
+          cwd,
+          phase: 'chat.fanout',
+          error_message: message,
+        },
+        cwd,
+      );
       await completeRunFanout(runId, agentId, conversationId, 'failed', message);
     }
-  })();
+  }).catch((error) => {
+    fanoutStarted.delete(runId);
+    const message = error instanceof Error ? error.message : 'Runtime stream failed';
+    runtimeLogger.error('chat.fanout.error', {
+      request_id: requestId,
+      run_id: runId,
+      phase: 'chat.fanout.outer',
+      ...errorFields(error),
+    });
+    void completeRunFanout(runId, agentId, conversationId, 'failed', message).catch(() => {
+      // Last-resort guard — completeRunFanout is best-effort on terminal path.
+    });
+  });
 }
 
 function attachKnownRunsToHub(): void {

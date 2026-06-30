@@ -15,7 +15,7 @@ function statusBadgeClass(status: string): string {
       return 'bg-emerald-100 text-emerald-700';
     case 'running':
     case 'in_progress':
-      return 'bg-violet-100 text-violet-700';
+      return 'bg-gray-100 text-gray-700';
     case 'failed':
       return 'bg-red-100 text-red-700';
     case 'blocked':
@@ -138,7 +138,7 @@ export default function NodeVisualization({
                           <li key={artifact.id}>
                             <a
                               href={`/artifact/${encodeURIComponent(artifact.id)}`}
-                              className="inline-flex max-w-full items-center gap-1 truncate font-mono text-xs text-violet-600 hover:text-violet-800"
+                              className="inline-flex max-w-full items-center gap-1 truncate font-mono text-xs text-gray-600 hover:text-gray-800"
                             >
                               {artifact.name}
                             </a>

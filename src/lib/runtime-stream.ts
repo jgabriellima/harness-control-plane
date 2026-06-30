@@ -6,6 +6,7 @@ import {
   wireFromSdkMessage,
   type RuntimeStreamWireEvent,
 } from './runtime-hub-stream';
+import { localGetRunOptions } from './runtime-sdk-local';
 import {
   releaseAgentSlot,
   releaseRuntimeRun,
@@ -67,20 +68,14 @@ export function createRuntimeEventStream(
       let retained = false;
 
       try {
-        const apiKey = process.env.CURSOR_API_KEY?.trim();
-        if (!apiKey) {
-          throw new Error('CURSOR_API_KEY is required');
-        }
+        localGetRunOptions(workspaceCwd());
 
         let run = retainRuntimeRun(runId);
         retained = Boolean(run);
 
         if (!run) {
           const { Agent } = await import('@cursor/sdk');
-          run = await Agent.getRun(runId, {
-            runtime: 'local',
-            cwd: workspaceCwd(),
-          });
+          run = await Agent.getRun(runId, localGetRunOptions(workspaceCwd()));
         }
 
         for await (const message of run.stream()) {

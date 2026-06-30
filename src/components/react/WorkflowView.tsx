@@ -154,7 +154,7 @@ export default function WorkflowView({ workflowId }: WorkflowViewProps) {
   return (
     <div className="flex flex-1 flex-col gap-4 p-6" data-testid="workflow-view">
       <header className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Workflow</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Workflow</p>
         <h1 className="mt-1 text-xl font-semibold text-gray-900">{header.name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-500">
           <span className="font-mono text-xs text-gray-400">{workflow.id}</span>
@@ -162,7 +162,7 @@ export default function WorkflowView({ workflowId }: WorkflowViewProps) {
           <span>{header.nodeCount} nodes</span>
           <span className="font-mono text-xs">{header.command}</span>
           {runId ? (
-            <span className="rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
               run {runId}
               {runStatus ? ` — ${runStatus}` : ''}
             </span>

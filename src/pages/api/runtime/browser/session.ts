@@ -46,6 +46,7 @@ export const POST: APIRoute = async ({ request }) => {
   const urlRaw = isRecord(body) && typeof body.url === 'string' ? body.url : '';
   const conversationId =
     isRecord(body) && typeof body.conversation_id === 'string' ? body.conversation_id : undefined;
+  const interactive = isRecord(body) && body.interactive === true;
 
   if (!urlRaw.trim()) {
     return jsonError('url is required', 400);
@@ -55,6 +56,7 @@ export const POST: APIRoute = async ({ request }) => {
     const session = await createBrowserSession({
       url: urlRaw,
       conversationId,
+      interactive,
     });
     return jsonOk({ session });
   } catch (error) {

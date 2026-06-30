@@ -230,7 +230,7 @@ export default function ExecutionView({ executionId }: ExecutionViewProps) {
                   type="button"
                   className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                     isActive
-                      ? 'border-violet-600 text-violet-700'
+                      ? 'border-gray-900 text-gray-700'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                   }`}
                   aria-current={isActive ? 'page' : undefined}

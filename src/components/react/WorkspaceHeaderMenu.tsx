@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Globe, MoreVertical } from 'lucide-react';
+import { Monitor, MoreVertical } from 'lucide-react';
 
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
@@ -68,26 +68,16 @@ export default function WorkspaceHeaderMenu() {
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
             onClick={() => {
               setOpen(false);
-              void openBrowser('about:blank', conversationId);
-            }}
-          >
-            <Globe className="h-3.5 w-3.5 shrink-0 text-violet-600" />
-            <span>Open runtime browser</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-            onClick={() => {
-              setOpen(false);
               const url = window.prompt('Open runtime browser at URL:', 'https://');
               if (url?.trim()) {
                 void openBrowser(url.trim(), conversationId);
+              } else {
+                void openBrowser('about:blank', conversationId);
               }
             }}
           >
-            <Globe className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-            <span>Open browser at URL…</span>
+            <Monitor className="h-3.5 w-3.5 shrink-0 text-gray-600" />
+            <span>Open runtime browser</span>
           </button>
         </div>
       ) : null}

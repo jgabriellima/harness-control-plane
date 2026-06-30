@@ -25,7 +25,7 @@ const LAYOUT_MODES: Array<{
 
 function layoutIconButtonClass(active: boolean): string {
   return active
-    ? 'bg-violet-100 text-violet-800 ring-violet-300'
+    ? 'bg-gray-100 text-gray-800 ring-gray-200'
     : 'bg-white text-gray-500 ring-gray-200 hover:bg-gray-50 hover:text-gray-700';
 }
 
@@ -66,7 +66,7 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
         ) : null}
         {hub.activeRunCount > 0 ? (
           <span
-            className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-800"
+            className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-800"
             data-testid="workspace-active-runs-badge"
           >
             {hub.activeRunCount} run{hub.activeRunCount === 1 ? '' : 's'} active
@@ -103,7 +103,7 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
           className={`rounded-md p-1.5 ring-1 ring-inset ${
             collapsed
               ? 'bg-white text-gray-500 ring-gray-200 hover:bg-gray-50'
-              : 'bg-violet-100 text-violet-800 ring-violet-300'
+              : 'bg-gray-100 text-gray-800 ring-gray-200'
           }`}
           aria-label={collapsed ? 'Expand context panel' : 'Collapse context panel'}
           aria-pressed={!collapsed}

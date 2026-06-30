@@ -1,22 +1,18 @@
 'use client';
 
 import {
-  Database,
-  Paperclip,
   Send,
-  Sparkles,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
+import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import RuntimeActivityIndicator from '@/components/react/RuntimeActivityIndicator';
 import { Button } from '@/components/ui/button';
 import {
   PromptInput,
-  PromptInputAction,
-  PromptInputActions,
   PromptInputTextarea,
 } from '@/components/ui/prompt-input';
 import type { HarnessCommand, ReadinessSlot } from '@/lib/harness-types';
@@ -184,8 +180,8 @@ export default function ChatPane({
 
   const showHeader = Boolean(conversationId);
   const consoleGridClass = showHeader
-    ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
-    : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
+    ? 'relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden'
+    : 'relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden';
 
   const slashSuggestions = useMemo(() => {
     const trimmed = input.trim();
@@ -399,13 +395,18 @@ export default function ChatPane({
             compact={compact}
           />
         ) : null}
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
+        <div className="min-h-0 overflow-y-auto overscroll-contain pb-32">
           <ChatPaneMessagesSkeleton compact={compact} />
         </div>
-        <div className="pointer-events-none opacity-60" aria-hidden="true">
-          <PromptInput>
-            <PromptInputTextarea disabled placeholder="Loading session…" value="" readOnly />
-          </PromptInput>
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
+          aria-hidden="true"
+        >
+          <div className="mx-auto max-w-3xl opacity-60">
+            <PromptInput>
+              <PromptInputTextarea disabled placeholder="Loading session…" value="" readOnly />
+            </PromptInput>
+          </div>
         </div>
       </div>
     );
@@ -424,7 +425,10 @@ export default function ChatPane({
         />
       ) : null}
 
-      <div className="min-h-0 overflow-y-auto overscroll-contain" data-testid="chat-pane-messages">
+      <div
+        className="min-h-0 overflow-y-auto overscroll-contain pb-32 scroll-pb-32"
+        data-testid="chat-pane-messages"
+      >
         {!showMessageList ? (
           <div
             className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-8"
@@ -463,8 +467,11 @@ export default function ChatPane({
         )}
       </div>
 
-      <div className="border-t border-gray-200 bg-white px-4 py-3">
-        <div className="relative mx-auto max-w-3xl">
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
+        data-testid="chat-pane-composer"
+      >
+        <div className="pointer-events-auto relative mx-auto max-w-3xl">
           {isStreaming ? (
             <div className="mb-3 flex items-center justify-between gap-3">
               <RuntimeActivityIndicator
@@ -601,63 +608,52 @@ export default function ChatPane({
             }}
             isLoading={isLoading}
             disabled={isLoading}
+            className="p-2"
           >
-            <PromptInputTextarea
-              placeholder="Ask the runtime or type '/' for harness commands..."
-              onKeyDown={handleComposerKeyDown}
-            />
-            <PromptInputActions>
-              <div className="flex items-center gap-1">
-                <input
-                  id={fileInputId}
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      void handleUpload(file).catch(() => undefined);
-                    }
-                    event.target.value = '';
-                  }}
-                />
-                <PromptInputAction
-                  tooltip="Upload file"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Paperclip className="h-4 w-4" />
-                  Attach
-                </PromptInputAction>
-                <PromptInputAction
-                  tooltip="Toggle active integration slots"
-                  onClick={() => setShowIntegrations((current) => !current)}
-                >
-                  <Database className="h-4 w-4" />
-                  Integrations
-                </PromptInputAction>
-                <PromptInputAction
-                  tooltip="Deep research mode"
-                  className={deepResearch ? 'bg-gray-100 text-gray-700' : undefined}
-                  onClick={() => setDeepResearch((current) => !current)}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {deepResearch ? 'Deep research on' : 'Deep research'}
-                </PromptInputAction>
-              </div>
-
+            <div className="flex items-end gap-1">
+              <input
+                id={fileInputId}
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void handleUpload(file).catch(() => undefined);
+                  }
+                  event.target.value = '';
+                }}
+              />
+              <ComposerOptionsMenu
+                disabled={isLoading}
+                deepResearch={deepResearch}
+                integrationsOpen={showIntegrations}
+                onAttach={() => fileInputRef.current?.click()}
+                onToggleIntegrations={() => setShowIntegrations((current) => !current)}
+                onToggleDeepResearch={() => setDeepResearch((current) => !current)}
+              />
+              <PromptInputTextarea
+                className="min-h-[36px] flex-1 px-1 py-2"
+                placeholder="Ask the runtime or type '/' for harness commands..."
+                onKeyDown={handleComposerKeyDown}
+              />
               <Button
                 type="button"
-                size="sm"
+                size="icon"
                 data-testid="chat-pane-send"
+                className="h-9 w-9 shrink-0 rounded-full"
                 disabled={isLoading || dispatchBlocked || input.trim().length === 0}
+                aria-label={isLoading ? 'Streaming' : 'Send message'}
                 onClick={() => {
                   void handleSubmit();
                 }}
               >
                 <Send className="h-4 w-4" />
-                {isLoading ? 'Streaming…' : 'Send'}
               </Button>
-            </PromptInputActions>
+            </div>
+            {deepResearch ? (
+              <p className="mt-1.5 px-1 text-[11px] font-medium text-gray-500">Deep research enabled</p>
+            ) : null}
           </PromptInput>
 
           {error && !isDraftConversationId(conversationId) && runPhase === 'failed' ? (

@@ -91,7 +91,7 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     <div
       className={`rounded-lg border pl-11 ${
         streaming
-          ? 'border-violet-200 bg-violet-50/60'
+          ? 'border-gray-200 bg-gray-50'
           : 'border-gray-200 bg-gray-50/80'
       }`}
       data-testid="chat-message-thinking"
@@ -108,7 +108,7 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
           <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
         )}
         {streaming ? (
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-violet-500" aria-hidden />
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-500" aria-hidden />
         ) : null}
         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
           Reasoning
@@ -116,7 +116,7 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
           {!streaming && durationMs !== undefined ? ` · ${formatDuration(durationMs)}` : ''}
         </span>
         {streaming ? (
-          <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-violet-400" aria-hidden />
+          <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-gray-400" aria-hidden />
         ) : null}
       </button>
       {!collapsed ? (
@@ -133,7 +133,7 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
           </div>
           {hasOverflow ? (
             <div
-              className="h-1.5 shrink-0 cursor-row-resize rounded-b-lg bg-gray-100 hover:bg-violet-200"
+              className="h-1.5 shrink-0 cursor-row-resize rounded-b-lg bg-gray-100 hover:bg-gray-200"
               onPointerDown={handleResizePointerDown}
               onPointerMove={handleResizePointerMove}
               onPointerUp={handleResizePointerUp}

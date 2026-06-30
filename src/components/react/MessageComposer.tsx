@@ -153,7 +153,7 @@ export default function MessageComposer({
 
   return (
     <div className="border-t border-gray-200 bg-white px-6 py-4" data-testid="message-composer">
-      <div className="mx-auto max-w-3xl rounded-2xl border-2 border-violet-200 bg-white p-4 shadow-sm">
+      <div className="mx-auto max-w-3xl rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <label htmlFor={textareaId} className="sr-only">
           Message composer
         </label>
@@ -230,7 +230,7 @@ export default function MessageComposer({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="rounded-lg p-2 text-violet-500 hover:bg-violet-50"
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               aria-label="Deep research mode"
               disabled={isDispatching}
             >
@@ -241,7 +241,7 @@ export default function MessageComposer({
             <button
               type="button"
               data-testid="message-composer-send"
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={sendDisabled}
               aria-busy={isDispatching}
               onClick={() => {

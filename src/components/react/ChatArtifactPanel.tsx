@@ -14,7 +14,7 @@ interface ChatArtifactPanelProps {
 
 function panelTabClass(active: boolean): string {
   return active
-    ? 'border-b-2 border-violet-600 text-violet-700'
+    ? 'border-b-2 border-gray-900 text-gray-700'
     : 'border-b-2 border-transparent text-gray-500 hover:text-gray-700';
 }
 
@@ -48,7 +48,7 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
     >
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-600">Artifact</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">Artifact</p>
           <p className="truncate text-sm font-semibold text-gray-900" data-testid="chat-artifact-filename">
             {fileName}
           </p>
@@ -69,7 +69,7 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
             <Copy className="h-4 w-4" />
           </button>
           {copyState === 'copied' ? (
-            <span className="text-[10px] text-violet-600">Copied</span>
+            <span className="text-[10px] text-gray-600">Copied</span>
           ) : null}
           <button
             type="button"
