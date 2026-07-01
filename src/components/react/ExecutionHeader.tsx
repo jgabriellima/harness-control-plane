@@ -36,10 +36,10 @@ export default function ExecutionHeader({ model, tick }: ExecutionHeaderProps) {
 
   return (
     <header
-      className="border-b border-gray-200 bg-white px-6 py-5"
+      className="shrink-0 border-b border-gray-200 bg-white px-6 py-4"
       data-testid="execution-header"
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <span
@@ -52,14 +52,14 @@ export default function ExecutionHeader({ model, tick }: ExecutionHeaderProps) {
             </span>
           </div>
 
-          <h1 className="mt-2 truncate text-lg font-semibold text-gray-900">
+          <h1 className="mt-2 line-clamp-2 text-lg font-semibold text-gray-900">
             {model.progress.objective}
           </h1>
 
-          <p className="mt-1 font-mono text-xs text-gray-500">{model.executionId}</p>
+          <p className="mt-1 truncate font-mono text-xs text-gray-500">{model.executionId}</p>
         </div>
 
-        <dl className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <dl className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4 lg:gap-y-0">
           <div>
             <dt className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               Elapsed
@@ -89,12 +89,12 @@ export default function ExecutionHeader({ model, tick }: ExecutionHeaderProps) {
         </dl>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3">
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>Execution progress</span>
           <span>{model.progress.percentComplete}%</span>
         </div>
-        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100">
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full rounded-full bg-gray-900 transition-all duration-500"
             style={{ width: `${model.progress.percentComplete}%` }}
@@ -103,31 +103,6 @@ export default function ExecutionHeader({ model, tick }: ExecutionHeaderProps) {
             aria-valuemin={0}
             aria-valuemax={100}
           />
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Current Objective
-          </p>
-          <p className="mt-1 line-clamp-2 text-sm text-gray-900">{model.progress.objective}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Current Node
-          </p>
-          <p className="mt-1 text-sm font-medium text-gray-900">
-            {model.progress.currentNodeLabel ?? '—'}
-          </p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Current Activity
-          </p>
-          <p className="mt-1 line-clamp-2 text-sm text-gray-900">
-            {model.progress.currentActivity ?? '—'}
-          </p>
         </div>
       </div>
     </header>
