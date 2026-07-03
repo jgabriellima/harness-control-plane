@@ -67,10 +67,7 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
         loading: false,
         error: null,
         encoding,
-        previewUrl:
-          encoding === 'binary'
-            ? buildWorkspaceFileRawUrl(resolvedPath, trimmedProjectId)
-            : null,
+        previewUrl: buildWorkspaceFileRawUrl(resolvedPath, trimmedProjectId),
       });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Failed to load file';

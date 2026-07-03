@@ -14,6 +14,30 @@ const MARKDOWN_EXTENSIONS = new Set(['md', 'mdx']);
 const CODE_EXTENSIONS = new Set(['ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'astro', 'json', 'yaml', 'yml']);
 const HTML_EXTENSIONS = new Set(['html', 'htm']);
 
+const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  py: 'python',
+  sh: 'shell',
+  bash: 'shell',
+  zsh: 'shell',
+  json: 'json',
+  yaml: 'yaml',
+  yml: 'yaml',
+  html: 'html',
+  htm: 'html',
+  css: 'css',
+  astro: 'html',
+  toml: 'ini',
+  xml: 'xml',
+  md: 'markdown',
+  mdx: 'markdown',
+  csv: 'plaintext',
+  txt: 'plaintext',
+};
+
 export function isLikelyFilePath(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed || trimmed.includes(' ') || trimmed.includes('\n')) {
@@ -111,6 +135,73 @@ export function isInlinePreviewMime(mime: string): boolean {
 export function fileNameFromPath(filePath: string): string {
   const segments = filePath.split('/');
   return segments[segments.length - 1] ?? filePath;
+}
+
+/** Monaco editor language id for syntax-highlighted artifact preview. */
+export function inferMonacoLanguageFromPath(filePath: string, mime?: string): string {
+  if (mime === 'application/json') {
+    return 'json';
+  }
+
+  const extension = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return MONACO_LANGUAGE_BY_EXTENSION[extension] ?? 'plaintext';
+}
+
+/** True when artifact content should render in the syntax-highlighted code viewer. */
+export function isSyntaxHighlightedArtifact(filePath: string, mime: string): boolean {
+  if (mime === 'text/markdown' || mime === 'text/html') {
+    return false;
+  }
+
+  if (isBinaryWorkspaceFile(mime)) {
+    return false;
+  }
+
+  const extension = filePath.split('.').pop()?.toLowerCase() ?? '';
+  if (MARKDOWN_EXTENSIONS.has(extension) || HTML_EXTENSIONS.has(extension)) {
+    return false;
+  }
+
+  return true;
+}
+
+/** HTML slide deck produced by the slides playbook (deck-viewport shell). */
+export function isPresentationHtmlArtifact(filePath: string, content?: string | null): boolean {
+  const base = fileNameFromPath(filePath).toLowerCase();
+
+  if (base === 'deck.html') {
+    return true;
+  }
+
+  if (
+    (base === 'index.html' || base === 'deck.html') &&
+    (filePath.includes('/presentation/') || filePath.includes('/artifacts/'))
+  ) {
+    return true;
+  }
+
+  if (!content) {
+    return false;
+  }
+
+  return content.includes('id="deck-viewport"') || content.includes('fitDeckToViewport');
+}
+
+/** Artifact types that support fullscreen overlay preview. */
+export function isFullscreenCapableArtifact(
+  filePath: string,
+  mime: string,
+  content?: string | null,
+): boolean {
+  if (mime === 'application/pdf' || mime.startsWith('image/')) {
+    return true;
+  }
+
+  if (mime === 'text/html' && content) {
+    return true;
+  }
+
+  return isPresentationHtmlArtifact(filePath, content);
 }
 
 /**

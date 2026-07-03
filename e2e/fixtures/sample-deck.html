@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E2E Deck Fixture</title>
+  <style>
+    :root {
+      --deck-width: 1920px;
+      --deck-height: 1080px;
+      --color-bg: #0f172a;
+      --color-text: #ffffff;
+    }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #d1d5db; }
+    #deck-viewport {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    #deck-stage { overflow: hidden; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); }
+    #deck {
+      width: var(--deck-width);
+      height: var(--deck-height);
+      transform-origin: top left;
+      background: var(--color-bg);
+      color: var(--color-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font: 700 72px system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="deck-viewport">
+    <div id="deck-stage">
+      <div id="deck">Avaliacao E2E</div>
+    </div>
+  </div>
+  <script>
+    function fitDeckToViewport() {
+      const deck = document.getElementById('deck');
+      const stage = document.getElementById('deck-stage');
+      const pad = 48;
+      const scale = Math.min(
+        (window.innerWidth - pad) / 1920,
+        (window.innerHeight - pad) / 1080,
+      );
+      deck.style.transform = 'scale(' + scale + ')';
+      stage.style.width = (1920 * scale) + 'px';
+      stage.style.height = (1080 * scale) + 'px';
+    }
+    fitDeckToViewport();
+    window.addEventListener('resize', fitDeckToViewport);
+  </script>
+</body>
+</html>
