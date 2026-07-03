@@ -32,7 +32,7 @@ export default function BrandLogo({ variant = 'full', className }: BrandLogoProp
   return (
     <img
       src={asset.src}
-      alt="Jambu.ai"
+      alt="Jambu"
       className={merged}
       width={asset.width}
       height={asset.height}

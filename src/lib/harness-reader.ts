@@ -135,7 +135,7 @@ function parseBusinessConfig(value: unknown): BusinessConfig {
     status: asString(value.status, 'unknown'),
     initialized: typeof value.initialized === 'string' ? value.initialized : null,
     project: {
-      name: asString(project.name, 'Business Runtime'),
+      name: asString(project.name, 'Jambu'),
       description: asString(project.description, ''),
     },
     execution,
