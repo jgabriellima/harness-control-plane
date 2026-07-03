@@ -11,7 +11,7 @@ interface Props {
 const {
   title,
   description,
-  projectName = 'Business Runtime',
+  projectName = 'Jambu',
   seedArtifactE2e = false,
 } = Astro.props;
 ---
@@ -24,7 +24,7 @@ const {
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" type="image/png" href="/brand/icon-light.png" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/png" href="/brand/icon-dark.png" media="(prefers-color-scheme: dark)" />
-    <title>{title} · Jambu.ai</title>
+    <title>{title} · Jambu</title>
     {description ? <meta name="description" content={description} /> : null}
   </head>
   <body class="bg-primary text-gray-900">
