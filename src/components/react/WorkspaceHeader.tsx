@@ -6,6 +6,8 @@ import { Columns2, LayoutGrid, PanelRightClose, PanelRightOpen, Square } from 'l
 import { panelLayoutStore, usePanelCollapsed } from '../../lib/panel-layout-store';
 
 import type { WorkspaceLayoutMode } from '@/lib/runtime-hub-types';
+import { useActiveProject } from '@/hooks/useActiveProject';
+import { useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useRuntimeHub } from './RuntimeHubProvider';
 import WorkspaceHeaderMenu from './WorkspaceHeaderMenu';
 
@@ -32,7 +34,10 @@ function layoutIconButtonClass(active: boolean): string {
 export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
   const hub = useRuntimeHub();
   const collapsed = usePanelCollapsed();
+  const sidebarExpanded = useSidebarExpanded();
+  const activeProject = useActiveProject();
   const showProjectTitle = hub.layoutMode === 'single';
+  const showActiveProjectInHeader = !sidebarExpanded && Boolean(activeProject?.name);
 
   function setMode(mode: WorkspaceLayoutMode): void {
     hub.setLayoutMode(mode);
@@ -62,7 +67,19 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
     >
       <div className="flex min-w-0 items-center gap-3">
         {showProjectTitle ? (
-          <h1 className="truncate text-sm font-medium text-gray-700">{projectName}</h1>
+          <h1 className="truncate text-sm font-medium text-gray-700" data-testid="workspace-header-title">
+            {showActiveProjectInHeader ? (
+              <>
+                <span>{projectName}</span>
+                <span className="mx-1.5 font-normal text-gray-400" aria-hidden="true">
+                  /
+                </span>
+                <span data-testid="workspace-active-project">{activeProject?.name}</span>
+              </>
+            ) : (
+              projectName
+            )}
+          </h1>
         ) : null}
         {hub.activeRunCount > 0 ? (
           <span
