@@ -127,7 +127,7 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
   return (
     <>
       <aside
-        className="flex min-h-0 min-w-0 flex-col border-l border-gray-200 bg-white"
+        className="flex h-full min-h-0 min-w-0 flex-col border-l border-gray-200 bg-white"
         data-testid="chat-artifact-panel"
         aria-label={`Artifact preview: ${fileName}`}
       >
