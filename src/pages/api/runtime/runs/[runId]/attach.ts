@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../../lib/api-json';
-import { readRunsIndex } from '../../../../../lib/runtime-run-registry';
+import { findActiveRunEntry } from '../../../../../lib/runtime-run-registry';
 import { startRunHubFanout } from '../../../../../lib/runtime-hub-stream';
 
 export const POST: APIRoute = async ({ params }) => {
@@ -10,13 +10,13 @@ export const POST: APIRoute = async ({ params }) => {
     return jsonError('Run id is required', 400);
   }
 
-  const index = await readRunsIndex();
-  const entry = index.active.find((activeRun) => activeRun.runId === runId);
-  if (!entry) {
+  const located = await findActiveRunEntry(runId);
+  if (!located) {
     return jsonError(`Run ${runId} is not active`, 404);
   }
 
-  startRunHubFanout(entry.runId, entry.agentId, entry.conversationId);
+  const { entry, workspaceRoot } = located;
+  startRunHubFanout(entry.runId, entry.agentId, entry.conversationId, workspaceRoot);
 
   return jsonOk({
     ok: true,
