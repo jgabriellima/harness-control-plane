@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 
 const FIXTURE_PATH = 'e2e/fixtures/chat-artifact-target.md';
 const PDF_FIXTURE_PATH = 'e2e/fixtures/sample.pdf';
+const PY_FIXTURE_PATH = 'e2e/fixtures/sample.py';
+const DECK_FIXTURE_PATH = 'e2e/fixtures/sample-deck.html';
 const BASENAME_FIXTURE = 'basename-smoke.md';
 
 test.describe('Chat artifact split panel', () => {
@@ -101,6 +103,18 @@ test.describe('Chat artifact split panel', () => {
     expect(bytes.subarray(0, 4).toString('utf8')).toBe('%PDF');
   });
 
+  test('workspace file API streams HTML bytes with raw=1', async ({ request }) => {
+    const response = await request.get(
+      `/api/workspace/file?path=${encodeURIComponent(DECK_FIXTURE_PATH)}&raw=1`,
+    );
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain('text/html');
+
+    const body = await response.text();
+    expect(body).toContain('id="deck-viewport"');
+    expect(body).toContain('fitDeckToViewport');
+  });
+
   test('artifact panel renders PDF preview and download action', async ({ page }) => {
     await page.goto(
       `/?artifact-e2e=1&layout=single&artifact-open=${encodeURIComponent(PDF_FIXTURE_PATH)}`,
@@ -109,8 +123,63 @@ test.describe('Chat artifact split panel', () => {
     const panel = page.getByTestId('chat-artifact-panel');
     await expect(panel).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('chat-artifact-filename')).toContainText('sample.pdf');
-    await expect(page.getByTestId('chat-artifact-download')).toBeVisible();
     await expect(page.getByTestId('chat-artifact-pdf-preview')).toBeVisible();
-    await expect(page.getByTestId('chat-artifact-tab-preview')).toHaveCount(0);
+    await expect(page.getByTestId('chat-artifact-actions-menu')).toBeVisible();
+
+    await page.getByTestId('chat-artifact-actions-menu').click();
+    await expect(page.getByTestId('chat-artifact-action-download')).toBeVisible();
+    await expect(page.getByTestId('chat-artifact-action-fullscreen')).toBeVisible();
+  });
+
+  test('artifact panel renders syntax-highlighted code viewer for python', async ({ page }) => {
+    await page.goto(
+      `/?artifact-e2e=1&layout=single&artifact-open=${encodeURIComponent(PY_FIXTURE_PATH)}`,
+    );
+
+    const panel = page.getByTestId('chat-artifact-panel');
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('chat-artifact-filename')).toContainText('sample.py');
+
+    const codeViewer = page.getByTestId('chat-artifact-code-viewer');
+    await expect(codeViewer).toBeVisible({ timeout: 15_000 });
+    await expect(codeViewer.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
+    await expect(codeViewer).toContainText('export_pdf');
+  });
+
+  test('artifact panel opens presentation fullscreen overlay for html deck', async ({ page }) => {
+    await page.goto(
+      `/?artifact-e2e=1&layout=single&artifact-open=${encodeURIComponent(DECK_FIXTURE_PATH)}`,
+    );
+
+    const panel = page.getByTestId('chat-artifact-panel');
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('chat-artifact-filename')).toContainText('sample-deck.html');
+
+    const inlinePreview = page.getByTestId('chat-artifact-html-preview');
+    await expect(inlinePreview).toBeVisible();
+    await expect(inlinePreview).toHaveAttribute('src', /raw=1/);
+
+    await page.getByTestId('chat-artifact-actions-menu').click();
+    await expect(page.getByTestId('chat-artifact-action-fullscreen')).toContainText('Presentation fullscreen');
+    await expect(page.getByTestId('chat-artifact-action-open-external')).toBeVisible();
+    await page.getByTestId('chat-artifact-action-fullscreen').click();
+
+    const overlay = page.getByTestId('chat-artifact-fullscreen-overlay');
+    await expect(overlay).toBeVisible({ timeout: 15_000 });
+
+    const fullscreenPreview = page.getByTestId('chat-artifact-fullscreen-html');
+    await expect(fullscreenPreview).toBeVisible();
+    await expect(fullscreenPreview).toHaveAttribute('src', /raw=1/);
+
+    const deckFrame = page.frameLocator('[data-testid="chat-artifact-fullscreen-html"]');
+    await expect(deckFrame.locator('#deck-viewport')).toBeVisible({ timeout: 15_000 });
+
+    const noHorizontalOverflow = await deckFrame.locator('html').evaluate((element) => {
+      return element.scrollWidth <= element.clientWidth + 1;
+    });
+    expect(noHorizontalOverflow).toBe(true);
+
+    await page.getByTestId('chat-artifact-fullscreen-close').click();
+    await expect(overlay).toHaveCount(0);
   });
 });
