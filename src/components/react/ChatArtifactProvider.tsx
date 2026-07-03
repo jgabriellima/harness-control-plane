@@ -129,26 +129,6 @@ interface ChatArtifactSplitShellProps {
   enabled?: boolean;
 }
 
-function FixedChatArtifactSplitShell({
-  children,
-  selection,
-  onClose,
-}: {
-  children: React.ReactNode;
-  selection: ChatArtifactSelection;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden"
-      data-testid="runtime-console-shell"
-    >
-      {children}
-      <ChatArtifactPanel selection={selection} onClose={onClose} />
-    </div>
-  );
-}
-
 function ResizableChatArtifactSplitShell({
   children,
   selection,
@@ -173,49 +153,45 @@ function ResizableChatArtifactSplitShell({
   );
 
   return (
-    <Group
-      id={CHAT_ARTIFACT_LAYOUT_GROUP_ID}
-      orientation="horizontal"
-      className="h-full min-h-0 overflow-hidden"
-      defaultLayout={resolvedLayout}
-      onLayoutChanged={handleLayoutChanged}
-      data-testid="runtime-console-shell"
-    >
-      <Panel
-        id={CHAT_ARTIFACT_PANEL_IDS.chat}
-        minSize={CHAT_ARTIFACT_LAYOUT_MIN.chat}
-        defaultSize={
-          resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.chat] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.chat
-        }
-        className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+    <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-console-shell">
+      <Group
+        id={CHAT_ARTIFACT_LAYOUT_GROUP_ID}
+        orientation="horizontal"
+        className="h-full min-h-0 overflow-hidden"
+        defaultLayout={resolvedLayout}
+        onLayoutChanged={handleLayoutChanged}
       >
-        {children}
-      </Panel>
-      <Separator
-        className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-gray-300"
-        data-testid="chat-artifact-resize-handle"
-      />
-      <Panel
-        id={CHAT_ARTIFACT_PANEL_IDS.artifact}
-        minSize={CHAT_ARTIFACT_LAYOUT_MIN.artifact}
-        defaultSize={
-          resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.artifact] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.artifact
-        }
-        className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
-      >
-        <ChatArtifactPanel selection={selection} onClose={onClose} />
-      </Panel>
-    </Group>
+        <Panel
+          id={CHAT_ARTIFACT_PANEL_IDS.chat}
+          minSize={CHAT_ARTIFACT_LAYOUT_MIN.chat}
+          defaultSize={
+            resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.chat] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.chat
+          }
+          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+        >
+          {children}
+        </Panel>
+        <Separator
+          id="chat-artifact-resize-handle"
+          className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-gray-300"
+        />
+        <Panel
+          id={CHAT_ARTIFACT_PANEL_IDS.artifact}
+          minSize={CHAT_ARTIFACT_LAYOUT_MIN.artifact}
+          defaultSize={
+            resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.artifact] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.artifact
+          }
+          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+        >
+          <ChatArtifactPanel selection={selection} onClose={onClose} />
+        </Panel>
+      </Group>
+    </div>
   );
 }
 
 export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifactSplitShellProps) {
   const { selection, closeArtifact } = useChatArtifact();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   if (!enabled) {
     return <>{children}</>;
@@ -226,14 +202,6 @@ export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifac
       <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-console-shell">
         {children}
       </div>
-    );
-  }
-
-  if (!mounted) {
-    return (
-      <FixedChatArtifactSplitShell selection={selection} onClose={closeArtifact}>
-        {children}
-      </FixedChatArtifactSplitShell>
     );
   }
 

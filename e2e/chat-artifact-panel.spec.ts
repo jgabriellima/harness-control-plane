@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 const FIXTURE_PATH = 'e2e/fixtures/chat-artifact-target.md';
 const PDF_FIXTURE_PATH = 'e2e/fixtures/sample.pdf';
 const PY_FIXTURE_PATH = 'e2e/fixtures/sample.py';
+const YAML_FIXTURE_PATH = '.business/playbooks/domains/runtime-console/resizable-layout.pb.yaml';
 const DECK_FIXTURE_PATH = 'e2e/fixtures/sample-deck.html';
 const BASENAME_FIXTURE = 'basename-smoke.md';
 
@@ -145,6 +146,24 @@ test.describe('Chat artifact split panel', () => {
     await expect(codeViewer).toBeVisible({ timeout: 15_000 });
     await expect(codeViewer.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
     await expect(codeViewer).toContainText('export_pdf');
+  });
+
+  test('artifact panel renders yaml playbook content in code viewer', async ({ page }) => {
+    await page.goto(
+      `/?artifact-e2e=1&layout=single&artifact-open=${encodeURIComponent(YAML_FIXTURE_PATH)}`,
+    );
+
+    const panel = page.getByTestId('chat-artifact-panel');
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('chat-artifact-filename')).toContainText('resizable-layout.pb.yaml');
+
+    const codeViewer = page.getByTestId('chat-artifact-code-viewer');
+    await expect(codeViewer).toBeVisible({ timeout: 15_000 });
+
+    const monacoHeight = await codeViewer.locator('.monaco-editor').evaluate((element) => element.clientHeight);
+    expect(monacoHeight).toBeGreaterThan(100);
+
+    await expect(codeViewer).toContainText('pb.runtime.console.resizable-layout');
   });
 
   test('artifact panel opens presentation fullscreen overlay for html deck', async ({ page }) => {

@@ -47,6 +47,20 @@ describe('monaco language inference', () => {
     assert.equal(inferMonacoLanguageFromPath('manifest', 'application/json'), 'json');
   });
 
+  it('routes yaml playbooks to syntax viewer', () => {
+    assert.equal(
+      isSyntaxHighlightedArtifact(
+        '.business/playbooks/domains/media/presentation-production.pb.yaml',
+        'text/plain',
+      ),
+      true,
+    );
+    assert.equal(
+      inferMonacoLanguageFromPath('.business/playbooks/domains/media/presentation-production.pb.yaml'),
+      'yaml',
+    );
+  });
+
   it('routes code artifacts to syntax viewer', () => {
     assert.equal(
       isSyntaxHighlightedArtifact('.business/playbooks/runs/playbook-1/artifacts/export_deck.py', 'text/plain'),
