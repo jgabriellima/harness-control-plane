@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -8,7 +8,6 @@ import { readSessionIndex } from './runtime-session-registry';
 import { isValidWorkspace, provisionWorkspacePack, resolveWorkspacePath } from './workspace-pack';
 import { ensureWorkspacesContainer } from './workspaces-root';
 import { resolveHarnessBinding } from './harness-binding';
-import { resolvePlatformAppRoot } from './repo-root';
 import {
   DEFAULT_WORKSPACE_ID,
   LEGACY_DEFAULT_WORKSPACE_ID,
@@ -38,57 +37,6 @@ async function readSessionCount(workspacePath: string): Promise<number> {
   } catch {
     return 0;
   }
-}
-
-async function migrateLegacyEmbedSessions(targetWorkspacePath: string): Promise<void> {
-  const platformRoot = resolvePlatformAppRoot();
-  const legacySessionsDir = join(platformRoot, '.business', 'runtime-sessions');
-  const targetSessionsDir = join(targetWorkspacePath, '.business', 'runtime-sessions');
-  const legacyIndexPath = join(legacySessionsDir, 'index.json');
-  const targetIndexPath = join(targetSessionsDir, 'index.json');
-
-  if (!(await pathExists(legacyIndexPath))) {
-    return;
-  }
-
-  let legacyConversationCount = 0;
-  try {
-    const raw = await readFile(legacyIndexPath, 'utf8');
-    const parsed = JSON.parse(raw) as { conversations?: unknown[] };
-    legacyConversationCount = Array.isArray(parsed.conversations) ? parsed.conversations.length : 0;
-  } catch {
-    return;
-  }
-
-  if (legacyConversationCount === 0) {
-    return;
-  }
-
-  let targetConversationCount = 0;
-  if (await pathExists(targetIndexPath)) {
-    try {
-      const raw = await readFile(targetIndexPath, 'utf8');
-      const parsed = JSON.parse(raw) as { conversations?: unknown[] };
-      targetConversationCount = Array.isArray(parsed.conversations) ? parsed.conversations.length : 0;
-    } catch {
-      targetConversationCount = 0;
-    }
-  }
-
-  if (targetConversationCount > 0) {
-    return;
-  }
-
-  await mkdir(targetSessionsDir, { recursive: true });
-
-  for (const fileName of ['index.json', 'registry.jsonl', '.harness-sessions.lock']) {
-    const sourcePath = join(legacySessionsDir, fileName);
-    if (await pathExists(sourcePath)) {
-      await cp(sourcePath, join(targetSessionsDir, fileName));
-    }
-  }
-
-  await rewriteSessionProjectIds(targetWorkspacePath, LEGACY_DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_ID);
 }
 
 async function rewriteSessionProjectIds(
@@ -151,7 +99,6 @@ async function ensureDefaultWorkspaceInternal(): Promise<void> {
     await provisionWorkspacePack(defaultPath, DEFAULT_WORKSPACE_ID);
   }
 
-  await migrateLegacyEmbedSessions(defaultPath);
   await rewriteSessionProjectIds(defaultPath, LEGACY_DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_ID);
   await patchDefaultWorkspaceMetadata(defaultPath);
 }
@@ -184,7 +131,7 @@ async function patchDefaultWorkspaceMetadata(defaultPath: string): Promise<void>
   }
 }
 
-/** Idempotent: provision default workspace under `workspaces/` and migrate legacy embed sessions. */
+/** Idempotent: provision default workspace under `workspaces/`. */
 export async function ensureWorkspacesReady(): Promise<void> {
   if (!workspacesReadyPromise) {
     workspacesReadyPromise = ensureDefaultWorkspaceInternal().catch((error) => {

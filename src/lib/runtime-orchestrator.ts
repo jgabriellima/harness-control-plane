@@ -15,6 +15,7 @@ import { bindSession, readLatestBindings } from './runtime-session-registry';
 import { resolveHarnessRoot } from './app-root';
 import { createRequestId, errorFields, runtimeLogger } from './runtime-logger';
 import { runWithWorkspaceCwdAsync, workspaceCwd } from './runtime-sessions';
+import { assertDistributedRuntimeWorkspace } from './workspace-runtime-guard';
 
 export { RuntimeGatewayError };
 
@@ -24,6 +25,7 @@ export async function orchestrateChatDispatch(
   requestId: string = createRequestId('chat'),
 ): Promise<ChatDispatchResponse> {
   const cwd = resolveHarnessRoot(workspaceRoot);
+  assertDistributedRuntimeWorkspace(cwd, 'chat.dispatch');
   const conversationKey = request.conversation_id?.trim() || 'ephemeral-new-chat';
   const startedAt = Date.now();
 

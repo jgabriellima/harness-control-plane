@@ -10,8 +10,8 @@ const platformRoot = resolve(
 );
 
 const fixtureSource = join(
-  platformRoot,
-  '.business/playbooks/runs/playbook-e2e-fixture',
+  hostRepo,
+  'templates/workspace-baseline/.business/playbooks/runs/playbook-e2e-fixture',
 );
 const fixtureTarget = join(
   hostRepo,

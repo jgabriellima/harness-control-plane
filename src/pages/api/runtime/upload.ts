@@ -3,6 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { resolveHarnessBinding } from '../../../lib/harness-binding';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
+import { assertDistributedRuntimeWorkspace } from '../../../lib/workspace-runtime-guard';
 import { jsonError, jsonOk } from '../../../lib/api-json';
 
 function sanitizeFilename(name: string): string {
@@ -13,6 +15,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const formData = await request.formData();
     const file = formData.get('file');
+    const projectId = formData.get('project_id');
 
     if (!(file instanceof File)) {
       return jsonError('file is required', 400);
@@ -22,8 +25,13 @@ export const POST: APIRoute = async ({ request }) => {
       return jsonError('file must be 10MB or smaller', 400);
     }
 
-    const binding = await resolveHarnessBinding();
-    const uploadDir = join(binding.harnessRoot, 'state', 'uploads');
+    const { workspaceRoot } = await resolveRequestWorkspace(
+      request,
+      typeof projectId === 'string' ? projectId : null,
+    );
+    assertDistributedRuntimeWorkspace(workspaceRoot, 'runtime.upload');
+    const binding = await resolveHarnessBinding({ workspaceRoot });
+    const uploadDir = join(binding.workspaceRoot, '.uploads');
     await mkdir(uploadDir, { recursive: true });
 
     const stamp = Date.now();

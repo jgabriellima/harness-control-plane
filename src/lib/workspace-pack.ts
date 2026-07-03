@@ -1,10 +1,10 @@
 import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { join } from 'node:path';
+import { constants, existsSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { hasRuntimeBindingStamp, resolveHarnessBinding } from './harness-binding';
-import { resolvePlatformAppRoot } from './repo-root';
+import { resolveHostRepoRoot } from './repo-root';
 import { resolveWorkspacePath } from './workspaces-root';
 
 const PACK_EXCLUDES = new Set([
@@ -14,6 +14,7 @@ const PACK_EXCLUDES = new Set([
   'traces',
   'workflows/output',
   'runs',
+  'projects',
 ]);
 
 async function pathExists(pathValue: string): Promise<boolean> {
@@ -29,8 +30,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-async function loadBaselineConfig(): Promise<{ scope: string[]; excludes: string[] }> {
-  const binding = await resolveHarnessBinding();
+async function loadBaselineConfig(baselineRoot?: string): Promise<{ scope: string[]; excludes: string[] }> {
+  const binding = baselineRoot
+    ? await resolveHarnessBinding({ workspaceRoot: baselineRoot })
+    : await resolveHarnessBinding();
   const raw = await readFile(binding.dslPath, 'utf8');
   const doc = parseYaml(raw) as unknown;
 
@@ -86,6 +89,14 @@ async function copyTreeFiltered(
     }
 
     if (entry.isDirectory()) {
+      if (entry.name === 'runs' && basename(dirname(sourcePath)) === 'playbooks') {
+        const sub = await readdir(sourcePath, { withFileTypes: true });
+        const fixture = sub.find((e) => e.isDirectory() && e.name === 'playbook-e2e-fixture');
+        if (fixture) {
+          await cp(join(sourcePath, fixture.name), join(targetPath, fixture.name), { recursive: true });
+        }
+        continue;
+      }
       await copyTreeFiltered(sourcePath, targetPath, excludes);
     } else if (entry.isFile()) {
       await cp(sourcePath, targetPath);
@@ -120,31 +131,71 @@ async function patchProjectName(workspacePath: string, projectName: string): Pro
   await writeFile(binding.dslPath, stringifyYaml(doc), 'utf8');
 }
 
+async function writeWorkspaceLayoutReadmes(workspacePath: string): Promise<void> {
+  const uploadsDir = join(workspacePath, '.uploads');
+  const outputsDir = join(workspacePath, '.outputs', 'workflows');
+  await mkdir(uploadsDir, { recursive: true });
+  await mkdir(outputsDir, { recursive: true });
+
+  const uploadsReadme = join(uploadsDir, 'README.md');
+  if (!(await pathExists(uploadsReadme))) {
+    await writeFile(
+      uploadsReadme,
+      '# Uploads\n\nOperator and runtime file uploads — outside the harness.\n',
+      'utf8',
+    );
+  }
+
+  const outputsReadme = join(workspacePath, '.outputs', 'README.md');
+  if (!(await pathExists(outputsReadme))) {
+    await writeFile(
+      outputsReadme,
+      '# Outputs\n\nEphemeral workflow run bundles — outside `.business/`.\n',
+      'utf8',
+    );
+  }
+}
+
 /**
- * Copy platform baseline `.cursor/` (including runtime-binding stamp) and harness pack into a workspace.
+ * Resolve canonical baseline template (ADR-046). Fails if template is absent.
+ */
+function resolveWorkspaceBaselineRoot(): string {
+  const hostRepo = resolveHostRepoRoot();
+  const templatePath = join(hostRepo, 'templates', 'workspace-baseline');
+  if (existsSync(join(templatePath, '.cursor', 'runtime-binding.yaml'))) {
+    return templatePath;
+  }
+  throw new Error(
+    `Workspace baseline template missing at ${templatePath} — run: python3 app/.business/bin/business_workspace_template.py export`,
+  );
+}
+
+/**
+ * Copy baseline `.cursor/` + harness pack into a workspace from templates/workspace-baseline/.
  */
 export async function provisionWorkspacePack(
   workspacePath: string,
   projectName: string,
 ): Promise<void> {
-  const platformBinding = await resolveHarnessBinding();
-  const platformRoot = platformBinding.workspaceRoot;
-  const { excludes } = await loadBaselineConfig();
+  const baselineRoot = resolveWorkspaceBaselineRoot();
+  const baselineBinding = await resolveHarnessBinding({ workspaceRoot: baselineRoot });
+  const { excludes } = await loadBaselineConfig(baselineRoot);
 
   await mkdir(workspacePath, { recursive: true });
 
-  const cursorSource = join(platformRoot, '.cursor');
-  const harnessSource = platformBinding.harnessRoot;
+  const cursorSource = join(baselineRoot, '.cursor');
+  const harnessSource = baselineBinding.harnessRoot;
 
   if (await pathExists(cursorSource)) {
     await copyTreeFiltered(cursorSource, join(workspacePath, '.cursor'), excludes);
   }
 
   if (await pathExists(harnessSource)) {
-    const harnessDirName = harnessSource.slice(platformRoot.length + 1);
+    const harnessDirName = harnessSource.slice(baselineRoot.length + 1);
     await copyTreeFiltered(harnessSource, join(workspacePath, harnessDirName), excludes);
   }
 
+  await writeWorkspaceLayoutReadmes(workspacePath);
   await patchProjectName(workspacePath, projectName);
 }
 
