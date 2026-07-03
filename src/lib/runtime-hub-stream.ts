@@ -1,9 +1,11 @@
 import type { Run, SDKMessage } from '@cursor/sdk';
 
 import { appendDispatchLog } from './runtime-dispatch-log';
+import { isConnectCanceled } from './runtime-connect-errors';
 import { appendRunTerminal, readRunsIndex } from './runtime-run-registry';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { localGetRunOptions } from './runtime-sdk-local';
+import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
 import {
   getActiveRunIds,
   getRuntimeRunEntry,
@@ -229,20 +231,65 @@ async function streamRunToHub(
   conversationId: string,
   run: Run,
 ): Promise<void> {
-  for await (const message of run.stream()) {
+  const outcome = await consumeRunStream(run, (message) => {
     const wire = wireFromSdkMessage(message, runId, agentId, conversationId);
     if (wire) {
       broadcastEvent(wire);
     }
+  });
+
+  if (outcome === 'cancelled') {
+    await completeRunFanout(runId, agentId, conversationId, 'cancelled');
+    return;
   }
 
-  let status = run.status;
-  if (run.supports('wait')) {
-    const result = await run.wait();
-    status = result.status;
+  const { status, cancelled } = await resolveRunTerminalStatus(run);
+  await completeRunFanout(runId, agentId, conversationId, cancelled ? 'cancelled' : status);
+}
+
+function handleFanoutError(
+  error: unknown,
+  runId: string,
+  agentId: string,
+  conversationId: string,
+  requestId: string | undefined,
+  cwd: string,
+  phase: 'chat.fanout' | 'chat.fanout.outer',
+): Promise<void> {
+  if (isConnectCanceled(error)) {
+    runtimeLogger.debug('chat.fanout.cancelled', {
+      request_id: requestId,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      phase,
+    });
+    return completeRunFanout(runId, agentId, conversationId, 'cancelled');
   }
 
-  await completeRunFanout(runId, agentId, conversationId, status);
+  const message = error instanceof Error ? error.message : 'Runtime stream failed';
+  runtimeLogger.error('chat.fanout.error', {
+    request_id: requestId,
+    run_id: runId,
+    agent_id: agentId,
+    conversation_id: conversationId,
+    phase,
+    ...errorFields(error),
+  });
+  void appendDispatchLog(
+    {
+      event: 'chat.fanout.error',
+      request_id: requestId ?? `fanout-${runId}`,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      cwd,
+      phase,
+      error_message: message,
+    },
+    cwd,
+  );
+  return completeRunFanout(runId, agentId, conversationId, 'failed', message);
 }
 
 export function startRunHubFanout(
@@ -297,40 +344,19 @@ export function startRunHubFanout(
 
       await streamRunToHub(runId, agentId, conversationId, run);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Runtime stream failed';
-      runtimeLogger.error('chat.fanout.error', {
-        request_id: requestId,
-        run_id: runId,
-        agent_id: agentId,
-        conversation_id: conversationId,
-        phase: 'chat.fanout',
-        ...errorFields(error),
-      });
-      void appendDispatchLog(
-        {
-          event: 'chat.fanout.error',
-          request_id: requestId ?? `fanout-${runId}`,
-          run_id: runId,
-          agent_id: agentId,
-          conversation_id: conversationId,
-          cwd,
-          phase: 'chat.fanout',
-          error_message: message,
-        },
-        cwd,
-      );
-      await completeRunFanout(runId, agentId, conversationId, 'failed', message);
+      await handleFanoutError(error, runId, agentId, conversationId, requestId, cwd, 'chat.fanout');
     }
   }).catch((error) => {
     fanoutStarted.delete(runId);
-    const message = error instanceof Error ? error.message : 'Runtime stream failed';
-    runtimeLogger.error('chat.fanout.error', {
-      request_id: requestId,
-      run_id: runId,
-      phase: 'chat.fanout.outer',
-      ...errorFields(error),
-    });
-    void completeRunFanout(runId, agentId, conversationId, 'failed', message).catch(() => {
+    void handleFanoutError(
+      error,
+      runId,
+      agentId,
+      conversationId,
+      requestId,
+      cwd,
+      'chat.fanout.outer',
+    ).catch(() => {
       // Last-resort guard — completeRunFanout is best-effort on terminal path.
     });
   });

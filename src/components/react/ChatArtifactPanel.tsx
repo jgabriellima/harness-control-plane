@@ -1,30 +1,26 @@
-import { Copy, X } from 'lucide-react';
+import { Copy, Download, ExternalLink, X } from 'lucide-react';
 import React, { useState } from 'react';
 
 import { Markdown } from '@/components/ui/markdown';
-import { fileNameFromPath } from '@/lib/file-reference';
+import { fileNameFromPath, isInlinePreviewMime } from '@/lib/file-reference';
 import type { ChatArtifactSelection } from '@/lib/chat-artifact-types';
-
-export type ArtifactPanelView = 'preview' | 'code';
 
 interface ChatArtifactPanelProps {
   selection: ChatArtifactSelection;
   onClose: () => void;
 }
 
-function panelTabClass(active: boolean): string {
-  return active
-    ? 'border-b-2 border-gray-900 text-gray-700'
-    : 'border-b-2 border-transparent text-gray-500 hover:text-gray-700';
-}
-
 export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPanelProps) {
-  const [view, setView] = useState<ArtifactPanelView>('preview');
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
 
   const fileName = fileNameFromPath(selection.path);
   const isMarkdown = selection.mime === 'text/markdown';
   const isHtml = selection.mime === 'text/html';
+  const isPdf = selection.mime === 'application/pdf';
+  const isImage = selection.mime.startsWith('image/');
+  const isBinary = selection.encoding === 'binary';
+  const canInlinePreview = Boolean(selection.previewUrl) && isInlinePreviewMime(selection.mime);
+  const isImmersivePreview = canInlinePreview;
 
   async function handleCopy(): Promise<void> {
     if (!selection.content) {
@@ -39,6 +35,9 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
       setCopyState('idle');
     }
   }
+
+  const hasPreviewContent =
+    canInlinePreview || (isMarkdown && selection.content) || (isHtml && selection.content) || (!isBinary && selection.content);
 
   return (
     <aside
@@ -56,6 +55,29 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          {selection.previewUrl ? (
+            <a
+              href={selection.previewUrl}
+              download={fileName}
+              className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Download artifact"
+              data-testid="chat-artifact-download"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          ) : null}
+          {selection.previewUrl ? (
+            <a
+              href={selection.previewUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Open artifact in new tab"
+              data-testid="chat-artifact-open-external"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : null}
           <button
             type="button"
             className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
@@ -83,46 +105,52 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
         </div>
       </header>
 
-      <div className="flex shrink-0 gap-4 border-b border-gray-200 bg-white px-4">
-        <button
-          type="button"
-          className={`px-1 py-2 text-xs font-semibold ${panelTabClass(view === 'preview')}`}
-          data-testid="chat-artifact-tab-preview"
-          onClick={() => setView('preview')}
-        >
-          Preview
-        </button>
-        <button
-          type="button"
-          className={`px-1 py-2 text-xs font-semibold ${panelTabClass(view === 'code')}`}
-          data-testid="chat-artifact-tab-code"
-          onClick={() => setView('code')}
-        >
-          Code
-        </button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4" data-testid="chat-artifact-content">
+      <div
+        className={
+          isImmersivePreview
+            ? 'min-h-0 flex-1 overflow-hidden bg-gray-100'
+            : 'min-h-0 flex-1 overflow-y-auto p-4'
+        }
+        data-testid="chat-artifact-content"
+      >
         {selection.loading ? (
-          <p className="text-sm text-gray-500">Loading artifact…</p>
+          <p className={`text-sm text-gray-500 ${isImmersivePreview ? 'p-4' : ''}`}>Loading artifact…</p>
         ) : null}
 
         {!selection.loading && selection.error ? (
-          <p className="text-sm text-red-600" role="alert">
+          <p className={`text-sm text-red-600 ${isImmersivePreview ? 'p-4' : ''}`} role="alert">
             {selection.error}
           </p>
         ) : null}
 
-        {!selection.loading && !selection.error && selection.content ? (
-          view === 'code' ? (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-800">
-              {selection.content}
-            </pre>
-          ) : isMarkdown ? (
+        {!selection.loading && !selection.error && hasPreviewContent ? (
+          isPdf && selection.previewUrl ? (
+            <object
+              data={`${selection.previewUrl}#view=FitH`}
+              type="application/pdf"
+              className="block h-full min-h-0 w-full"
+              data-testid="chat-artifact-pdf-preview"
+            >
+              <iframe
+                title={fileName}
+                className="h-full w-full border-0 bg-white"
+                src={`${selection.previewUrl}#view=FitH`}
+              />
+            </object>
+          ) : isImage && selection.previewUrl ? (
+            <div className="flex h-full min-h-0 items-center justify-center p-4">
+              <img
+                src={selection.previewUrl}
+                alt={fileName}
+                className="max-h-full max-w-full rounded-lg border border-gray-200 bg-white object-contain shadow-sm"
+                data-testid="chat-artifact-image-preview"
+              />
+            </div>
+          ) : isMarkdown && selection.content ? (
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <Markdown>{selection.content}</Markdown>
             </div>
-          ) : isHtml ? (
+          ) : isHtml && selection.content ? (
             <iframe
               title={fileName}
               className="h-full min-h-[480px] w-full rounded-lg border border-gray-200 bg-white"
@@ -136,8 +164,10 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
           )
         ) : null}
 
-        {!selection.loading && !selection.error && !selection.content ? (
-          <p className="text-sm text-gray-500">No content available.</p>
+        {!selection.loading && !selection.error && !hasPreviewContent ? (
+          <p className={`text-sm text-gray-500 ${isImmersivePreview ? 'p-4' : ''}`}>
+            No preview available for this file type.
+          </p>
         ) : null}
       </div>
     </aside>

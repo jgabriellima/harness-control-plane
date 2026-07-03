@@ -1,7 +1,7 @@
-import { access, readFile, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { access, readFile, readdir, stat } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 
-import { inferMimeFromPath } from './file-reference';
+import { inferMimeFromPath, isBinaryWorkspaceFile } from './file-reference';
 import { resolveHarnessBinding } from './harness-binding';
 import {
   resolveControlPlaneInstallRoot,
@@ -12,7 +12,15 @@ import { resolveActiveWorkspaceRoot } from './workspace-manager';
 
 export interface WorkspaceFileContent {
   path: string;
-  content: string;
+  content: string | null;
+  mime: string;
+  size: number;
+  encoding: 'utf8' | 'binary';
+}
+
+export interface ResolvedWorkspaceFile {
+  safePath: string;
+  displayPath: string;
   mime: string;
   size: number;
 }
@@ -69,6 +77,83 @@ export function expandWorkspacePathCandidates(
   return [...new Set(candidates)];
 }
 
+async function findFileByBasename(dir: string, targetBasename: string): Promise<string | null> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isFile() && entry.name === targetBasename) {
+      return fullPath;
+    }
+    if (entry.isDirectory()) {
+      const nested = await findFileByBasename(fullPath, targetBasename);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Agents often cite bare artifact names (`deck.html`) after playbook runs.
+ * Search recent run output under harness playbooks/runs/.../artifacts trees.
+ */
+export async function findRecentPlaybookArtifactRelativePath(
+  filename: string,
+  harnessRoot: string,
+): Promise<string | null> {
+  const targetBasename = basename(filename.trim());
+  if (!targetBasename || targetBasename.includes('/')) {
+    return null;
+  }
+
+  const runsDir = join(harnessRoot, 'playbooks', 'runs');
+  if (!(await fileExists(runsDir))) {
+    return null;
+  }
+
+  let runEntries;
+  try {
+    runEntries = await readdir(runsDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const runIds = runEntries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('playbook-'))
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+
+  for (const runId of runIds) {
+    const artifactsDir = join(runsDir, runId, 'artifacts');
+    const absolutePath = await findFileByBasename(artifactsDir, targetBasename);
+    if (!absolutePath) {
+      continue;
+    }
+
+    const harnessResolved = resolve(harnessRoot);
+    const resolvedArtifact = resolve(absolutePath);
+    if (
+      resolvedArtifact === harnessResolved ||
+      !resolvedArtifact.startsWith(`${harnessResolved}/`)
+    ) {
+      continue;
+    }
+
+    return resolvedArtifact.slice(harnessResolved.length + 1);
+  }
+
+  return null;
+}
+
 function assertWithinRoots(filePath: string, allowedRoots: string[]): string {
   const resolved = resolve(filePath);
 
@@ -106,10 +191,10 @@ function relativePathFromRoots(filePath: string, roots: string[], fallback: stri
   return fallback;
 }
 
-export async function readWorkspaceFile(
+export async function resolveWorkspaceFileLocation(
   requestedPath: string,
   harnessRoot?: string,
-): Promise<WorkspaceFileContent | null> {
+): Promise<ResolvedWorkspaceFile | null> {
   const normalizedPath = stripWorkspacePathAlias(normalizeRequestedPath(requestedPath));
   if (!normalizedPath) {
     return null;
@@ -124,6 +209,20 @@ export async function readWorkspaceFile(
 
   const allowedRoots = [projectRoot, repoRoot, appRoot, controlPlaneRoot];
   const relativeCandidates = expandWorkspacePathCandidates(normalizedPath, harnessDirRel);
+
+  if (!normalizedPath.includes('/')) {
+    const playbookArtifact = await findRecentPlaybookArtifactRelativePath(
+      normalizedPath,
+      binding.harnessRoot,
+    );
+    if (playbookArtifact) {
+      const harnessRelative = harnessDirRel
+        ? `${harnessDirRel.replace(/\/$/, '')}/${playbookArtifact}`
+        : playbookArtifact;
+      relativeCandidates.unshift(harnessRelative);
+    }
+  }
+
   const candidates = relativeCandidates.flatMap((relativePath) => [
     resolve(projectRoot, relativePath),
     resolve(repoRoot, relativePath),
@@ -148,24 +247,52 @@ export async function readWorkspaceFile(
       continue;
     }
 
-    if (fileStat.size > 2_000_000) {
-      throw new Error('File exceeds maximum preview size (2MB)');
-    }
-
-    const content = await readFile(safePath, 'utf8');
     let displayPath = relativePathFromRoots(safePath, allowedRoots, normalizedPath);
-
-    if (displayPath.startsWith("app/")) {
+    if (displayPath.startsWith('app/')) {
       displayPath = displayPath.slice(4);
     }
 
     return {
-      path: displayPath,
-      content,
+      safePath,
+      displayPath,
       mime: inferMimeFromPath(displayPath),
       size: fileStat.size,
     };
   }
 
   return null;
+}
+
+export async function readWorkspaceFile(
+  requestedPath: string,
+  harnessRoot?: string,
+): Promise<WorkspaceFileContent | null> {
+  const resolved = await resolveWorkspaceFileLocation(requestedPath, harnessRoot);
+  if (!resolved) {
+    return null;
+  }
+
+  if (resolved.size > 2_000_000) {
+    throw new Error('File exceeds maximum preview size (2MB)');
+  }
+
+  if (isBinaryWorkspaceFile(resolved.mime)) {
+    return {
+      path: resolved.displayPath,
+      content: null,
+      mime: resolved.mime,
+      size: resolved.size,
+      encoding: 'binary',
+    };
+  }
+
+  const content = await readFile(resolved.safePath, 'utf8');
+
+  return {
+    path: resolved.displayPath,
+    content,
+    mime: resolved.mime,
+    size: resolved.size,
+    encoding: 'utf8',
+  };
 }

@@ -254,12 +254,12 @@ export default function ChatPane({
       }
 
       event.preventDefault();
-      void openArtifact(filePath);
+      void openArtifact(filePath, projectId);
     }
 
     document.addEventListener('click', handleFileReferenceClick);
     return () => document.removeEventListener('click', handleFileReferenceClick);
-  }, [openArtifact]);
+  }, [openArtifact, projectId]);
 
   useEffect(() => {
     void fetch('/api/runtime/commands')
@@ -458,7 +458,7 @@ export default function ChatPane({
               runActivity={runActivity}
               toolActivity={toolActivity}
               onFileClick={(filePath) => {
-                void openArtifact(filePath);
+                void openArtifact(filePath, projectId);
               }}
               onLinkClick={handleBrowserLinkClick}
             />

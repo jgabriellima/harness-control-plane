@@ -1,5 +1,6 @@
 import type { SDKMessage } from '@cursor/sdk';
 
+import { isConnectCanceled } from './runtime-connect-errors';
 import {
   encodeRuntimeSseData,
   encodeRuntimeSseHeartbeat,
@@ -7,6 +8,7 @@ import {
   type RuntimeStreamWireEvent,
 } from './runtime-hub-stream';
 import { localGetRunOptions } from './runtime-sdk-local';
+import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
 import {
   releaseAgentSlot,
   releaseRuntimeRun,
@@ -78,40 +80,40 @@ export function createRuntimeEventStream(
           run = await Agent.getRun(runId, localGetRunOptions(workspaceCwd()));
         }
 
-        for await (const message of run.stream()) {
+        const outcome = await consumeRunStream(run, (message) => {
           if (closed) {
-            break;
+            return;
           }
 
           const wire = wireFromSdkMessageSingleSession(message, runId, agentId);
           if (wire) {
             controller.enqueue(encodeRuntimeSseData(wire));
           }
+        });
+
+        if (closed || outcome === 'cancelled') {
+          return;
         }
 
-        if (run.supports('wait')) {
-          const result = await run.wait();
-          controller.enqueue(
-            encodeRuntimeSseData({
-              type: 'run_complete',
-              run_id: runId,
-              agent_id: agentId,
-              timestamp: new Date().toISOString(),
-              payload: { status: result.status },
-            }),
-          );
-        } else {
-          controller.enqueue(
-            encodeRuntimeSseData({
-              type: 'run_complete',
-              run_id: runId,
-              agent_id: agentId,
-              timestamp: new Date().toISOString(),
-              payload: { status: run.status },
-            }),
-          );
+        const { status, cancelled } = await resolveRunTerminalStatus(run);
+        if (closed) {
+          return;
         }
+
+        controller.enqueue(
+          encodeRuntimeSseData({
+            type: 'run_complete',
+            run_id: runId,
+            agent_id: agentId,
+            timestamp: new Date().toISOString(),
+            payload: { status: cancelled ? 'cancelled' : status },
+          }),
+        );
       } catch (error) {
+        if (closed || isConnectCanceled(error)) {
+          return;
+        }
+
         const message = error instanceof Error ? error.message : 'Runtime stream failed';
         controller.enqueue(
           encodeRuntimeSseData({
