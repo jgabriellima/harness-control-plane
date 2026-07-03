@@ -45,7 +45,8 @@ test.describe('Chat artifact split panel', () => {
 
     const panel = page.getByTestId('chat-artifact-panel');
     await expect(panel).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('runtime-console-shell')).toHaveAttribute('class', /grid-cols-/);
+    await expect(page.getByTestId('runtime-console-shell')).toBeVisible();
+    await expect(page.getByTestId('chat-artifact-resize-handle')).toBeVisible();
     await expect(page.getByTestId('chat-artifact-filename')).toContainText('chat-artifact-target.md');
     await expect(page.getByTestId('chat-artifact-content')).toContainText('Chat Artifact E2E Fixture');
     await expect(page.getByTestId('chat-artifact-tab-preview')).toHaveCount(0);
