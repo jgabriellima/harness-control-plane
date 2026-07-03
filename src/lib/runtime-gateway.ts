@@ -104,6 +104,8 @@ async function withDispatchTimeout<T>(
     if (timer) {
       clearTimeout(timer);
     }
+    // Prevent late Connect RPC rejections from surfacing as unhandled after race settles.
+    void promise.catch(() => undefined);
   }
 }
 

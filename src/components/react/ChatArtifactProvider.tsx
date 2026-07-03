@@ -7,9 +7,10 @@ import {
   emptyArtifactSelection,
   type ChatArtifactSelection,
 } from '@/lib/chat-artifact-types';
+import { buildWorkspaceFileRawUrl, normalizeArtifactPath } from '@/lib/file-reference';
 
 interface ChatArtifactContextValue {
-  openArtifact: (filePath: string) => Promise<void>;
+  openArtifact: (filePath: string, projectId?: string) => Promise<void>;
   closeArtifact: () => void;
   selection: ChatArtifactSelection | null;
 }
@@ -19,44 +20,69 @@ const ChatArtifactContext = createContext<ChatArtifactContextValue | null>(null)
 export function ChatArtifactProvider({ children }: { children: React.ReactNode }) {
   const [selection, setSelection] = useState<ChatArtifactSelection | null>(null);
 
-  const openArtifact = useCallback(async (filePath: string): Promise<void> => {
-    setSelection(emptyArtifactSelection(filePath));
+  const openArtifact = useCallback(async (filePath: string, projectId?: string): Promise<void> => {
+    const normalizedPath = normalizeArtifactPath(filePath);
+    setSelection(emptyArtifactSelection(normalizedPath));
+
+    const params = new URLSearchParams({ path: normalizedPath });
+    const trimmedProjectId = projectId?.trim();
+    if (trimmedProjectId) {
+      params.set('project_id', trimmedProjectId);
+    }
 
     try {
-      const response = await fetch(`/api/workspace/file?path=${encodeURIComponent(filePath)}`);
+      const response = await fetch(`/api/workspace/file?${params.toString()}`);
       const payload = (await response.json()) as {
         path?: string;
-        content?: string;
+        content?: string | null;
         mime?: string;
+        size?: number;
+        encoding?: 'utf8' | 'binary';
         error?: string;
       };
 
       if (!response.ok) {
         setSelection({
-          path: filePath,
+          path: normalizedPath,
           content: null,
           mime: 'text/plain',
           loading: false,
           error: payload.error ?? 'Failed to load file',
+          encoding: 'utf8',
+          previewUrl: null,
+          size: 0,
         });
         return;
       }
 
+      const resolvedPath = payload.path ?? normalizedPath;
+      const encoding = payload.encoding ?? 'utf8';
+      const mime = payload.mime ?? 'text/plain';
+
       setSelection({
-        path: payload.path ?? filePath,
+        path: resolvedPath,
         content: payload.content ?? null,
-        mime: payload.mime ?? 'text/plain',
+        mime,
+        size: payload.size ?? 0,
         loading: false,
         error: null,
+        encoding,
+        previewUrl:
+          encoding === 'binary'
+            ? buildWorkspaceFileRawUrl(resolvedPath, trimmedProjectId)
+            : null,
       });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Failed to load file';
       setSelection({
-        path: filePath,
+        path: normalizedPath,
         content: null,
         mime: 'text/plain',
         loading: false,
         error: message,
+        encoding: 'utf8',
+        previewUrl: null,
+        size: 0,
       });
     }
   }, []);
