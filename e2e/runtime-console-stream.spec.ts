@@ -33,6 +33,15 @@ test.describe('runtime console stream QA', () => {
     }
   });
 
+  test('active-runs endpoint reads workspace runs-index', async ({ request }) => {
+    const response = await request.get(`${BASE}/api/runtime/active-runs`);
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as {
+      active: Array<{ runId: string; conversationId: string; agentId: string }>;
+    };
+    expect(Array.isArray(body.active)).toBeTruthy();
+  });
+
   test('hub events endpoint accepts SSE connection', async ({ page }) => {
     await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120_000 });
 

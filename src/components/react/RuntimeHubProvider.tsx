@@ -24,6 +24,7 @@ import {
   findActiveRunForConversation,
   purgeStaleActiveRun,
   resolveTurnTrackingForActiveRun,
+  type ActiveRunRegistryEntry,
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
@@ -251,7 +252,21 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       let terminalEvent = false;
 
       updateConversation(conversationId, (state) => {
-        const tracking = resolveTurnTracking(conversationId, state, turnTrackingRef.current);
+        let tracking = resolveTurnTracking(conversationId, state, turnTrackingRef.current);
+
+        if (!tracking && event.run_id) {
+          const recovered = resolveTurnTrackingForActiveRun(state, event.run_id);
+          turnTrackingRef.current.set(conversationId, recovered);
+          tracking = recovered;
+          if (state.activeRunId !== event.run_id) {
+            state = applyActiveRunToConversationState(state, {
+              runId: event.run_id,
+              conversationId,
+              agentId: event.agent_id,
+            });
+          }
+        }
+
         if (!tracking) {
           return state;
         }
@@ -320,6 +335,37 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     setPaneConversationIdsState(normalizedPanes.slice(0, paneCountForMode(mode)));
   }, [pathname]);
 
+  const reconnectActiveRun = useCallback(
+    async (entry: ActiveRunRegistryEntry): Promise<boolean> => {
+      const existingState = conversationsRef.current.get(entry.conversationId);
+      if (existingState?.runPhase === 'streaming' && existingState.activeRunId === entry.runId) {
+        return true;
+      }
+
+      const attached = await attachActiveRunStream(entry.runId);
+      if (!attached) {
+        await purgeStaleActiveRun(entry.runId);
+        return false;
+      }
+
+      updateConversation(entry.conversationId, (state) => {
+        const tracking = resolveTurnTrackingForActiveRun(state, entry.runId);
+        turnTrackingRef.current.set(entry.conversationId, tracking);
+        return applyActiveRunToConversationState(state, entry);
+      });
+
+      return true;
+    },
+    [updateConversation],
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const activeRuns = await fetchActiveRunsIndex();
+      await Promise.all(activeRuns.map((entry) => reconnectActiveRun(entry)));
+    })();
+  }, [reconnectActiveRun]);
+
   const syncActiveRunForConversation = useCallback(
     async (conversationId: string): Promise<boolean> => {
       if (isDraftConversationId(conversationId)) {
@@ -338,26 +384,9 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         return false;
       }
 
-      const existingState = conversationsRef.current.get(conversationId);
-      if (existingState?.runPhase === 'streaming' && existingState.activeRunId === entry.runId) {
-        return true;
-      }
-
-      const attached = await attachActiveRunStream(entry.runId);
-      if (!attached) {
-        await purgeStaleActiveRun(entry.runId);
-        return false;
-      }
-
-      updateConversation(conversationId, (state) => {
-        const tracking = resolveTurnTrackingForActiveRun(state, entry.runId);
-        turnTrackingRef.current.set(conversationId, tracking);
-        return applyActiveRunToConversationState(state, entry);
-      });
-
-      return true;
+      return reconnectActiveRun(entry);
     },
-    [updateConversation],
+    [reconnectActiveRun],
   );
 
   useEffect(() => {

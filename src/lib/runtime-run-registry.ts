@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { resolveHarnessBinding } from './harness-binding';
-import { resolveAppRoot } from './app-root';
+import {
+  ensureWorkspacesReady,
+  listWorkspaceProjects,
+  resolveActiveWorkspaceRoot,
+  resolveProjectWorkspaceRoot,
+} from './workspace-manager';
 
 const execFileAsync = promisify(execFile);
 
@@ -25,8 +30,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+async function resolveRunsWorkspaceRoot(workspaceRoot?: string): Promise<string> {
+  if (workspaceRoot?.trim()) {
+    return workspaceRoot.trim();
+  }
+  return resolveActiveWorkspaceRoot();
+}
+
 async function runRegistryPaths(workspaceRoot?: string) {
-  const binding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
+  const resolvedRoot = await resolveRunsWorkspaceRoot(workspaceRoot);
+  const binding = await resolveHarnessBinding({ workspaceRoot: resolvedRoot });
   const sessionsDir = join(binding.harnessRoot, 'runtime-sessions');
   return {
     workspaceRoot: binding.workspaceRoot,
@@ -125,4 +138,45 @@ export async function appendRunTerminal(input: {
     cwd: paths.workspaceRoot,
     maxBuffer: 1024 * 1024,
   });
+}
+
+/** Union of active runs across all provisioned workspace directories. */
+export async function readAggregatedActiveRuns(): Promise<RunsIndex> {
+  await ensureWorkspacesReady();
+  const projects = await listWorkspaceProjects();
+  const active: ActiveRunEntry[] = [];
+  let updatedAt = new Date(0).toISOString();
+
+  for (const project of projects) {
+    const root = project.path ?? resolveProjectWorkspaceRoot(project.id);
+    const index = await readRunsIndex(root);
+    active.push(...index.active);
+    if (index.updatedAt > updatedAt) {
+      updatedAt = index.updatedAt;
+    }
+  }
+
+  return {
+    version: 1,
+    updatedAt: updatedAt === new Date(0).toISOString() ? new Date().toISOString() : updatedAt,
+    active,
+  };
+}
+
+export async function findActiveRunEntry(
+  runId: string,
+): Promise<{ entry: ActiveRunEntry; workspaceRoot: string } | null> {
+  await ensureWorkspacesReady();
+  const projects = await listWorkspaceProjects();
+
+  for (const project of projects) {
+    const root = project.path ?? resolveProjectWorkspaceRoot(project.id);
+    const index = await readRunsIndex(root);
+    const entry = index.active.find((activeRun) => activeRun.runId === runId);
+    if (entry) {
+      return { entry, workspaceRoot: root };
+    }
+  }
+
+  return null;
 }

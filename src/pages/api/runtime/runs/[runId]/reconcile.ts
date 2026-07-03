@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../../lib/api-json';
-import { appendRunTerminal, readRunsIndex } from '../../../../../lib/runtime-run-registry';
+import { appendRunTerminal, findActiveRunEntry } from '../../../../../lib/runtime-run-registry';
 
 export const POST: APIRoute = async ({ params }) => {
   const runId = params.runId?.trim();
@@ -9,9 +9,8 @@ export const POST: APIRoute = async ({ params }) => {
     return jsonError('Run id is required', 400);
   }
 
-  const index = await readRunsIndex();
-  const entry = index.active.find((activeRun) => activeRun.runId === runId);
-  if (!entry) {
+  const located = await findActiveRunEntry(runId);
+  if (!located) {
     return jsonOk({ ok: true, purged: false, reason: 'not_indexed' });
   }
 
@@ -21,6 +20,7 @@ export const POST: APIRoute = async ({ params }) => {
       event: 'run.failed',
       status: 'stale',
       message: 'Run removed from active index — attach failed or process restarted',
+      workspaceRoot: located.workspaceRoot,
     });
   } catch {
     return jsonError('Failed to reconcile stale run', 500);

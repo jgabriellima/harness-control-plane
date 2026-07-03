@@ -2,7 +2,7 @@ import type { Run, SDKMessage } from '@cursor/sdk';
 
 import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectCanceled } from './runtime-connect-errors';
-import { appendRunTerminal, readRunsIndex } from './runtime-run-registry';
+import { appendRunTerminal, readAggregatedActiveRuns } from './runtime-run-registry';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { localGetRunOptions } from './runtime-sdk-local';
 import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
@@ -374,7 +374,7 @@ function attachKnownRunsToHub(): void {
 
 async function attachIndexedRunsToHub(): Promise<void> {
   try {
-    const index = await readRunsIndex();
+    const index = await readAggregatedActiveRuns();
     for (const entry of index.active) {
       startRunHubFanout(entry.runId, entry.agentId, entry.conversationId);
     }
