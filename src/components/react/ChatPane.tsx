@@ -211,8 +211,8 @@ export default function ChatPane({
 
   const showHeader = Boolean(conversationId);
   const consoleGridClass = showHeader
-    ? 'relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden'
-    : 'relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden';
+    ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
+    : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
 
   const slashSuggestions = useMemo(() => {
     const trimmed = input.trim();
@@ -438,13 +438,10 @@ export default function ChatPane({
             compact={compact}
           />
         ) : null}
-        <div className="min-h-0 overflow-y-auto overscroll-contain pb-32">
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
           <ChatPaneMessagesSkeleton compact={compact} />
         </div>
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
-          aria-hidden="true"
-        >
+        <div className="shrink-0 px-4 pb-4" aria-hidden="true">
           <div className="mx-auto max-w-3xl opacity-60">
             <PromptInput>
               <PromptInputTextarea disabled placeholder="Loading session…" value="" readOnly />
@@ -469,7 +466,7 @@ export default function ChatPane({
       ) : null}
 
       <div
-        className="min-h-0 overflow-y-auto overscroll-contain pb-32 scroll-pb-32"
+        className="min-h-0 overflow-y-auto overscroll-contain"
         data-testid="chat-pane-messages"
       >
         {!showMessageList ? (
@@ -508,11 +505,8 @@ export default function ChatPane({
         )}
       </div>
 
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
-        data-testid="chat-pane-composer"
-      >
-        <div className="pointer-events-auto relative mx-auto max-w-3xl">
+      <div className="shrink-0 px-4 pb-4" data-testid="chat-pane-composer">
+        <div className="relative mx-auto max-w-3xl">
           <ComposerToolActivity messages={displayMessages} streaming={isStreaming} />
 
           {threadFilePaths.length > 0 ? (
