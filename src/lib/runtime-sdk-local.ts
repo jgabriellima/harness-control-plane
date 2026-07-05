@@ -3,6 +3,10 @@ import type { GetRunOptions } from '@cursor/sdk';
 /**
  * Resolves CURSOR_API_KEY for local SDK calls. Throws when unset.
  */
+export function hasRuntimeSdkCredentials(): boolean {
+  return Boolean(process.env.CURSOR_API_KEY?.trim());
+}
+
 export function requireCursorApiKey(): string {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) {

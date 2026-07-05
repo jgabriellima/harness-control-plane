@@ -8,6 +8,7 @@ import type { ChatRequest } from '../../lib/harness-types';
 import { appendDispatchLog } from '../../lib/runtime-dispatch-log';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from '../../lib/runtime-logger';
 import { gatewayErrorDetail, RuntimeGatewayError, orchestrateChatDispatch } from '../../lib/runtime-orchestrator';
+import { mapDispatchError } from '../../lib/runtime-gateway';
 import { resolveRequestWorkspace } from '../../lib/workspace-request';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -159,14 +160,7 @@ export const POST: APIRoute = async ({ request }) => {
       Sentry.captureException(error);
 
       const mapped =
-        error instanceof RuntimeGatewayError
-          ? error
-          : new RuntimeGatewayError(
-              error instanceof Error ? error.message : 'Failed to dispatch chat to runtime',
-              500,
-              'chat.dispatch',
-              requestId,
-            );
+        error instanceof RuntimeGatewayError ? error : mapDispatchError(error, requestId);
 
       runtimeLogger.error('chat.response.error', {
         request_id: requestId,

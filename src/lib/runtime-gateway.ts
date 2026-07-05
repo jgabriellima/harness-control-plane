@@ -1,5 +1,6 @@
 import type { ChatDispatchResponse, ChatRequest } from './harness-types';
 import { appendDispatchLog } from './runtime-dispatch-log';
+import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from './runtime-logger';
 import { registerRuntimeRun, registerRuntimeSession } from './runtime-sessions';
 
@@ -263,7 +264,7 @@ export function mapDispatchError(
   const message = error instanceof Error ? error.message : 'Failed to dispatch chat to runtime';
   const lower = message.toLowerCase();
 
-  if (lower.includes('unauthenticated') || lower.includes('invalid api key')) {
+  if (isConnectUnauthenticated(error) || lower.includes('invalid api key')) {
     return new RuntimeGatewayError(
       `${message} — verifique CURSOR_API_KEY em harness-control-plane/.env`,
       503,

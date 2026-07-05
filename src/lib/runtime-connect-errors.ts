@@ -17,3 +17,28 @@ export function isConnectCanceled(error: unknown): boolean {
 
   return false;
 }
+
+export function isConnectUnauthenticated(error: unknown): boolean {
+  if (error instanceof ConnectError && error.code === Code.Unauthenticated) {
+    return true;
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return message.includes('[unauthenticated]') || message.includes('invalid api key');
+  }
+
+  return false;
+}
+
+export function formatRuntimeConnectError(error: unknown): string {
+  if (isConnectUnauthenticated(error)) {
+    return 'CURSOR_API_KEY inválida ou rejeitada — verifique harness-control-plane/.env e reinicie o dev server';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Runtime stream failed';
+}

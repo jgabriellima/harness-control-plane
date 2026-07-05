@@ -1,6 +1,8 @@
+import { Code, ConnectError } from '@connectrpc/connect';
 import { AuthenticationError, Cursor, NetworkError } from '@cursor/sdk';
 
 import { errorFields, runtimeLogger } from './runtime-logger';
+import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { requireCursorApiKey } from './runtime-sdk-local';
 
 export type SdkHealthErrorCode =
@@ -46,7 +48,11 @@ function mapProbeFailure(error: unknown, startedAt: number): SdkDispatchHealth {
   const latency_ms = Date.now() - startedAt;
   const fields = errorFields(error);
 
-  if (error instanceof AuthenticationError) {
+  if (
+    error instanceof AuthenticationError ||
+    isConnectUnauthenticated(error) ||
+    (error instanceof ConnectError && error.code === Code.Unauthenticated)
+  ) {
     return {
       ready: false,
       checked_at,

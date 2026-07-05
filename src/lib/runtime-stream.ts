@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@cursor/sdk';
 
-import { isConnectCanceled } from './runtime-connect-errors';
+import { formatRuntimeConnectError, isConnectCanceled } from './runtime-connect-errors';
 import {
   encodeRuntimeSseData,
   encodeRuntimeSseHeartbeat,
@@ -114,7 +114,7 @@ export function createRuntimeEventStream(
           return;
         }
 
-        const message = error instanceof Error ? error.message : 'Runtime stream failed';
+        const message = formatRuntimeConnectError(error);
         controller.enqueue(
           encodeRuntimeSseData({
             type: 'error',

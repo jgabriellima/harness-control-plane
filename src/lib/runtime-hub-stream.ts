@@ -1,10 +1,10 @@
 import type { Run, SDKMessage } from '@cursor/sdk';
 
 import { appendDispatchLog } from './runtime-dispatch-log';
-import { isConnectCanceled } from './runtime-connect-errors';
+import { isConnectCanceled, formatRuntimeConnectError } from './runtime-connect-errors';
 import { appendRunTerminal, readAggregatedActiveRuns } from './runtime-run-registry';
 import { errorFields, runtimeLogger } from './runtime-logger';
-import { localGetRunOptions } from './runtime-sdk-local';
+import { hasRuntimeSdkCredentials, localGetRunOptions } from './runtime-sdk-local';
 import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
 import {
   getActiveRunIds,
@@ -126,7 +126,10 @@ async function completeRunFanout(
   conversationId: string,
   status: string,
   errorMessage?: string,
+  workspaceRoot?: string,
 ): Promise<void> {
+  const resolvedWorkspaceRoot = workspaceRoot ?? workspaceCwd();
+
   if (errorMessage) {
     broadcastEvent({
       type: 'error',
@@ -142,7 +145,7 @@ async function completeRunFanout(
         runId,
         event: 'run.failed',
         message: errorMessage,
-        workspaceRoot: workspaceCwd(),
+        workspaceRoot: resolvedWorkspaceRoot,
       });
     } catch {
       // Registry append is best-effort on terminal path.
@@ -162,7 +165,7 @@ async function completeRunFanout(
         runId,
         event: 'run.completed',
         status,
-        workspaceRoot: workspaceCwd(),
+        workspaceRoot: resolvedWorkspaceRoot,
       });
     } catch {
       // Registry append is best-effort on terminal path.
@@ -264,10 +267,10 @@ function handleFanoutError(
       conversation_id: conversationId,
       phase,
     });
-    return completeRunFanout(runId, agentId, conversationId, 'cancelled');
+    return completeRunFanout(runId, agentId, conversationId, 'cancelled', undefined, cwd);
   }
 
-  const message = error instanceof Error ? error.message : 'Runtime stream failed';
+  const message = formatRuntimeConnectError(error);
   runtimeLogger.error('chat.fanout.error', {
     request_id: requestId,
     run_id: runId,
@@ -289,7 +292,7 @@ function handleFanoutError(
     },
     cwd,
   );
-  return completeRunFanout(runId, agentId, conversationId, 'failed', message);
+  return completeRunFanout(runId, agentId, conversationId, 'failed', message, cwd);
 }
 
 export function startRunHubFanout(
@@ -305,6 +308,18 @@ export function startRunHubFanout(
   fanoutStarted.add(runId);
 
   const cwd = harnessWorkspaceCwd ?? workspaceCwd();
+
+  if (!hasRuntimeSdkCredentials()) {
+    fanoutStarted.delete(runId);
+    runtimeLogger.debug('chat.fanout.skip_no_credentials', {
+      request_id: requestId,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      cwd,
+    });
+    return;
+  }
 
   runtimeLogger.debug('chat.fanout.started', {
     request_id: requestId,
@@ -363,6 +378,10 @@ export function startRunHubFanout(
 }
 
 function attachKnownRunsToHub(): void {
+  if (!hasRuntimeSdkCredentials()) {
+    return;
+  }
+
   for (const runId of getActiveRunIds()) {
     const entry = getRuntimeRunEntry(runId);
     if (!entry || !entry.conversationId || !entry.agentId) {
@@ -373,6 +392,11 @@ function attachKnownRunsToHub(): void {
 }
 
 async function attachIndexedRunsToHub(): Promise<void> {
+  if (!hasRuntimeSdkCredentials()) {
+    runtimeLogger.debug('chat.fanout.skip_indexed_no_credentials', {});
+    return;
+  }
+
   try {
     const index = await readAggregatedActiveRuns();
     for (const entry of index.active) {
@@ -430,7 +454,9 @@ export function createRuntimeHubEventStream(signal: AbortSignal): ReadableStream
       signal.addEventListener('abort', close, { once: true });
       hubClients.add(client);
       attachKnownRunsToHub();
-      void attachIndexedRunsToHub();
+      void attachIndexedRunsToHub().catch((error) => {
+        runtimeLogger.warn('chat.fanout.attach_indexed.error', errorFields(error));
+      });
 
       heartbeatTimer = setInterval(() => {
         if (!closed) {
