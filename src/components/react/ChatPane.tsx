@@ -13,6 +13,7 @@ import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
 import { FileActivityGroup } from '@/components/react/FileActivityGroup';
 import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
+import VoiceInputButton from '@/components/react/VoiceInputButton';
 import { Button } from '@/components/ui/button';
 import {
   PromptInput,
@@ -21,7 +22,12 @@ import {
 import type { HarnessCommand, ReadinessSlot } from '@/lib/harness-types';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 import { useRuntimeConversation } from '@/hooks/useRuntimeConversation';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
+import {
+  DEFAULT_VOICE_INPUT_CONFIG,
+  type VoiceInputConfig,
+} from '@/lib/voice-input-config';
 import {
   hideEmptyStateCommand,
   readHiddenEmptyStateCommands,
@@ -117,6 +123,9 @@ export default function ChatPane({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [voiceInputConfig, setVoiceInputConfig] = useState<VoiceInputConfig>(
+    DEFAULT_VOICE_INPUT_CONFIG,
+  );
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -151,6 +160,16 @@ export default function ChatPane({
   const isStreaming = runPhase === 'streaming';
   const showStopMode = isStreaming && Boolean(activeRunId) && Boolean(conversationId);
   const dispatchBlocked = sdkHealth === 'unavailable' || sdkHealth === 'checking';
+
+  const voiceInput = useVoiceInput({
+    config: voiceInputConfig,
+    value: input,
+    onValueChange: setInput,
+    onSubmit: () => {
+      void handleSubmit();
+    },
+    disabled: isLoading || dispatchBlocked || showStopMode,
+  });
 
   useEffect(() => {
     setHiddenCommands(readHiddenEmptyStateCommands(projectId));
@@ -291,6 +310,18 @@ export default function ChatPane({
         setSelectedIntegrations(
           payload.slots.filter((slot) => slot.ready).map((slot) => slot.slotId),
         );
+      })
+      .catch(() => undefined);
+
+    void fetch('/api/ui/composer-config')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { voice_input?: VoiceInputConfig };
+        if (payload.voice_input) {
+          setVoiceInputConfig(payload.voice_input);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -620,6 +651,16 @@ export default function ChatPane({
                 placeholder="Ask the runtime or type '/' for harness commands..."
                 onKeyDown={handleComposerKeyDown}
               />
+              {voiceInputConfig.enabled ? (
+                <VoiceInputButton
+                  phase={voiceInput.phase}
+                  disabled={isLoading || dispatchBlocked || showStopMode}
+                  supported={voiceInput.supported}
+                  shortcutLabel={voiceInput.shortcutLabel}
+                  error={voiceInput.error}
+                  onToggle={voiceInput.toggle}
+                />
+              ) : null}
               <Button
                 type="button"
                 size="icon"
@@ -646,6 +687,12 @@ export default function ChatPane({
               <p className="mt-1.5 px-1 text-[11px] font-medium text-gray-500">Deep research enabled</p>
             ) : null}
           </PromptInput>
+
+          {voiceInput.error ? (
+            <p className="mt-2 text-xs text-amber-700" role="status">
+              {voiceInput.error}
+            </p>
+          ) : null}
 
           <StopRunConfirmDialog
             open={stopDialogOpen}

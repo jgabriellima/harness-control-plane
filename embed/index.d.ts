@@ -29,6 +29,15 @@ export interface UIConfig {
     hooks_module?: string;
     policy_profile?: string;
   };
+  composer?: {
+    voice_input?: {
+      enabled?: boolean;
+      keyboard_shortcut?: string;
+      language?: string;
+      auto_submit?: boolean;
+      engine?: 'browser' | 'media';
+    };
+  };
 }
 
 export interface DispatchRunContext {

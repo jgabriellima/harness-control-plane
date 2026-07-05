@@ -38,6 +38,15 @@ export interface UIConfig {
     hooks_module?: string;
     policy_profile?: string;
   };
+  composer?: {
+    voice_input?: {
+      enabled?: boolean;
+      keyboard_shortcut?: string;
+      language?: string;
+      auto_submit?: boolean;
+      engine?: 'browser' | 'media';
+    };
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,6 +150,29 @@ function parseAndValidateUIConfig(raw: unknown): UIConfig {
     assertOptionalString(raw.integrator.project_root, 'integrator.project_root');
     assertOptionalString(raw.integrator.hooks_module, 'integrator.hooks_module');
     assertOptionalString(raw.integrator.policy_profile, 'integrator.policy_profile');
+  }
+
+  assertOptionalRecord(raw.composer, 'composer');
+  if (raw.composer) {
+    assertOptionalRecord(raw.composer.voice_input, 'composer.voice_input');
+    if (raw.composer.voice_input) {
+      const voiceInput = raw.composer.voice_input;
+      if (voiceInput.enabled !== undefined && typeof voiceInput.enabled !== 'boolean') {
+        throw new Error('composer.voice_input.enabled must be a boolean');
+      }
+      assertOptionalString(voiceInput.keyboard_shortcut, 'composer.voice_input.keyboard_shortcut');
+      assertOptionalString(voiceInput.language, 'composer.voice_input.language');
+      if (voiceInput.auto_submit !== undefined && typeof voiceInput.auto_submit !== 'boolean') {
+        throw new Error('composer.voice_input.auto_submit must be a boolean');
+      }
+      if (
+        voiceInput.engine !== undefined &&
+        voiceInput.engine !== 'browser' &&
+        voiceInput.engine !== 'media'
+      ) {
+        throw new Error('composer.voice_input.engine must be one of: browser, media');
+      }
+    }
   }
 
   return raw as UIConfig;
