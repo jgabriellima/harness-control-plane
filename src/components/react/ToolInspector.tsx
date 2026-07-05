@@ -37,7 +37,7 @@ function InspectBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <pre className="max-h-36 overflow-auto rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-gray-600">
+      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-gray-600">
         {formatted}
       </pre>
     </div>
@@ -181,7 +181,10 @@ export function ToolInspectorGroup({
         </span>
       </button>
       {!collapsed ? (
-        <ul>
+        <ul
+          className="max-h-56 overflow-y-auto overscroll-contain"
+          data-testid="tool-activity-list"
+        >
           {tools.map((entry) => (
             <ToolRow
               key={entry.id}

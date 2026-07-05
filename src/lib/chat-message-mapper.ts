@@ -1,19 +1,24 @@
 import type { StoredChatMessage } from './conversation-store';
 import type { ChatMessage } from './runtime-hub-types';
 import type { NormalizedMessage } from './runtime-adapters/types';
+import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 
 function serializeToolPayload(value: unknown): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
-  if (typeof value === 'string') {
-    return value;
+
+  const normalized = normalizeInspectablePayload(value);
+
+  if (typeof normalized === 'string') {
+    return normalized;
   }
+
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(normalized, null, 2);
   } catch {
-    return String(value);
+    return String(normalized);
   }
 }
 

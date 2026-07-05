@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo } from 'react';
 
 import { ToolInspectorGroup, type ToolRecord } from '@/components/react/ToolInspector';
+import { normalizeInspectablePayload } from '@/lib/format-inspect';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 
 function resolveToolRecord(message: ChatMessage): ToolRecord {
@@ -11,19 +12,11 @@ function resolveToolRecord(message: ChatMessage): ToolRecord {
   let result: unknown;
 
   if (message.toolInput) {
-    try {
-      args = JSON.parse(message.toolInput);
-    } catch {
-      args = message.toolInput;
-    }
+    args = normalizeInspectablePayload(message.toolInput);
   }
 
   if (message.toolOutput) {
-    try {
-      result = JSON.parse(message.toolOutput);
-    } catch {
-      result = message.toolOutput;
-    }
+    result = normalizeInspectablePayload(message.toolOutput);
   }
 
   return {
@@ -81,7 +74,10 @@ export default function ComposerToolActivity({ messages, streaming }: ComposerTo
       return;
     }
 
-    const row = document.querySelector(`[data-tool-row-id="${activeToolId}"]`);
+    const list = document.querySelector(
+      '[data-testid="chat-pane-tool-activity"] [data-testid="tool-activity-list"]',
+    );
+    const row = list?.querySelector(`[data-tool-row-id="${activeToolId}"]`);
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [activeToolId, defaultCollapsed, tools.length]);
 

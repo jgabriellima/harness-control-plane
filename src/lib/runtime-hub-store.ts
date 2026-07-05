@@ -6,6 +6,7 @@ import type {
   RunPhase,
   RuntimeHubWireEvent,
 } from './runtime-hub-types';
+import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 import { WELCOME_MESSAGE } from './runtime-hub-types';
 import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
@@ -170,9 +171,13 @@ export function applyHubEvent(
     const status = typeof event.payload.status === 'string' ? event.payload.status : 'running';
     const line = `${tool} · ${status}`;
     const args =
-      event.payload.args !== undefined ? JSON.stringify(event.payload.args, null, 2) : undefined;
+      event.payload.args !== undefined
+        ? JSON.stringify(normalizeInspectablePayload(event.payload.args), null, 2)
+        : undefined;
     const result =
-      event.payload.result !== undefined ? JSON.stringify(event.payload.result, null, 2) : undefined;
+      event.payload.result !== undefined
+        ? JSON.stringify(normalizeInspectablePayload(event.payload.result), null, 2)
+        : undefined;
 
     const toolMessageId = `tool-${event.run_id}-${tool}-${state.messages.length}`;
     const existingTool = state.messages.find(
