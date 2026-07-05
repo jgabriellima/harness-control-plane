@@ -5,11 +5,10 @@ import React, { useMemo } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Message, MessageContent } from '@/components/ui/message';
 
-import RuntimeActivityIndicator, { StreamingPlaceholder } from './RuntimeActivityIndicator';
 import ThinkingPanel from './ThinkingPanel';
+import { StreamingPlaceholder } from './RuntimeActivityIndicator';
 import { ToolInspectorGroup, type ToolRecord } from './ToolInspector';
 import { FileActivityGroup } from './FileActivityGroup';
-import type { RunActivityPhase } from '@/lib/runtime-hub-types';
 import { formatRecordedAt } from '@/lib/format-recorded-at';
 import { dedupeArtifactPaths, isLikelyFilePath, normalizeArtifactPath } from '@/lib/file-reference';
 import { extractFilePathsFromTool } from '@/lib/tool-file-paths';
@@ -205,6 +204,16 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
+function isCurrentTurnToolSegment(messages: StackMessage[], toolMessages: StackMessage[]): boolean {
+  const lastUserIndex = messages.findLastIndex((message) => message.role === 'user');
+  if (lastUserIndex < 0) {
+    return false;
+  }
+
+  const firstToolId = toolMessages[0]?.id;
+  const toolIndex = messages.findIndex((message) => message.id === firstToolId);
+  return toolIndex > lastUserIndex;
+}
 function avatarLabel(role: ChatMessageRole): string {
   if (role === 'user') {
     return 'U';
@@ -219,27 +228,17 @@ export default function AgentMessageStack({
   messages,
   onFileClick,
   onLinkClick,
-  showStreamingIndicator = false,
-  runActivity = 'idle',
-  toolActivity = [],
+  streaming = false,
 }: {
   messages: StackMessage[];
   onFileClick?: (filePath: string) => void;
   onLinkClick?: (url: string) => void;
-  showStreamingIndicator?: boolean;
-  runActivity?: RunActivityPhase;
-  toolActivity?: string[];
+  streaming?: boolean;
 }) {
   const segments = useMemo(() => buildSegments(messages), [messages]);
-  const streamingAssistantEmpty = messages.some(
-    (message) => message.role === 'assistant' && message.streaming && message.content.trim().length === 0,
-  );
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
-      {showStreamingIndicator && streamingAssistantEmpty ? (
-        <RuntimeActivityIndicator activity={runActivity} toolActivity={toolActivity} />
-      ) : null}
       {segments.map((segment, segmentIndex) => {
         const showTurnFiles = isTurnBoundarySegment(segments, segmentIndex);
         const endIndex = showTurnFiles
@@ -249,6 +248,10 @@ export default function AgentMessageStack({
           showTurnFiles && endIndex >= 0 ? filePathsForTurn(messages, endIndex) : [];
 
         if (segment.kind === 'tool-group') {
+          if (streaming && isCurrentTurnToolSegment(messages, segment.messages)) {
+            return null;
+          }
+
           const groupTimestamp = segment.messages.find((message) => message.recordedAt)?.recordedAt;
           return (
             <div key={segment.groupId}>

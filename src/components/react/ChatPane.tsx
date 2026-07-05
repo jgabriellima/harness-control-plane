@@ -2,6 +2,7 @@
 
 import {
   Send,
+  Square,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
@@ -9,7 +10,8 @@ import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
-import RuntimeActivityIndicator from '@/components/react/RuntimeActivityIndicator';
+import ComposerToolActivity from '@/components/react/ComposerToolActivity';
+import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
 import { Button } from '@/components/ui/button';
 import {
   PromptInput,
@@ -112,6 +114,7 @@ export default function ChatPane({
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -137,15 +140,14 @@ export default function ChatPane({
   const conversationTitle = state.title;
   const projectId = state.projectId;
   const conversationUpdatedAt = state.updatedAt;
-  const toolActivity = state.toolActivity;
   const error = state.error;
   const runPhase = state.runPhase;
-  const runActivity = state.runActivity;
   const activeRunId = state.activeRunId;
   const lastRequestId = state.lastRequestId;
   const sdkHealth = state.sdkHealth;
   const sdkHealthMessage = state.sdkHealthMessage;
   const isStreaming = runPhase === 'streaming';
+  const showStopMode = isStreaming && Boolean(activeRunId) && Boolean(conversationId);
   const dispatchBlocked = sdkHealth === 'unavailable' || sdkHealth === 'checking';
 
   useEffect(() => {
@@ -454,9 +456,7 @@ export default function ChatPane({
           <>
             <AgentMessageStack
               messages={displayMessages}
-              showStreamingIndicator={isStreaming}
-              runActivity={runActivity}
-              toolActivity={toolActivity}
+              streaming={isStreaming}
               onFileClick={(filePath) => {
                 void openArtifact(filePath, projectId);
               }}
@@ -472,43 +472,7 @@ export default function ChatPane({
         data-testid="chat-pane-composer"
       >
         <div className="pointer-events-auto relative mx-auto max-w-3xl">
-          {isStreaming ? (
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <RuntimeActivityIndicator
-                activity={runActivity}
-                toolActivity={toolActivity}
-                compact={compact}
-              />
-              {activeRunId && conversationId ? (
-                <button
-                  type="button"
-                  data-testid="chat-stop-run"
-                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-                  onClick={() => {
-                    if (window.confirm('Stop the active runtime run?')) {
-                      void hub.cancelActiveRun(conversationId);
-                    }
-                  }}
-                >
-                  Stop
-                </button>
-              ) : null}
-            </div>
-          ) : toolActivity.length > 0 ? (
-            <div
-              className="mb-2 max-h-20 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-              data-testid="chat-pane-tool-activity"
-            >
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                Runtime activity
-              </p>
-              <ul className="space-y-0.5 font-mono text-xs text-gray-600">
-                {toolActivity.map((line, index) => (
-                  <li key={`${index}-${line}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <ComposerToolActivity messages={displayMessages} streaming={isStreaming} />
 
           {slashSuggestions.length > 0 ? (
             <div
@@ -640,21 +604,39 @@ export default function ChatPane({
               <Button
                 type="button"
                 size="icon"
-                data-testid="chat-pane-send"
-                className="h-9 w-9 shrink-0 rounded-full"
-                disabled={isLoading || dispatchBlocked || input.trim().length === 0}
-                aria-label={isLoading ? 'Streaming' : 'Send message'}
+                data-testid={showStopMode ? 'chat-stop-run' : 'chat-pane-send'}
+                className={`h-9 w-9 shrink-0 rounded-full ${showStopMode ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                disabled={showStopMode ? false : isLoading || dispatchBlocked || input.trim().length === 0}
+                aria-label={showStopMode ? 'Stop run' : isLoading ? 'Streaming' : 'Send message'}
                 onClick={() => {
+                  if (showStopMode) {
+                    setStopDialogOpen(true);
+                    return;
+                  }
                   void handleSubmit();
                 }}
               >
-                <Send className="h-4 w-4" />
+                {showStopMode ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
             {deepResearch ? (
               <p className="mt-1.5 px-1 text-[11px] font-medium text-gray-500">Deep research enabled</p>
             ) : null}
           </PromptInput>
+
+          <StopRunConfirmDialog
+            open={stopDialogOpen}
+            onOpenChange={setStopDialogOpen}
+            onConfirm={() => {
+              if (conversationId) {
+                void hub.cancelActiveRun(conversationId);
+              }
+            }}
+          />
 
           {error && !isDraftConversationId(conversationId) && runPhase === 'failed' ? (
             <RunDiagnosticsPanel
