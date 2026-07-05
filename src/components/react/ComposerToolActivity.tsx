@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 
 import { ToolInspectorGroup, type ToolRecord } from '@/components/react/ToolInspector';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
@@ -51,6 +51,15 @@ function currentTurnToolMessages(messages: ChatMessage[]): ChatMessage[] {
   return tools;
 }
 
+function isRunningToolMessage(message: ChatMessage, streaming: boolean): boolean {
+  if (streaming || message.streaming) {
+    return true;
+  }
+
+  const status = message.content.split(' · ')[1]?.trim().toLowerCase() ?? '';
+  return status === 'running' || status === 'pending' || status === 'in_progress';
+}
+
 interface ComposerToolActivityProps {
   messages: ChatMessage[];
   streaming: boolean;
@@ -59,8 +68,24 @@ interface ComposerToolActivityProps {
 export default function ComposerToolActivity({ messages, streaming }: ComposerToolActivityProps) {
   const tools = useMemo(() => currentTurnToolMessages(messages), [messages]);
   const groupTimestamp = tools.find((message) => message.recordedAt)?.recordedAt;
+  const hasRunningTool = tools.some((message) => isRunningToolMessage(message, streaming));
+  const defaultCollapsed = !hasRunningTool;
 
-  if (!streaming || tools.length === 0) {
+  const activeToolId = useMemo(() => {
+    const running = tools.find((message) => isRunningToolMessage(message, streaming));
+    return running?.id ?? tools[tools.length - 1]?.id;
+  }, [streaming, tools]);
+
+  useEffect(() => {
+    if (defaultCollapsed || !activeToolId) {
+      return;
+    }
+
+    const row = document.querySelector(`[data-tool-row-id="${activeToolId}"]`);
+    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeToolId, defaultCollapsed, tools.length]);
+
+  if (tools.length === 0) {
     return null;
   }
 
@@ -71,9 +96,10 @@ export default function ComposerToolActivity({ messages, streaming }: ComposerTo
         tools={tools.map((message) => ({
           id: message.id,
           tool: resolveToolRecord(message),
-          streaming: streaming || message.streaming,
+          streaming: isRunningToolMessage(message, streaming),
         }))}
-        defaultCollapsed={false}
+        defaultCollapsed={defaultCollapsed}
+        activeToolId={activeToolId}
       />
     </div>
   );

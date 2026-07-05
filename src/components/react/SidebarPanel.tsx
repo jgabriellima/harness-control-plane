@@ -175,8 +175,9 @@ function SidebarRailFlyout({
   testId,
   active,
   menuTestId,
-  onToggle,
   open,
+  onOpen,
+  onClose,
   menu,
   children,
 }: {
@@ -185,7 +186,8 @@ function SidebarRailFlyout({
   active?: boolean;
   menuTestId: string;
   open: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
+  onClose: () => void;
   menu: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -194,11 +196,7 @@ function SidebarRailFlyout({
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
 
-  useDismissOnOutside(open, () => {
-    if (open) {
-      onToggle();
-    }
-  }, containerRef, menuRef);
+  useDismissOnOutside(open, onClose, containerRef, menuRef);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) {
@@ -267,7 +265,13 @@ function SidebarRailFlyout({
         label={label}
         active={active || open}
         testId={testId}
-        onClick={onToggle}
+        onClick={() => {
+          if (open) {
+            onClose();
+            return;
+          }
+          onOpen();
+        }}
       >
         {children}
       </SidebarIconButton>
@@ -367,10 +371,11 @@ function CollapsedSidebarRail({
           menuTestId="sidebar-rail-projects-menu"
           active={Boolean(activeProjectId)}
           open={projectsOpen}
-          onToggle={() => {
+          onOpen={() => {
             closeFlyouts();
-            setProjectsOpen((current) => !current);
+            setProjectsOpen(true);
           }}
+          onClose={() => setProjectsOpen(false)}
           menu={
             <>
               {activeProjectName ? (
@@ -422,10 +427,11 @@ function CollapsedSidebarRail({
           menuTestId="sidebar-rail-chats-menu"
           active={Boolean(activeConversationId)}
           open={chatsOpen}
-          onToggle={() => {
+          onOpen={() => {
             closeFlyouts();
-            setChatsOpen((current) => !current);
+            setChatsOpen(true);
           }}
+          onClose={() => setChatsOpen(false)}
           menu={
             <>
               <button
@@ -481,10 +487,11 @@ function CollapsedSidebarRail({
           menuTestId="sidebar-rail-runs-menu"
           active={runsSectionActive}
           open={runsOpen}
-          onToggle={() => {
+          onOpen={() => {
             closeFlyouts();
-            setRunsOpen((current) => !current);
+            setRunsOpen(true);
           }}
+          onClose={() => setRunsOpen(false)}
           menu={
             <>
               {executions.length === 0 ? (

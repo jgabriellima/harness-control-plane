@@ -6,6 +6,7 @@ import type {
   RunPhase,
   RuntimeHubWireEvent,
 } from './runtime-hub-types';
+import { stripRedactedReasoningContent } from './strip-redacted-content';
 import { WELCOME_MESSAGE } from './runtime-hub-types';
 import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
 
@@ -86,7 +87,9 @@ export function applyHubEvent(
   thinkingMessageId: string,
 ): ConversationRuntimeState {
   if (event.type === 'assistant') {
-    const text = typeof event.payload.text === 'string' ? event.payload.text : '';
+    const text = stripRedactedReasoningContent(
+      typeof event.payload.text === 'string' ? event.payload.text : '',
+    );
     const nextActivity: RunActivityPhase =
       text.length > 0 ? 'responding' : state.runActivity === 'idle' ? 'dispatching' : state.runActivity;
 

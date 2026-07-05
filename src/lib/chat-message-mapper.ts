@@ -1,6 +1,7 @@
 import type { StoredChatMessage } from './conversation-store';
 import type { ChatMessage } from './runtime-hub-types';
 import type { NormalizedMessage } from './runtime-adapters/types';
+import { stripRedactedReasoningContent } from './strip-redacted-content';
 
 function serializeToolPayload(value: unknown): string | undefined {
   if (value === undefined || value === null) {
@@ -30,10 +31,15 @@ export function mapNormalizedMessageToChatMessage(message: NormalizedMessage): C
     };
   }
 
+  const content =
+    message.role === 'assistant' || message.role === 'thinking'
+      ? stripRedactedReasoningContent(message.content)
+      : message.content;
+
   return {
     id: message.id,
     role: message.role,
-    content: message.content,
+    content,
     recordedAt: message.recordedAt,
     durationMs: message.durationMs,
   };

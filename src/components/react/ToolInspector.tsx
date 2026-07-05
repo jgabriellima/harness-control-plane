@@ -44,16 +44,36 @@ function InspectBlock({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-function ToolRow({ tool, streaming }: { tool: ToolRecord; streaming?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+function ToolRow({
+  tool,
+  streaming,
+  toolId,
+  active,
+}: {
+  tool: ToolRecord;
+  streaming?: boolean;
+  toolId: string;
+  active?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(active === true);
   const hasDetail =
     tool.args !== undefined ||
     tool.result !== undefined ||
     streaming === true;
+
+  React.useEffect(() => {
+    if (active) {
+      setExpanded(true);
+    }
+  }, [active]);
   const formattedAt = formatRecordedAt(tool.recordedAt);
 
   return (
-    <li className="border-b border-gray-100 last:border-b-0">
+    <li
+      className="border-b border-gray-100 last:border-b-0"
+      data-tool-row-id={toolId}
+      data-testid={`tool-row-${toolId}`}
+    >
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50/80"
@@ -114,15 +134,21 @@ export function ToolInspectorGroup({
   tools,
   defaultCollapsed,
   groupRecordedAt,
+  activeToolId,
 }: {
   tools: Array<{ id: string; tool: ToolRecord; streaming?: boolean }>;
   defaultCollapsed: boolean;
   groupRecordedAt?: string;
+  activeToolId?: string;
 }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
   const headerTimestamp =
     formatRecordedAt(groupRecordedAt) ??
     formatRecordedAt(tools.find((entry) => entry.tool.recordedAt)?.tool.recordedAt);
+
+  React.useEffect(() => {
+    setCollapsed(defaultCollapsed);
+  }, [defaultCollapsed]);
 
   return (
     <div
@@ -157,7 +183,13 @@ export function ToolInspectorGroup({
       {!collapsed ? (
         <ul>
           {tools.map((entry) => (
-            <ToolRow key={entry.id} tool={entry.tool} streaming={entry.streaming} />
+            <ToolRow
+              key={entry.id}
+              toolId={entry.id}
+              tool={entry.tool}
+              streaming={entry.streaming}
+              active={entry.id === activeToolId}
+            />
           ))}
         </ul>
       ) : null}

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveAppRoot } from '../app-root';
+import { stripRedactedReasoningContent } from '../strip-redacted-content';
 import { loadSessionStoreBinding } from './resolve-binding';
 import type {
   NormalizedMessage,
@@ -156,10 +157,14 @@ function parseTranscriptLine(
           continue;
         }
         if (block.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0) {
-          textParts.push(block.text);
+          textParts.push(stripRedactedReasoningContent(block.text));
         }
-        if (block.type === 'thinking' && typeof block.text === 'string' && block.text.trim().length > 0) {
-          thinkingParts.push(block.text);
+        if (
+          (block.type === 'thinking' || block.type === 'reasoning') &&
+          typeof block.text === 'string' &&
+          block.text.trim().length > 0
+        ) {
+          thinkingParts.push(stripRedactedReasoningContent(block.text));
         }
         if (block.type === 'tool_use' && typeof block.name === 'string') {
           const toolUseId = typeof block.id === 'string' ? block.id : `${id}-tool-${block.name}`;

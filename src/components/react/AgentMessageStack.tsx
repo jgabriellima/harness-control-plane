@@ -4,10 +4,10 @@ import React, { useMemo } from 'react';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Message, MessageContent } from '@/components/ui/message';
+import { stripRedactedReasoningContent } from '@/lib/strip-redacted-content';
 
 import ThinkingPanel from './ThinkingPanel';
 import { StreamingPlaceholder } from './RuntimeActivityIndicator';
-import { ToolInspectorGroup, type ToolRecord } from './ToolInspector';
 import { formatRecordedAt } from '@/lib/format-recorded-at';
 
 type ChatMessageRole = 'user' | 'assistant' | 'system' | 'thinking' | 'tool';
@@ -21,72 +21,14 @@ export interface StackMessage {
   recordedAt?: string;
   toolInput?: string;
   toolOutput?: string;
-  tool?: ToolRecord;
 }
 
-type RenderSegment =
-  | { kind: 'single'; message: StackMessage }
-  | { kind: 'tool-group'; messages: StackMessage[]; groupId: string };
+type RenderSegment = { kind: 'single'; message: StackMessage };
 
 function buildSegments(messages: StackMessage[]): RenderSegment[] {
-  const segments: RenderSegment[] = [];
-  let toolBuffer: StackMessage[] = [];
-
-  function flushTools(): void {
-    if (toolBuffer.length === 0) {
-      return;
-    }
-    segments.push({
-      kind: 'tool-group',
-      messages: toolBuffer,
-      groupId: toolBuffer[0]?.id ?? `tools-${segments.length}`,
-    });
-    toolBuffer = [];
-  }
-
-  for (const message of messages) {
-    if (message.role === 'tool') {
-      toolBuffer.push(message);
-      continue;
-    }
-
-    flushTools();
-    segments.push({ kind: 'single', message });
-  }
-
-  flushTools();
-  return segments;
-}
-
-function resolveToolRecord(message: StackMessage): ToolRecord {
-  if (message.tool) {
-    return message.tool;
-  }
-
-  const [name = 'tool', status = 'completed'] = message.content.split(' · ');
-  let args: unknown;
-  let result: unknown;
-  if (message.toolInput) {
-    try {
-      args = JSON.parse(message.toolInput);
-    } catch {
-      args = message.toolInput;
-    }
-  }
-  if (message.toolOutput) {
-    try {
-      result = JSON.parse(message.toolOutput);
-    } catch {
-      result = message.toolOutput;
-    }
-  }
-  return {
-    name: name.trim(),
-    status: status.trim(),
-    args,
-    result,
-    recordedAt: message.recordedAt,
-  };
+  return messages
+    .filter((message) => message.role !== 'tool')
+    .map((message) => ({ kind: 'single' as const, message }));
 }
 
 function MessageTimestamp({
@@ -117,16 +59,6 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-function isCurrentTurnToolSegment(messages: StackMessage[], toolMessages: StackMessage[]): boolean {
-  const lastUserIndex = messages.findLastIndex((message) => message.role === 'user');
-  if (lastUserIndex < 0) {
-    return false;
-  }
-
-  const firstToolId = toolMessages[0]?.id;
-  const toolIndex = messages.findIndex((message) => message.id === firstToolId);
-  return toolIndex > lastUserIndex;
-}
 function avatarLabel(role: ChatMessageRole): string {
   if (role === 'user') {
     return 'U';
@@ -141,7 +73,6 @@ export default function AgentMessageStack({
   messages,
   onFileClick,
   onLinkClick,
-  streaming = false,
 }: {
   messages: StackMessage[];
   onFileClick?: (filePath: string) => void;
@@ -153,35 +84,18 @@ export default function AgentMessageStack({
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
       {segments.map((segment) => {
-        if (segment.kind === 'tool-group') {
-          if (streaming && isCurrentTurnToolSegment(messages, segment.messages)) {
-            return null;
-          }
-
-          const groupTimestamp = segment.messages.find((message) => message.recordedAt)?.recordedAt;
-          return (
-            <div key={segment.groupId}>
-              <ToolInspectorGroup
-                groupRecordedAt={groupTimestamp}
-                tools={segment.messages.map((message) => ({
-                  id: message.id,
-                  tool: resolveToolRecord(message),
-                  streaming: message.streaming,
-                }))}
-                defaultCollapsed={false}
-              />
-            </div>
-          );
-        }
-
         const message = segment.message;
+        const visibleContent =
+          message.role === 'assistant' || message.role === 'thinking'
+            ? stripRedactedReasoningContent(message.content)
+            : message.content;
 
         if (message.role === 'thinking') {
           return (
             <div key={message.id}>
               <MessageTimestamp value={message.recordedAt} />
               <ThinkingPanel
-                content={message.content}
+                content={visibleContent}
                 streaming={message.streaming}
                 durationMs={message.durationMs}
               />
@@ -194,7 +108,7 @@ export default function AgentMessageStack({
             <Message key={message.id} data-testid="chat-message-system">
               <MessageContent className="border border-amber-100 bg-amber-50 text-sm text-amber-900">
                 <MessageTimestamp value={message.recordedAt} />
-                {message.content}
+                {visibleContent}
               </MessageContent>
             </Message>
           );
@@ -212,7 +126,7 @@ export default function AgentMessageStack({
                   type="button"
                   className="text-[10px] font-medium text-gray-600 opacity-0 transition-opacity hover:text-gray-700 group-hover:opacity-100"
                   onClick={() => {
-                    void copyToClipboard(message.content);
+                    void copyToClipboard(visibleContent);
                   }}
                 >
                   Copy
@@ -225,11 +139,11 @@ export default function AgentMessageStack({
                   onFileClick={onFileClick}
                   onLinkClick={onLinkClick}
                 >
-                  {message.content || (message.streaming ? <StreamingPlaceholder /> : '')}
+                  {visibleContent || (message.streaming ? <StreamingPlaceholder /> : '')}
                 </MessageContent>
               ) : (
                 <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
-                  {message.content}
+                  {visibleContent}
                 </MessageContent>
               )}
             </div>
