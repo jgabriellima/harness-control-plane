@@ -11,6 +11,7 @@ import AgentMessageStack from '@/components/react/AgentMessageStack';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
+import { FileActivityGroup } from '@/components/react/FileActivityGroup';
 import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +27,7 @@ import {
   readHiddenEmptyStateCommands,
 } from '@/lib/empty-state-commands';
 import { isDraftConversationId } from '@/lib/draft-conversation';
+import { collectThreadFilePaths } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
@@ -174,6 +176,11 @@ export default function ChatPane({
 
     return [...visibleMessages, E2E_ARTIFACT_DEMO_MESSAGE];
   }, [seedArtifactE2e, visibleMessages]);
+
+  const threadFilePaths = useMemo(
+    () => collectThreadFilePaths(displayMessages),
+    [displayMessages],
+  );
 
   const showMessageList =
     hasConversationContent ||
@@ -473,6 +480,18 @@ export default function ChatPane({
       >
         <div className="pointer-events-auto relative mx-auto max-w-3xl">
           <ComposerToolActivity messages={displayMessages} streaming={isStreaming} />
+
+          {threadFilePaths.length > 0 ? (
+            <div className="mb-2" data-testid="chat-composer-generated-files">
+              <FileActivityGroup
+                paths={threadFilePaths}
+                onFileClick={(filePath) => {
+                  void openArtifact(filePath, projectId);
+                }}
+                defaultCollapsed={false}
+              />
+            </div>
+          ) : null}
 
           {slashSuggestions.length > 0 ? (
             <div

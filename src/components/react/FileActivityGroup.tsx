@@ -23,7 +23,7 @@ export function FileActivityGroup({
   return (
     <div
       className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
-      data-testid="agent-file-activity-group"
+      data-testid="thread-file-activity-group"
     >
       <button
         type="button"

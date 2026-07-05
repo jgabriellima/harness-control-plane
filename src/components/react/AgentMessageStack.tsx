@@ -8,10 +8,7 @@ import { Message, MessageContent } from '@/components/ui/message';
 import ThinkingPanel from './ThinkingPanel';
 import { StreamingPlaceholder } from './RuntimeActivityIndicator';
 import { ToolInspectorGroup, type ToolRecord } from './ToolInspector';
-import { FileActivityGroup } from './FileActivityGroup';
 import { formatRecordedAt } from '@/lib/format-recorded-at';
-import { dedupeArtifactPaths, isLikelyFilePath, normalizeArtifactPath } from '@/lib/file-reference';
-import { extractFilePathsFromTool } from '@/lib/tool-file-paths';
 
 type ChatMessageRole = 'user' | 'assistant' | 'system' | 'thinking' | 'tool';
 
@@ -59,90 +56,6 @@ function buildSegments(messages: StackMessage[]): RenderSegment[] {
 
   flushTools();
   return segments;
-}
-
-function extractFilePathsFromMarkdown(content: string): string[] {
-  const paths = new Set<string>();
-  for (const match of content.matchAll(/`([^`\n]+)`/g)) {
-    const candidate = match[1]?.trim();
-    if (!candidate) {
-      continue;
-    }
-    const normalized = normalizeArtifactPath(candidate);
-    if (isLikelyFilePath(normalized)) {
-      paths.add(normalized);
-    }
-  }
-  return [...paths];
-}
-
-function filePathsForTurn(messages: StackMessage[], endIndexInclusive: number): string[] {
-  const paths = new Set<string>();
-
-  for (let index = endIndexInclusive; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      break;
-    }
-
-    if (message.role === 'tool') {
-      const tool = resolveToolRecord(message);
-      for (const path of extractFilePathsFromTool(tool.name, tool.args, tool.result)) {
-        paths.add(path);
-      }
-    }
-
-    if (message.role === 'assistant') {
-      for (const path of extractFilePathsFromMarkdown(message.content)) {
-        paths.add(path);
-      }
-    }
-  }
-
-  return dedupeArtifactPaths([...paths]);
-}
-
-function messageIndexById(messages: StackMessage[], messageId: string): number {
-  return messages.findIndex((message) => message.id === messageId);
-}
-
-function isTurnBoundarySegment(segments: RenderSegment[], segmentIndex: number): boolean {
-  const segment = segments[segmentIndex];
-  const next = segments[segmentIndex + 1];
-
-  if (next?.kind === 'single' && next.message.role === 'user') {
-    return true;
-  }
-
-  if (!next) {
-    if (segment.kind === 'single' && segment.message.role === 'assistant' && segment.message.streaming) {
-      return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-function endMessageIndexForSegment(
-  segment: RenderSegment,
-  segmentIndex: number,
-  segments: RenderSegment[],
-  messages: StackMessage[],
-): number {
-  if (segment.kind === 'single') {
-    return messageIndexById(messages, segment.message.id);
-  }
-
-  const lastTool = segment.messages[segment.messages.length - 1];
-  const toolIndex = lastTool ? messageIndexById(messages, lastTool.id) : -1;
-
-  const next = segments[segmentIndex + 1];
-  if (next?.kind === 'single' && next.message.role === 'assistant') {
-    return messageIndexById(messages, next.message.id);
-  }
-
-  return toolIndex;
 }
 
 function resolveToolRecord(message: StackMessage): ToolRecord {
@@ -239,14 +152,7 @@ export default function AgentMessageStack({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
-      {segments.map((segment, segmentIndex) => {
-        const showTurnFiles = isTurnBoundarySegment(segments, segmentIndex);
-        const endIndex = showTurnFiles
-          ? endMessageIndexForSegment(segment, segmentIndex, segments, messages)
-          : -1;
-        const turnFiles =
-          showTurnFiles && endIndex >= 0 ? filePathsForTurn(messages, endIndex) : [];
-
+      {segments.map((segment) => {
         if (segment.kind === 'tool-group') {
           if (streaming && isCurrentTurnToolSegment(messages, segment.messages)) {
             return null;
@@ -295,44 +201,39 @@ export default function AgentMessageStack({
         }
 
         return (
-          <React.Fragment key={message.id}>
-            <Message data-testid={`chat-message-${message.role}`} className="group">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="text-xs">{avatarLabel(message.role)}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-center gap-2">
-                  <MessageTimestamp value={message.recordedAt} />
-                  <button
-                    type="button"
-                    className="text-[10px] font-medium text-gray-600 opacity-0 transition-opacity hover:text-gray-700 group-hover:opacity-100"
-                    onClick={() => {
-                      void copyToClipboard(message.content);
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-                {message.role === 'assistant' ? (
-                  <MessageContent
-                    markdown={!message.streaming}
-                    className="border border-gray-100 bg-white text-gray-900 shadow-sm"
-                    onFileClick={onFileClick}
-                    onLinkClick={onLinkClick}
-                  >
-                    {message.content || (message.streaming ? <StreamingPlaceholder /> : '')}
-                  </MessageContent>
-                ) : (
-                  <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
-                    {message.content}
-                  </MessageContent>
-                )}
+          <Message key={message.id} data-testid={`chat-message-${message.role}`} className="group">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="text-xs">{avatarLabel(message.role)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-center gap-2">
+                <MessageTimestamp value={message.recordedAt} />
+                <button
+                  type="button"
+                  className="text-[10px] font-medium text-gray-600 opacity-0 transition-opacity hover:text-gray-700 group-hover:opacity-100"
+                  onClick={() => {
+                    void copyToClipboard(message.content);
+                  }}
+                >
+                  Copy
+                </button>
               </div>
-            </Message>
-            {turnFiles.length > 0 ? (
-              <FileActivityGroup paths={turnFiles} onFileClick={onFileClick} defaultCollapsed={false} />
-            ) : null}
-          </React.Fragment>
+              {message.role === 'assistant' ? (
+                <MessageContent
+                  markdown={!message.streaming}
+                  className="border border-gray-100 bg-white text-gray-900 shadow-sm"
+                  onFileClick={onFileClick}
+                  onLinkClick={onLinkClick}
+                >
+                  {message.content || (message.streaming ? <StreamingPlaceholder /> : '')}
+                </MessageContent>
+              ) : (
+                <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
+                  {message.content}
+                </MessageContent>
+              )}
+            </div>
+          </Message>
         );
       })}
     </div>
