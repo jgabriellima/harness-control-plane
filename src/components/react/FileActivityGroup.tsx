@@ -42,7 +42,7 @@ export function FileActivityGroup({
         </span>
       </button>
       {!collapsed ? (
-        <ul>
+        <ul className="max-h-52 overflow-y-auto overscroll-contain">
           {paths.map((filePath) => (
             <li key={filePath} className="border-b border-gray-100 last:border-b-0">
               <button
