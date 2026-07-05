@@ -62,4 +62,22 @@
   .nav-item-idle {
     @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900;
   }
+
+  .inspect-json-highlight .shiki {
+    margin: 0;
+    padding: 0;
+    background-color: transparent !important;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .inspect-json-highlight .shiki code {
+    display: block;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 }

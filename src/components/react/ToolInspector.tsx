@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
+import JsonInspectPre from '@/components/react/JsonInspectPre';
 import { formatInspectable } from '@/lib/format-inspect';
 import { formatRecordedAt } from '@/lib/format-recorded-at';
 
@@ -37,9 +38,10 @@ function InspectBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-gray-600">
-        {formatted}
-      </pre>
+      <JsonInspectPre
+        text={formatted}
+        testId={`tool-inspect-${label.toLowerCase()}`}
+      />
     </div>
   );
 }
