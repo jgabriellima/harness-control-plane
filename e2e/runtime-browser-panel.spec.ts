@@ -61,12 +61,28 @@ test.describe('Runtime browser panel', () => {
     );
   });
 
-  test('browser-open query param opens split shell with panel chrome', async ({ page }) => {
-    await page.goto(`/?browser-open=${encodeURIComponent(TEST_URL)}&layout=single`);
+  test('browser-open query param opens split shell with panel chrome', async ({ page, request }) => {
+    const conversationId = 'e2e-browser-split-shell';
+
+    const existing = await request.get(
+      `/api/runtime/browser/session?conversation_id=${encodeURIComponent(conversationId)}`,
+    );
+    if (existing.ok()) {
+      const payload = (await existing.json()) as { session?: { sessionId?: string } | null };
+      if (payload.session?.sessionId) {
+        await request.delete(
+          `/api/runtime/browser/session?session_id=${encodeURIComponent(payload.session.sessionId)}`,
+        );
+      }
+    }
+
+    await page.goto(
+      `/conversation/${encodeURIComponent(conversationId)}?browser-open=${encodeURIComponent(TEST_URL)}&layout=single`,
+    );
 
     const shell = page.getByTestId('runtime-browser-shell');
     await expect(shell).toBeVisible({ timeout: 30_000 });
-    await expect(shell).toHaveAttribute('class', /grid-cols-/);
+    await expect(page.getByTestId('runtime-browser-resize-handle')).toBeVisible();
 
     const panel = page.getByTestId('runtime-browser-panel');
     await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -74,6 +90,14 @@ test.describe('Runtime browser panel', () => {
     await expect(page.getByTestId('runtime-browser-address-bar')).toBeVisible();
     await expect(page.getByTestId('runtime-browser-refresh')).toBeVisible();
     await expect(page.getByTestId('runtime-browser-control-toggle')).toBeVisible();
+    await expect(page.getByTestId('runtime-browser-control-user')).toHaveAttribute(
+      'aria-label',
+      'User control',
+    );
+    await expect(page.getByTestId('runtime-browser-control-agent')).toHaveAttribute(
+      'aria-label',
+      'Agent control',
+    );
     await expect(page.getByTestId('runtime-browser-viewport')).toHaveAttribute(
       'data-control-mode',
       'agent',

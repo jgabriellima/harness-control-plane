@@ -1,9 +1,17 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import RuntimeBrowserPanel from '@/components/react/RuntimeBrowserPanel';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
+import {
+  RUNTIME_BROWSER_LAYOUT_DEFAULTS,
+  RUNTIME_BROWSER_LAYOUT_GROUP_ID,
+  RUNTIME_BROWSER_LAYOUT_MIN,
+  RUNTIME_BROWSER_PANEL_IDS,
+  sanitizeRuntimeBrowserLayout,
+} from '@/lib/runtime-browser-layout';
 import { conversationIdFromPath, useShellPathname } from '@/lib/shell-navigation';
 import {
   emptyBrowserSelection,
@@ -489,30 +497,103 @@ interface RuntimeBrowserSplitShellProps {
   children: React.ReactNode;
 }
 
+function ResizableRuntimeBrowserSplitShell({
+  children,
+  selection,
+  onClose,
+  onNavigate,
+  onRefresh,
+  onControlModeChange,
+}: {
+  children: React.ReactNode;
+  selection: RuntimeBrowserSelection;
+  onClose: () => void;
+  onNavigate: (url: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  onControlModeChange: (mode: BrowserControlMode) => Promise<void>;
+}) {
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    groupId: RUNTIME_BROWSER_LAYOUT_GROUP_ID,
+    panelIds: [RUNTIME_BROWSER_PANEL_IDS.main, RUNTIME_BROWSER_PANEL_IDS.browser],
+  });
+
+  const resolvedLayout = sanitizeRuntimeBrowserLayout(defaultLayout);
+
+  const handleLayoutChanged = useCallback(
+    (layout: Record<string, number>) => {
+      onLayoutChanged(sanitizeRuntimeBrowserLayout(layout));
+    },
+    [onLayoutChanged],
+  );
+
+  return (
+    <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-browser-shell">
+      <Group
+        id={RUNTIME_BROWSER_LAYOUT_GROUP_ID}
+        orientation="horizontal"
+        className="h-full min-h-0 overflow-hidden"
+        defaultLayout={resolvedLayout}
+        onLayoutChanged={handleLayoutChanged}
+      >
+        <Panel
+          id={RUNTIME_BROWSER_PANEL_IDS.main}
+          minSize={RUNTIME_BROWSER_LAYOUT_MIN.main}
+          defaultSize={
+            resolvedLayout[RUNTIME_BROWSER_PANEL_IDS.main] ?? RUNTIME_BROWSER_LAYOUT_DEFAULTS.main
+          }
+          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+        >
+          {children}
+        </Panel>
+        <Separator
+          id="runtime-browser-resize-handle"
+          className="w-1 shrink-0 bg-gray-200 transition-colors hover:bg-gray-300"
+        />
+        <Panel
+          id={RUNTIME_BROWSER_PANEL_IDS.browser}
+          minSize={RUNTIME_BROWSER_LAYOUT_MIN.browser}
+          defaultSize={
+            resolvedLayout[RUNTIME_BROWSER_PANEL_IDS.browser] ??
+            RUNTIME_BROWSER_LAYOUT_DEFAULTS.browser
+          }
+          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+        >
+          <RuntimeBrowserPanel
+            selection={selection}
+            onClose={onClose}
+            onNavigate={onNavigate}
+            onRefresh={onRefresh}
+            onControlModeChange={onControlModeChange}
+          />
+        </Panel>
+      </Group>
+    </div>
+  );
+}
+
 export function RuntimeBrowserSplitShell({ children }: RuntimeBrowserSplitShellProps) {
   const { selection, closeBrowser, navigateBrowser, refreshBrowser, setControlMode } =
     useRuntimeBrowser();
-  const browserPanelOpen = selection !== null;
+
+  if (!selection) {
+    return (
+      <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-browser-shell">
+        {children}
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`grid h-full min-h-0 overflow-hidden ${
-        browserPanelOpen ? 'grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]' : 'grid-cols-1'
-      }`}
-      data-testid="runtime-browser-shell"
+    <ResizableRuntimeBrowserSplitShell
+      selection={selection}
+      onClose={() => {
+        void closeBrowser();
+      }}
+      onNavigate={navigateBrowser}
+      onRefresh={refreshBrowser}
+      onControlModeChange={setControlMode}
     >
       {children}
-      {selection ? (
-        <RuntimeBrowserPanel
-          selection={selection}
-          onClose={() => {
-            void closeBrowser();
-          }}
-          onNavigate={navigateBrowser}
-          onRefresh={refreshBrowser}
-          onControlModeChange={setControlMode}
-        />
-      ) : null}
-    </div>
+    </ResizableRuntimeBrowserSplitShell>
   );
 }
