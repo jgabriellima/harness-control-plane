@@ -91,12 +91,38 @@ export function createRuntimeEventStream(
           }
         });
 
-        if (closed || outcome === 'cancelled') {
+        if (closed || outcome === 'cancelled' || outcome === 'auth_failed') {
+          if (outcome === 'auth_failed' && !closed) {
+            controller.enqueue(
+              encodeRuntimeSseData({
+                type: 'error',
+                run_id: runId,
+                agent_id: agentId,
+                timestamp: new Date().toISOString(),
+                payload: {
+                  message: formatRuntimeConnectError(new Error('[unauthenticated] Error')),
+                },
+              }),
+            );
+          }
           return;
         }
 
-        const { status, cancelled } = await resolveRunTerminalStatus(run);
-        if (closed) {
+        const { status, cancelled, authFailed } = await resolveRunTerminalStatus(run);
+        if (closed || authFailed) {
+          if (authFailed && !closed) {
+            controller.enqueue(
+              encodeRuntimeSseData({
+                type: 'error',
+                run_id: runId,
+                agent_id: agentId,
+                timestamp: new Date().toISOString(),
+                payload: {
+                  message: formatRuntimeConnectError(new Error('[unauthenticated] Error')),
+                },
+              }),
+            );
+          }
           return;
         }
 

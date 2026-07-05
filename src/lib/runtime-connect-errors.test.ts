@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { Code, ConnectError } from '@connectrpc/connect';
 
-import { isConnectCanceled, isConnectUnauthenticated, formatRuntimeConnectError } from './runtime-connect-errors.ts';
+import { isConnectCanceled, isConnectUnauthenticated, formatRuntimeConnectError, isRecoverableRuntimeConnectError } from './runtime-connect-errors.ts';
 
 describe('isConnectCanceled', () => {
   it('detects ConnectError with Code.Canceled', () => {
@@ -36,5 +36,13 @@ describe('formatRuntimeConnectError', () => {
       new ConnectError('[unauthenticated] Error', Code.Unauthenticated),
     );
     assert.match(message, /CURSOR_API_KEY/);
+  });
+});
+
+describe('isRecoverableRuntimeConnectError', () => {
+  it('treats auth and cancel as recoverable', () => {
+    assert.equal(isRecoverableRuntimeConnectError(new ConnectError('denied', Code.Unauthenticated)), true);
+    assert.equal(isRecoverableRuntimeConnectError(new ConnectError('x', Code.Canceled)), true);
+    assert.equal(isRecoverableRuntimeConnectError(new Error('boom')), false);
   });
 });

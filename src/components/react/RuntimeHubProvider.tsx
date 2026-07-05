@@ -363,7 +363,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     void (async () => {
       const activeRuns = await fetchActiveRunsIndex();
       await Promise.all(activeRuns.map((entry) => reconnectActiveRun(entry)));
-    })();
+    })().catch(() => undefined);
   }, [reconnectActiveRun]);
 
   const syncActiveRunForConversation = useCallback(
@@ -395,7 +395,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       return;
     }
 
-    void syncActiveRunForConversation(foreground);
+    void syncActiveRunForConversation(foreground).catch(() => undefined);
   }, [pathname, syncActiveRunForConversation]);
 
   const ensureSdkHealth = useCallback(

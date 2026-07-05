@@ -42,3 +42,8 @@ export function formatRuntimeConnectError(error: unknown): string {
 
   return 'Runtime stream failed';
 }
+
+/** Errors that must degrade gracefully — never take down the control plane process. */
+export function isRecoverableRuntimeConnectError(error: unknown): boolean {
+  return isConnectCanceled(error) || isConnectUnauthenticated(error);
+}

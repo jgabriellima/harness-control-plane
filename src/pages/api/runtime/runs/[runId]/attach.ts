@@ -16,7 +16,9 @@ export const POST: APIRoute = async ({ params }) => {
   }
 
   const { entry, workspaceRoot } = located;
-  startRunHubFanout(entry.runId, entry.agentId, entry.conversationId, workspaceRoot);
+  startRunHubFanout(entry.runId, entry.agentId, entry.conversationId, workspaceRoot, {
+    silent: true,
+  });
 
   return jsonOk({
     ok: true,

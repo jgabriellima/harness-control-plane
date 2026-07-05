@@ -3,6 +3,7 @@ import { AuthenticationError, Cursor, NetworkError } from '@cursor/sdk';
 
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
+import { clearRuntimeAuthGate, markRuntimeAuthUnavailable } from './runtime-sdk-auth-gate';
 import { requireCursorApiKey } from './runtime-sdk-local';
 
 export type SdkHealthErrorCode =
@@ -161,6 +162,7 @@ export async function probeSdkDispatchHealth(options?: {
     };
 
     probeCache.set(cacheKey, { health, expiresAt: now + cacheTtlMs });
+    clearRuntimeAuthGate();
     runtimeLogger.info('runtime.sdk.probe.ok', {
       latency_ms: health.latency_ms,
       account: me.apiKeyName,
@@ -168,6 +170,9 @@ export async function probeSdkDispatchHealth(options?: {
     return health;
   } catch (error) {
     const health = mapProbeFailure(error, startedAt);
+    if (health.error_code === 'auth_failed') {
+      markRuntimeAuthUnavailable('probe_auth_failed');
+    }
     probeCache.set(cacheKey, { health, expiresAt: now + Math.min(cacheTtlMs, 10_000) });
     runtimeLogger.warn('runtime.sdk.probe.failed', {
       error_code: health.error_code,
