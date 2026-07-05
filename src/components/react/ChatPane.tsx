@@ -11,7 +11,10 @@ import AgentMessageStack from '@/components/react/AgentMessageStack';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
-import { FileActivityGroup } from '@/components/react/FileActivityGroup';
+import {
+  FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD,
+  FileActivityGroup,
+} from '@/components/react/FileActivityGroup';
 import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
 import VoiceInputButton from '@/components/react/VoiceInputButton';
 import { Button } from '@/components/ui/button';
@@ -519,7 +522,7 @@ export default function ChatPane({
                 onFileClick={(filePath) => {
                   void openArtifact(filePath, projectId);
                 }}
-                defaultCollapsed={false}
+                defaultCollapsed={threadFilePaths.length > FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD}
               />
             </div>
           ) : null}

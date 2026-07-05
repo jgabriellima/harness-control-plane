@@ -5,6 +5,9 @@ import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
 
 import { fileNameFromPath } from '@/lib/file-reference';
 
+/** Above this count, the panel starts collapsed so the chat area stays usable. */
+export const FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD = 6;
+
 export function FileActivityGroup({
   paths,
   onFileClick,
@@ -42,7 +45,10 @@ export function FileActivityGroup({
         </span>
       </button>
       {!collapsed ? (
-        <ul className="max-h-52 overflow-y-auto overscroll-contain">
+        <ul
+          className="max-h-40 overflow-y-auto overscroll-contain"
+          data-testid="thread-file-activity-scroll"
+        >
           {paths.map((filePath) => (
             <li key={filePath} className="border-b border-gray-100 last:border-b-0">
               <button
