@@ -1,5 +1,6 @@
 import type { Run, SDKMessage } from '@cursor/sdk';
 
+import { joinAssistantTextBlocks } from './assistant-text';
 import { appendDispatchLog } from './runtime-dispatch-log';
 import {
   formatRuntimeConnectError,
@@ -62,10 +63,11 @@ export function wireFromSdkMessage(
   const timestamp = new Date().toISOString();
 
   if (message.type === 'assistant') {
-    const textBlocks = message.message.content
-      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
+    const textBlocks = joinAssistantTextBlocks(
+      message.message.content
+        .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+        .map((block) => block.text),
+    );
 
     return {
       type: 'assistant',

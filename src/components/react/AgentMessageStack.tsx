@@ -134,7 +134,7 @@ export default function AgentMessageStack({
               </div>
               {message.role === 'assistant' ? (
                 <MessageContent
-                  markdown={!message.streaming}
+                  markdown
                   className="border border-gray-100 bg-white text-gray-900 shadow-sm"
                   onFileClick={onFileClick}
                   onLinkClick={onLinkClick}

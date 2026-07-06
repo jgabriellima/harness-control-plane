@@ -36,7 +36,7 @@ export function MessageContent({
 
   if (markdown && typeof children === 'string') {
     return (
-      <div className={cn(classNames, 'bg-gray-50')}>
+      <div className={classNames}>
         <Markdown onFileClick={onFileClick} onLinkClick={onLinkClick}>
           {children}
         </Markdown>

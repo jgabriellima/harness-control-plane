@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { joinAssistantTextBlocks } from '../assistant-text';
 import { resolveAppRoot } from '../app-root';
 import { stripRedactedReasoningContent } from '../strip-redacted-content';
 import { loadSessionStoreBinding } from './resolve-binding';
@@ -49,7 +50,7 @@ function extractTextContent(message: Record<string, unknown>): string {
     }
   }
 
-  return parts.join('\n').trim();
+  return joinAssistantTextBlocks(parts);
 }
 
 function readRecordedAt(raw: Record<string, unknown>): string | undefined {
@@ -187,12 +188,12 @@ function parseTranscriptLine(
         messages.unshift({
           id: `${id}-thinking`,
           role: 'thinking',
-          content: thinkingParts.join('\n').trim(),
+          content: joinAssistantTextBlocks(thinkingParts),
           recordedAt,
         });
       }
 
-      const text = textParts.join('\n').trim();
+      const text = joinAssistantTextBlocks(textParts);
       if (text.length > 0) {
         messages.unshift({ id, role: 'assistant', content: text, recordedAt });
       }

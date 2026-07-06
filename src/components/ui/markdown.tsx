@@ -26,56 +26,65 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
   const components = useMemo(
     () => ({
       h1: ({ children: headingChildren }: ElementProps) => (
-        <p className="mb-2 text-sm font-semibold text-gray-900">{headingChildren}</p>
+        <h1 className="mb-3 mt-1 text-base font-semibold tracking-tight text-gray-900 first:mt-0">
+          {headingChildren}
+        </h1>
       ),
       h2: ({ children: headingChildren }: ElementProps) => (
-        <p className="mb-1.5 text-sm font-medium text-gray-900">{headingChildren}</p>
+        <h2 className="mb-2 mt-4 border-b border-gray-100 pb-1 text-sm font-semibold text-gray-900 first:mt-0">
+          {headingChildren}
+        </h2>
       ),
       h3: ({ children: headingChildren }: ElementProps) => (
-        <p className="mb-1 text-xs font-medium text-gray-800">{headingChildren}</p>
+        <h3 className="mb-1.5 mt-3 text-sm font-medium text-gray-900 first:mt-0">{headingChildren}</h3>
+      ),
+      h4: ({ children: headingChildren }: ElementProps) => (
+        <h4 className="mb-1 mt-2 text-xs font-medium uppercase tracking-wide text-gray-700 first:mt-0">
+          {headingChildren}
+        </h4>
       ),
       p: ({ children: paragraphChildren }: ElementProps) => (
-        <p className="mb-2 text-sm leading-relaxed text-gray-800 last:mb-0">{paragraphChildren}</p>
+        <p className="mb-2.5 text-sm leading-relaxed text-gray-800 last:mb-0">{paragraphChildren}</p>
       ),
       ul: ({ children: listChildren }: ElementProps) => (
-        <ul className="mb-2 list-disc space-y-0.5 pl-4 text-sm text-gray-800">{listChildren}</ul>
+        <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-gray-800">{listChildren}</ul>
       ),
       ol: ({ children: listChildren }: ElementProps) => (
-        <ol className="mb-2 list-decimal space-y-0.5 pl-4 text-sm text-gray-800">{listChildren}</ol>
+        <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-gray-800">{listChildren}</ol>
       ),
       li: ({ children: itemChildren }: ElementProps) => (
-        <li className="leading-relaxed">{itemChildren}</li>
+        <li className="leading-relaxed marker:text-gray-400">{itemChildren}</li>
       ),
       strong: ({ children: strongChildren }: ElementProps) => (
-        <strong className="font-medium text-gray-900">{strongChildren}</strong>
+        <strong className="font-semibold text-gray-900">{strongChildren}</strong>
       ),
       em: ({ children: emChildren }: ElementProps) => <em className="text-gray-700">{emChildren}</em>,
-      hr: () => <hr className="my-3 border-gray-200" />,
+      hr: () => <hr className="my-4 border-gray-200" />,
       blockquote: ({ children: quoteChildren }: ElementProps) => (
-        <blockquote className="mb-2 border-l-2 border-gray-200 pl-3 text-sm text-gray-600">
+        <blockquote className="mb-3 rounded-r-md border-l-2 border-brand-400 bg-brand-50/40 py-1 pl-3 text-sm text-gray-700">
           {quoteChildren}
         </blockquote>
       ),
       table: ({ children: tableChildren }: ElementProps) => (
-        <div className="mb-2 overflow-x-auto rounded-lg border border-gray-200">
+        <div className="mb-3 overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
           <table className="w-full min-w-full border-collapse text-left text-xs">{tableChildren}</table>
         </div>
       ),
       thead: ({ children: headChildren }: ElementProps) => (
-        <thead className="bg-gray-50">{headChildren}</thead>
+        <thead className="bg-gray-50 text-gray-600">{headChildren}</thead>
       ),
       tbody: ({ children: bodyChildren }: ElementProps) => (
-        <tbody className="divide-y divide-gray-100">{bodyChildren}</tbody>
+        <tbody className="divide-y divide-gray-100 bg-white">{bodyChildren}</tbody>
       ),
-      tr: ({ children: rowChildren }: ElementProps) => <tr>{rowChildren}</tr>,
+      tr: ({ children: rowChildren }: ElementProps) => <tr className="even:bg-gray-50/40">{rowChildren}</tr>,
       th: ({ children: headerChildren }: ElementProps) => (
-        <th className="px-2.5 py-1.5 font-medium text-gray-600">{headerChildren}</th>
+        <th className="px-3 py-2 font-semibold text-gray-700">{headerChildren}</th>
       ),
       td: ({ children: cellChildren }: ElementProps) => (
-        <td className="px-2.5 py-1.5 text-gray-800">{cellChildren}</td>
+        <td className="px-3 py-2 align-top text-gray-800">{cellChildren}</td>
       ),
       pre: ({ children: preChildren }: ElementProps) => (
-        <pre className="mb-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <pre className="mb-3 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
           {preChildren}
         </pre>
       ),
@@ -109,9 +118,7 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
         }
 
         return (
-          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-gray-700">
-            {text}
-          </code>
+          <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px] text-gray-700">{text}</code>
         );
       },
       a: ({
@@ -156,7 +163,7 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
         return (
           <a
             href={hrefValue}
-            className="font-medium text-gray-700 underline-offset-2 hover:text-gray-900 hover:underline"
+            className="font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800 hover:underline"
             target="_blank"
             rel="noreferrer"
           >
@@ -169,7 +176,7 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
   );
 
   return (
-    <div className={cn('chat-markdown break-words', className)}>
+    <div className={cn('chat-markdown break-words text-sm leading-relaxed', className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {children}
       </ReactMarkdown>
