@@ -129,6 +129,14 @@ export default function ChatPane({
   const [voiceInputConfig, setVoiceInputConfig] = useState<VoiceInputConfig>(
     DEFAULT_VOICE_INPUT_CONFIG,
   );
+  const [voiceTranscriptionReady, setVoiceTranscriptionReady] = useState(
+    () => DEFAULT_VOICE_INPUT_CONFIG.engine !== 'media',
+  );
+  const [voiceTranscriptionMessage, setVoiceTranscriptionMessage] = useState<string | null>(
+    DEFAULT_VOICE_INPUT_CONFIG.engine === 'media'
+      ? 'Preparing local voice transcription…'
+      : null,
+  );
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -172,6 +180,8 @@ export default function ChatPane({
       void handleSubmit();
     },
     disabled: isLoading || dispatchBlocked || showStopMode,
+    transcriptionReady: voiceTranscriptionReady,
+    transcriptionMessage: voiceTranscriptionMessage,
   });
 
   useEffect(() => {
@@ -321,13 +331,73 @@ export default function ChatPane({
         if (!response.ok) {
           return;
         }
-        const payload = (await response.json()) as { voice_input?: VoiceInputConfig };
+        const payload = (await response.json()) as {
+          voice_input?: VoiceInputConfig;
+          voice_transcription?: {
+            ready?: boolean;
+            message?: string | null;
+          } | null;
+        };
         if (payload.voice_input) {
           setVoiceInputConfig(payload.voice_input);
+        }
+        if (payload.voice_transcription) {
+          setVoiceTranscriptionReady(Boolean(payload.voice_transcription.ready));
+          setVoiceTranscriptionMessage(payload.voice_transcription.message ?? null);
+        } else if (payload.voice_input?.engine !== 'media') {
+          setVoiceTranscriptionReady(true);
+          setVoiceTranscriptionMessage(null);
         }
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!voiceInputConfig.enabled || voiceInputConfig.engine !== 'media') {
+      setVoiceTranscriptionReady(true);
+      setVoiceTranscriptionMessage(null);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | undefined;
+
+    async function pollVoiceTranscriptionStatus(): Promise<void> {
+      try {
+        const response = await fetch('/api/runtime/voice/status');
+        if (!response.ok || cancelled) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          ready?: boolean;
+          message?: string | null;
+        };
+        if (cancelled) {
+          return;
+        }
+        setVoiceTranscriptionReady(Boolean(payload.ready));
+        setVoiceTranscriptionMessage(payload.message ?? null);
+        if (payload.ready && intervalId !== undefined) {
+          window.clearInterval(intervalId);
+          intervalId = undefined;
+        }
+      } catch {
+        /* fail-open polling */
+      }
+    }
+
+    void pollVoiceTranscriptionStatus();
+    intervalId = window.setInterval(() => {
+      void pollVoiceTranscriptionStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [voiceInputConfig.enabled, voiceInputConfig.engine]);
 
   function applySlashSuggestion(command: string): void {
     setInput(`${command} `);
@@ -653,6 +723,8 @@ export default function ChatPane({
                   phase={voiceInput.phase}
                   disabled={isLoading || dispatchBlocked || showStopMode}
                   supported={voiceInput.supported}
+                  ready={voiceInput.ready}
+                  statusMessage={voiceInput.statusMessage}
                   shortcutLabel={voiceInput.shortcutLabel}
                   error={voiceInput.error}
                   onToggle={voiceInput.toggle}
@@ -685,7 +757,11 @@ export default function ChatPane({
             ) : null}
           </PromptInput>
 
-          {voiceInput.error ? (
+          {(voiceInput.error || voiceInput.statusMessage) && !voiceInput.ready ? (
+            <p className="mt-2 text-xs text-amber-700" role="status">
+              {voiceInput.error ?? voiceInput.statusMessage}
+            </p>
+          ) : voiceInput.error ? (
             <p className="mt-2 text-xs text-amber-700" role="status">
               {voiceInput.error}
             </p>

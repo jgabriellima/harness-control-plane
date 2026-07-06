@@ -1,54 +1,37 @@
 import type { APIRoute } from 'astro';
-import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
+import {
+  ensureVoiceTranscriptionReady,
+  getVoiceTranscriptionStatus,
+  scheduleVoiceTranscriptionBootstrap,
+  transcribeAudioFile,
+} from '../../../lib/voice-transcription';
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 
-async function transcribeWithFasterWhisper(audioPath: string, language?: string): Promise<string> {
-  const args = [
-    '-c',
-    [
-      'import sys',
-      'from faster_whisper import WhisperModel',
-      'model = WhisperModel("base", device="cpu", compute_type="int8")',
-      'segments, _info = model.transcribe(sys.argv[1], language=sys.argv[2] or None)',
-      'print("".join(segment.text for segment in segments).strip())',
-    ].join('\n'),
-    audioPath,
-    language ?? '',
-  ];
-
-  return new Promise((resolve, reject) => {
-    const child = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || `faster-whisper exited with code ${code}`));
-        return;
-      }
-      resolve(stdout.trim());
-    });
-  });
-}
-
 export const POST: APIRoute = async ({ request, url }) => {
+  scheduleVoiceTranscriptionBootstrap();
+
+  const readiness = await getVoiceTranscriptionStatus();
+  if (!readiness.ready) {
+    if (readiness.status === 'provisioning') {
+      const provisioned = await ensureVoiceTranscriptionReady();
+      if (!provisioned.ready) {
+        return jsonError(provisioned.message ?? 'Voice transcription is still starting.', 503, {
+          detail: provisioned.status,
+        });
+      }
+    } else {
+      return jsonError(readiness.message ?? 'Voice transcription is unavailable.', 503, {
+        detail: readiness.status,
+      });
+    }
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -76,21 +59,11 @@ export const POST: APIRoute = async ({ request, url }) => {
   try {
     const buffer = Buffer.from(await audio.arrayBuffer());
     await writeFile(audioPath, buffer);
-
-    try {
-      const text = await transcribeWithFasterWhisper(audioPath, language);
-      if (!text) {
-        return jsonError('No speech detected', 422);
-      }
-      return jsonOk({ text });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : 'Transcription failed';
-      return jsonError(
-        'Server transcription unavailable. Install faster-whisper (`pip install faster-whisper`) or use composer.voice_input.engine: browser.',
-        503,
-        { detail },
-      );
+    const text = await transcribeAudioFile(audioPath, language);
+    if (!text) {
+      return jsonError('No speech detected', 422);
     }
+    return jsonOk({ text });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Transcription failed';
     return jsonError(message, 500);

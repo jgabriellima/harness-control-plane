@@ -24,6 +24,7 @@ const env = {
   HOST: host,
   PORT: String(port),
   NODE_ENV: 'production',
+  CONTROL_PLANE_DESKTOP: process.env.CONTROL_PLANE_DESKTOP ?? '1',
 };
 
 const child = spawn(process.execPath, [entry], {

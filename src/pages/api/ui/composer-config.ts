@@ -5,6 +5,10 @@ import { resolveProjectRoot } from '../../../lib/project-root';
 import { resolveRuntimeSurface } from '../../../lib/runtime-surface';
 import { loadUIConfig } from '../../../lib/ui-config';
 import { resolveVoiceInputConfig } from '../../../lib/voice-input-config';
+import {
+  getVoiceTranscriptionStatus,
+  scheduleVoiceTranscriptionBootstrap,
+} from '../../../lib/voice-transcription';
 
 export const GET: APIRoute = async () => {
   try {
@@ -17,8 +21,18 @@ export const GET: APIRoute = async () => {
     });
     const voiceInput = resolveVoiceInputConfig(uiConfig, { desktopRuntime });
 
+    if (voiceInput.enabled && voiceInput.engine === 'media') {
+      scheduleVoiceTranscriptionBootstrap();
+    }
+
+    const voiceTranscription =
+      voiceInput.enabled && voiceInput.engine === 'media'
+        ? await getVoiceTranscriptionStatus()
+        : null;
+
     return jsonOk({
       voice_input: voiceInput,
+      voice_transcription: voiceTranscription,
       locale: uiConfig.presentation?.locale ?? 'en-US',
       surface,
       desktop_runtime: desktopRuntime,

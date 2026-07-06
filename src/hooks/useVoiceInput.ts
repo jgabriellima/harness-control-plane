@@ -20,6 +20,8 @@ export interface UseVoiceInputOptions {
   onValueChange: (value: string) => void;
   onSubmit?: () => void;
   disabled?: boolean;
+  transcriptionReady?: boolean;
+  transcriptionMessage?: string | null;
 }
 
 export interface UseVoiceInputResult {
@@ -27,6 +29,8 @@ export interface UseVoiceInputResult {
   listening: boolean;
   error: string | null;
   supported: boolean;
+  ready: boolean;
+  statusMessage: string | null;
   shortcutLabel: string;
   toggle: () => void;
   stop: (options?: { abort?: boolean }) => void;
@@ -38,6 +42,8 @@ export function useVoiceInput({
   onValueChange,
   onSubmit,
   disabled = false,
+  transcriptionReady = true,
+  transcriptionMessage = null,
 }: UseVoiceInputOptions): UseVoiceInputResult {
   const [phase, setPhase] = useState<VoiceInputPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +107,7 @@ export function useVoiceInput({
   }, []);
 
   const toggle = useCallback(() => {
-    if (!configRef.current.enabled || disabled) {
+    if (!configRef.current.enabled || disabled || !transcriptionReady) {
       return;
     }
 
@@ -122,10 +128,10 @@ export function useVoiceInput({
         setPhase('idle');
         setError(startError instanceof Error ? startError.message : 'Voice input failed');
       });
-  }, [disabled, ensureEngine, phase, stop]);
+  }, [disabled, ensureEngine, phase, stop, transcriptionReady]);
 
   useEffect(() => {
-    if (!config.enabled || disabled || !parsedShortcut) {
+    if (!config.enabled || disabled || !parsedShortcut || !transcriptionReady) {
       return;
     }
 
@@ -153,7 +159,7 @@ export function useVoiceInput({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [config.enabled, disabled, parsedShortcut, toggle]);
+  }, [config.enabled, disabled, parsedShortcut, toggle, transcriptionReady]);
 
   useEffect(
     () => () => {
@@ -168,6 +174,8 @@ export function useVoiceInput({
     listening: phase === 'listening',
     error,
     supported,
+    ready: transcriptionReady,
+    statusMessage: transcriptionMessage,
     shortcutLabel,
     toggle,
     stop,
