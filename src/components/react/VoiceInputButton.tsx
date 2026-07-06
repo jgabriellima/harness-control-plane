@@ -11,8 +11,6 @@ export interface VoiceInputButtonProps {
   phase: VoiceInputPhase;
   disabled?: boolean;
   supported?: boolean;
-  ready?: boolean;
-  statusMessage?: string | null;
   shortcutLabel?: string;
   error?: string | null;
   onToggle: () => void;
@@ -22,33 +20,26 @@ export default function VoiceInputButton({
   phase,
   disabled = false,
   supported = true,
-  ready = true,
-  statusMessage = null,
   shortcutLabel,
   error,
   onToggle,
 }: VoiceInputButtonProps) {
   const listening = phase === 'listening';
   const processing = phase === 'processing';
-  const provisioning = !ready && !error;
 
   const label = listening
     ? 'Stop voice input'
     : processing
       ? 'Transcribing…'
-      : provisioning
-        ? 'Preparing voice input'
-        : 'Voice input';
+      : 'Voice input';
 
   const tooltip = error
     ? error
-    : provisioning && statusMessage
-      ? statusMessage
-      : supported
-        ? shortcutLabel
-          ? `${label} (${shortcutLabel})`
-          : label
-        : 'Voice input is not supported in this browser';
+    : supported
+      ? shortcutLabel
+        ? `${label} (${shortcutLabel})`
+        : label
+      : 'Voice input is not supported in this browser';
 
   return (
     <TooltipProvider>
@@ -61,11 +52,10 @@ export default function VoiceInputButton({
             data-testid="chat-voice-input"
             data-listening={listening ? 'true' : 'false'}
             data-phase={phase}
-            data-ready={ready ? 'true' : 'false'}
             className={`h-9 w-9 shrink-0 rounded-full ${
               listening ? 'bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700' : ''
-            } ${provisioning ? 'animate-pulse' : ''}`}
-            disabled={disabled || !supported || processing || provisioning}
+            }`}
+            disabled={disabled || !supported || processing}
             aria-label={label}
             aria-pressed={listening}
             onClick={(event) => {

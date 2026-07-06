@@ -26,6 +26,7 @@
     "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts src/lib/file-reference.test.ts src/lib/tool-file-paths.test.ts src/lib/thread-file-paths.test.ts src/lib/workspace-files.test.ts src/lib/active-run-sync.test.ts src/lib/voice-input-config.test.ts src/lib/keyboard-shortcut.test.ts src/lib/voice-input-engine.test.ts src/lib/voice-transcription.test.ts src/lib/format-inspect.test.ts src/lib/json-syntax-highlight.test.ts src/lib/runtime-connect-errors.test.ts src/lib/runtime-sdk-auth-gate.test.ts",
     "desktop:sidecar": "node desktop-sidecar/build.mjs",
     "desktop:prepare": "node scripts/prepare-desktop-dev.mjs",
+    "voice:prepare": "node --import tsx scripts/ensure-voice-transcription.mjs",
     "desktop:icons": "python3 scripts/generate-icons.py && tauri icon src-tauri/icons/icon.png -o src-tauri/icons",
     "desktop:sync-version": "node scripts/sync-desktop-version.mjs",
     "tauri": "tauri",

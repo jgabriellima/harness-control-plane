@@ -31,6 +31,8 @@ export const GET: APIRoute = async () => {
       enabled: true,
       ready: status.ready,
       status: status.status,
+      phase: status.phase,
+      progress: status.progress,
       message: status.message,
       python_path: status.pythonPath,
       venv_path: status.venvPath,

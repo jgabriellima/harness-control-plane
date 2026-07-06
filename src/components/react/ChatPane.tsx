@@ -17,6 +17,7 @@ import {
 } from '@/components/react/FileActivityGroup';
 import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
 import VoiceInputButton from '@/components/react/VoiceInputButton';
+import VoiceTranscriptionSetupBanner from '@/components/react/VoiceTranscriptionSetupBanner';
 import { Button } from '@/components/ui/button';
 import {
   PromptInput,
@@ -132,11 +133,9 @@ export default function ChatPane({
   const [voiceTranscriptionReady, setVoiceTranscriptionReady] = useState(
     () => DEFAULT_VOICE_INPUT_CONFIG.engine !== 'media',
   );
-  const [voiceTranscriptionMessage, setVoiceTranscriptionMessage] = useState<string | null>(
-    DEFAULT_VOICE_INPUT_CONFIG.engine === 'media'
-      ? 'Preparing local voice transcription…'
-      : null,
-  );
+  const [voiceTranscriptionMessage, setVoiceTranscriptionMessage] = useState<string | null>(null);
+  const [voiceTranscriptionPhase, setVoiceTranscriptionPhase] = useState<string | null>(null);
+  const [voiceTranscriptionProgress, setVoiceTranscriptionProgress] = useState(0);
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -336,6 +335,8 @@ export default function ChatPane({
           voice_transcription?: {
             ready?: boolean;
             message?: string | null;
+            phase?: string | null;
+            progress?: number;
           } | null;
         };
         if (payload.voice_input) {
@@ -344,9 +345,13 @@ export default function ChatPane({
         if (payload.voice_transcription) {
           setVoiceTranscriptionReady(Boolean(payload.voice_transcription.ready));
           setVoiceTranscriptionMessage(payload.voice_transcription.message ?? null);
+          setVoiceTranscriptionPhase(payload.voice_transcription.phase ?? null);
+          setVoiceTranscriptionProgress(payload.voice_transcription.progress ?? 0);
         } else if (payload.voice_input?.engine !== 'media') {
           setVoiceTranscriptionReady(true);
           setVoiceTranscriptionMessage(null);
+          setVoiceTranscriptionPhase('ready');
+          setVoiceTranscriptionProgress(100);
         }
       })
       .catch(() => undefined);
@@ -356,6 +361,8 @@ export default function ChatPane({
     if (!voiceInputConfig.enabled || voiceInputConfig.engine !== 'media') {
       setVoiceTranscriptionReady(true);
       setVoiceTranscriptionMessage(null);
+      setVoiceTranscriptionPhase('ready');
+      setVoiceTranscriptionProgress(100);
       return;
     }
 
@@ -371,12 +378,16 @@ export default function ChatPane({
         const payload = (await response.json()) as {
           ready?: boolean;
           message?: string | null;
+          phase?: string | null;
+          progress?: number;
         };
         if (cancelled) {
           return;
         }
         setVoiceTranscriptionReady(Boolean(payload.ready));
         setVoiceTranscriptionMessage(payload.message ?? null);
+        setVoiceTranscriptionPhase(payload.phase ?? null);
+        setVoiceTranscriptionProgress(typeof payload.progress === 'number' ? payload.progress : 0);
         if (payload.ready && intervalId !== undefined) {
           window.clearInterval(intervalId);
           intervalId = undefined;
@@ -389,7 +400,7 @@ export default function ChatPane({
     void pollVoiceTranscriptionStatus();
     intervalId = window.setInterval(() => {
       void pollVoiceTranscriptionStatus();
-    }, 3000);
+    }, 1000);
 
     return () => {
       cancelled = true;
@@ -681,6 +692,16 @@ export default function ChatPane({
             />
           ) : null}
 
+          {voiceInputConfig.enabled &&
+          voiceInputConfig.engine === 'media' &&
+          !voiceTranscriptionReady ? (
+            <VoiceTranscriptionSetupBanner
+              phase={voiceTranscriptionPhase}
+              progress={voiceTranscriptionProgress}
+              message={voiceTranscriptionMessage}
+            />
+          ) : null}
+
           <PromptInput
             value={input}
             onValueChange={setInput}
@@ -718,13 +739,11 @@ export default function ChatPane({
                 placeholder="Ask the runtime or type '/' for harness commands..."
                 onKeyDown={handleComposerKeyDown}
               />
-              {voiceInputConfig.enabled ? (
+              {voiceInputConfig.enabled && voiceTranscriptionReady ? (
                 <VoiceInputButton
                   phase={voiceInput.phase}
                   disabled={isLoading || dispatchBlocked || showStopMode}
                   supported={voiceInput.supported}
-                  ready={voiceInput.ready}
-                  statusMessage={voiceInput.statusMessage}
                   shortcutLabel={voiceInput.shortcutLabel}
                   error={voiceInput.error}
                   onToggle={voiceInput.toggle}
@@ -757,11 +776,7 @@ export default function ChatPane({
             ) : null}
           </PromptInput>
 
-          {(voiceInput.error || voiceInput.statusMessage) && !voiceInput.ready ? (
-            <p className="mt-2 text-xs text-amber-700" role="status">
-              {voiceInput.error ?? voiceInput.statusMessage}
-            </p>
-          ) : voiceInput.error ? (
+          {voiceInput.error ? (
             <p className="mt-2 text-xs text-amber-700" role="status">
               {voiceInput.error}
             </p>
