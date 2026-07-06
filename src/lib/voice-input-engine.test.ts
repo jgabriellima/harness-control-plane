@@ -8,7 +8,7 @@ describe('mapVoiceRecognitionError', () => {
     assert.equal(mapVoiceRecognitionError('no-speech'), null);
   });
 
-  it('maps permission errors', () => {
+  it('maps permission errors on web', () => {
     assert.equal(mapVoiceRecognitionError('not-allowed'), 'Microphone access blocked');
   });
 });

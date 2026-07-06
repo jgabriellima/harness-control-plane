@@ -1,3 +1,11 @@
+import {
+  isCursorEmbeddedPreview,
+  isDesktopRuntimeSurface,
+  isTauriDesktopShell,
+  microphoneDeniedMessage,
+  voiceInputUnavailableMessage,
+} from './runtime-surface';
+
 export type VoiceInputPhase = 'idle' | 'listening' | 'processing' | 'error';
 
 export interface VoiceInputCallbacks {
@@ -66,45 +74,26 @@ function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
 
+/** @deprecated Use isCursorEmbeddedPreview from runtime-surface. */
 export function isEmbeddedPreviewBrowser(): boolean {
-  if (typeof navigator === 'undefined') {
-    return false;
-  }
-  const ua = navigator.userAgent || '';
-  if (/Electron/i.test(ua)) {
-    return true;
-  }
-  if (/Cursor/i.test(ua)) {
-    return true;
-  }
-  try {
-    return Boolean(
-      (window as Window & { cursor?: unknown; __CURSOR__?: unknown; __GLASS_BROWSER__?: unknown })
-        .cursor ||
-        (window as Window & { __CURSOR__?: unknown }).__CURSOR__ ||
-        (window as Window & { __GLASS_BROWSER__?: unknown }).__GLASS_BROWSER__,
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function voiceInputUnavailableMessage(): string {
-  return 'Voice input works in Chrome or Safari. Embedded preview browsers cannot reach speech services.';
+  return isCursorEmbeddedPreview();
 }
 
 export function mapVoiceRecognitionError(code: string): string | null {
+  const surface = isTauriDesktopShell() ? 'desktop' : 'web';
   switch (code) {
     case 'not-allowed':
-      return 'Microphone access blocked';
+      return microphoneDeniedMessage(surface);
     case 'audio-capture':
       return 'No microphone found';
     case 'network':
-      return isEmbeddedPreviewBrowser()
-        ? voiceInputUnavailableMessage()
+      return isCursorEmbeddedPreview()
+        ? voiceInputUnavailableMessage(surface)
         : 'Voice input needs a network connection (browser speech uses a cloud service)';
     case 'service-not-allowed':
-      return 'Voice input is not available in this browser tab';
+      return isDesktopRuntimeSurface(surface)
+        ? voiceInputUnavailableMessage(surface)
+        : 'Voice input is not available in this browser tab';
     case 'language-not-supported':
       return 'Speech language not supported';
     case 'no-speech':
@@ -151,8 +140,8 @@ export function createBrowserSpeechEngine(callbacks: VoiceInputCallbacks): Voice
       if (typeof window !== 'undefined' && !window.isSecureContext) {
         throw new Error('Voice input needs HTTPS or localhost');
       }
-      if (isEmbeddedPreviewBrowser()) {
-        throw new Error(voiceInputUnavailableMessage());
+      if (isCursorEmbeddedPreview()) {
+        throw new Error(voiceInputUnavailableMessage('web'));
       }
 
       releaseRecognition(true);
@@ -246,7 +235,11 @@ export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): Voice
   return {
     async start({ baseText }) {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Microphone capture is not supported in this browser');
+        throw new Error(
+          isTauriDesktopShell()
+            ? 'Microphone capture is unavailable in this desktop build.'
+            : 'Microphone capture is not supported in this browser',
+        );
       }
 
       await cleanup();
@@ -256,7 +249,11 @@ export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): Voice
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch {
-        throw new Error('Microphone access blocked');
+        throw new Error(
+          isTauriDesktopShell()
+            ? microphoneDeniedMessage('desktop')
+            : microphoneDeniedMessage('web'),
+        );
       }
 
       chunks = [];

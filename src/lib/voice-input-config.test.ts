@@ -88,4 +88,17 @@ describe('resolveVoiceInputConfig', () => {
     });
     assert.equal(resolved.enabled, false);
   });
+
+  it('defaults to media engine on desktop surface', () => {
+    const resolved = resolveVoiceInputConfig({
+      ...baseConfig,
+      distribution: { surface: 'desktop' },
+    });
+    assert.equal(resolved.engine, 'media');
+  });
+
+  it('defaults to media when desktop runtime flag is set', () => {
+    const resolved = resolveVoiceInputConfig(baseConfig, { desktopRuntime: true });
+    assert.equal(resolved.engine, 'media');
+  });
 });
