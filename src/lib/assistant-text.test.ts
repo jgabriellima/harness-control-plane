@@ -45,14 +45,17 @@ describe('mergeStreamingAssistantText', () => {
     );
   });
 
-  it('appends bare deltas with a word boundary space', () => {
-    assert.equal(mergeStreamingAssistantText('template', 'corporativo'), 'template corporativo');
-    assert.equal(mergeStreamingAssistantText('a', 'materialização'), 'a materialização');
-    assert.equal(mergeStreamingAssistantText('está', 'presa'), 'está presa');
+  it('concatenates token deltas without inferring mid-word spaces', () => {
+    assert.equal(mergeStreamingAssistantText('Ret', 'om'), 'Retom');
+    assert.equal(mergeStreamingAssistantText('Retom', 'ando'), 'Retomando');
+    assert.equal(mergeStreamingAssistantText('ver', 'ific'), 'verific');
+    assert.equal(mergeStreamingAssistantText('aplica', 'ções'), 'aplicações');
   });
 
-  it('preserves explicit leading spaces on deltas', () => {
+  it('preserves explicit whitespace in SDK deltas', () => {
     assert.equal(mergeStreamingAssistantText('template', ' corporativo'), 'template corporativo');
+    assert.equal(mergeStreamingAssistantText('Retomando:', ' vou'), 'Retomando: vou');
+    assert.equal(mergeStreamingAssistantText('estado', ' CUA'), 'estado CUA');
   });
 
   it('merges overlapping token boundaries', () => {

@@ -18,4 +18,9 @@ describe('stripRedactedReasoningContent', () => {
     const input = 'See [REDACTED] section in docs';
     assert.equal(stripRedactedReasoningContent(input), 'See [REDACTED] section in docs');
   });
+
+  it('preserves leading and trailing whitespace on streaming deltas', () => {
+    assert.equal(stripRedactedReasoningContent(' vou'), ' vou');
+    assert.equal(stripRedactedReasoningContent(' ver'), ' ver');
+  });
 });
