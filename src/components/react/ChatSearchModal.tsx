@@ -147,7 +147,7 @@ export default function ChatSearchModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/60 px-4 pt-[12vh]"
+      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/40 px-4 pt-[12vh]"
       data-testid="chat-search-modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -160,23 +160,23 @@ export default function ChatSearchModal({
         aria-modal="true"
         aria-label="Search chats"
         data-testid="chat-search-modal"
-        className="flex max-h-[min(70vh,560px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#212121] shadow-2xl"
+        className="flex max-h-[min(70vh,560px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-white/50" aria-hidden="true" />
+        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+          <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
           <input
             ref={inputRef}
             type="search"
             value={query}
             placeholder="Search chats..."
-            className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+            className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
             onChange={(event) => setQuery(event.target.value)}
             data-testid="chat-search-modal-input"
           />
           <button
             type="button"
-            className="rounded-md p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
             aria-label="Close search"
             data-testid="chat-search-modal-close"
             onClick={close}
@@ -188,22 +188,22 @@ export default function ChatSearchModal({
         <div className="min-h-0 flex-1 overflow-y-auto py-2">
           <button
             type="button"
-            className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/90 hover:bg-white/10"
+            className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
             data-testid="chat-search-modal-new-chat"
             onClick={handleNewChat}
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-500">
               <Plus className="h-4 w-4" />
             </span>
             <span>New chat</span>
           </button>
 
           {groupedConversations.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-white/45">No chats found</p>
+            <p className="px-4 py-6 text-center text-sm text-gray-400">No chats found</p>
           ) : (
             groupedConversations.map((group) => (
               <section key={group.label} className="mt-2">
-                <p className="px-4 py-1 text-[11px] font-medium uppercase tracking-wide text-white/35">
+                <p className="px-4 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
                   {group.label}
                 </p>
                 <ul>
@@ -215,13 +215,13 @@ export default function ChatSearchModal({
                           type="button"
                           className={`mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
                             isActive
-                              ? 'bg-white/10 font-medium text-white'
-                              : 'text-white/85 hover:bg-white/10'
+                              ? 'bg-gray-100 font-medium text-gray-900'
+                              : 'text-gray-700 hover:bg-gray-50'
                           }`}
                           data-testid={`chat-search-modal-item-${conversation.id}`}
                           onClick={() => handleSelectConversation(conversation.id)}
                         >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-500">
                             <MessageCircle className="h-3.5 w-3.5" />
                           </span>
                           <span className="truncate">{formatTitle(conversation)}</span>
