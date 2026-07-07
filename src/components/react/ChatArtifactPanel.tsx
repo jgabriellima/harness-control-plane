@@ -1,5 +1,5 @@
-import { Copy, X } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import ArtifactActionsMenu, { type ArtifactMenuAction } from '@/components/react/ArtifactActionsMenu';
 import ArtifactFullscreenOverlay from '@/components/react/ArtifactFullscreenOverlay';
@@ -48,6 +48,18 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
     canInlinePreview || useCodeViewer || showHtmlPreview || showHtmlSource;
   const canFullscreen = isFullscreenCapableArtifact(selection.path, selection.mime, selection.content);
 
+  const copyTextToClipboard = useCallback(async (text: string): Promise<void> => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setCopyState('copied');
+        window.setTimeout(() => setCopyState('idle'), 2000);
+      }
+    } catch {
+      setCopyState('idle');
+    }
+  }, []);
+
   const menuActions = useMemo((): ArtifactMenuAction[] => {
     const actions: ArtifactMenuAction[] = [];
 
@@ -79,6 +91,30 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
     }
 
     if (selection.previewUrl) {
+      const previewUrl = selection.previewUrl;
+      actions.push({
+        id: 'copy-link',
+        label: 'Copy link',
+        testId: 'chat-artifact-action-copy-link',
+        onSelect: () => {
+          void copyTextToClipboard(new URL(previewUrl, window.location.origin).href);
+        },
+      });
+    }
+
+    if (selection.content) {
+      const content = selection.content;
+      actions.push({
+        id: 'copy-content',
+        label: 'Copy content',
+        testId: 'chat-artifact-action-copy-content',
+        onSelect: () => {
+          void copyTextToClipboard(content);
+        },
+      });
+    }
+
+    if (selection.previewUrl) {
       actions.push({
         id: 'download',
         label: 'Download',
@@ -102,21 +138,16 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
     }
 
     return actions;
-  }, [canFullscreen, fileName, htmlViewMode, isHtml, isPresentationHtml, selection.content, selection.previewUrl]);
-
-  async function handleCopy(): Promise<void> {
-    if (!selection.content) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(selection.content);
-      setCopyState('copied');
-      window.setTimeout(() => setCopyState('idle'), 2000);
-    } catch {
-      setCopyState('idle');
-    }
-  }
+  }, [
+    canFullscreen,
+    copyTextToClipboard,
+    fileName,
+    htmlViewMode,
+    isHtml,
+    isPresentationHtml,
+    selection.content,
+    selection.previewUrl,
+  ]);
 
   const hasPreviewContent =
     canInlinePreview ||
@@ -142,20 +173,10 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
 
           <div className="flex shrink-0 items-center gap-1">
             <ArtifactActionsMenu actions={menuActions} />
-            <button
-              type="button"
-              className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
-              aria-label="Copy artifact content"
-              data-testid="chat-artifact-copy"
-              disabled={!selection.content}
-              onClick={() => {
-                void handleCopy();
-              }}
-            >
-              <Copy className="h-4 w-4" />
-            </button>
             {copyState === 'copied' ? (
-              <span className="text-[10px] text-gray-600">Copied</span>
+              <span className="text-[10px] text-gray-600" data-testid="chat-artifact-copy-feedback">
+                Copied
+              </span>
             ) : null}
             <button
               type="button"
