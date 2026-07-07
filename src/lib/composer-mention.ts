@@ -12,9 +12,61 @@ export function parseActiveFileMention(input: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** Replace the trailing `@query` segment with `@replacement `. */
+/** Replace the trailing `@query` segment with `@replacement `, or remove it when replacement is empty. */
 export function replaceActiveFileMention(input: string, replacement: string): string {
+  if (replacement.trim().length === 0) {
+    return input.replace(ACTIVE_MENTION_PATTERN, '');
+  }
+
   return input.replace(ACTIVE_MENTION_PATTERN, `@${replacement} `);
+}
+
+/** Remove the trailing `@query` segment without inserting replacement text. */
+export function clearActiveFileMention(input: string): string {
+  return replaceActiveFileMention(input, '');
+}
+
+export function addComposerFileMention(
+  mentions: FileMentionSuggestion[],
+  file: FileMentionSuggestion,
+): FileMentionSuggestion[] {
+  if (mentions.some((item) => item.path === file.path)) {
+    return mentions;
+  }
+
+  return [...mentions, file];
+}
+
+export function removeComposerFileMention(
+  mentions: FileMentionSuggestion[],
+  path: string,
+): FileMentionSuggestion[] {
+  return mentions.filter((item) => item.path !== path);
+}
+
+export function buildComposerSubmitMessage(
+  input: string,
+  mentions: FileMentionSuggestion[],
+): string {
+  const trimmed = input.trim();
+  const mentionTokens = mentions.map((file) => `@${file.name}`).join(' ');
+
+  if (!trimmed) {
+    return mentionTokens;
+  }
+
+  if (!mentionTokens) {
+    return trimmed;
+  }
+
+  return `${trimmed} ${mentionTokens}`;
+}
+
+export function composerHasSubmittableContent(
+  input: string,
+  mentions: FileMentionSuggestion[],
+): boolean {
+  return input.trim().length > 0 || mentions.length > 0;
 }
 
 export function rankFileMentionSuggestions(

@@ -36,10 +36,15 @@ import {
   hideEmptyStateCommand,
   readHiddenEmptyStateCommands,
 } from '@/lib/empty-state-commands';
+import ComposerFileMentionBadge from '@/components/react/ComposerFileMentionBadge';
 import {
+  addComposerFileMention,
+  buildComposerSubmitMessage,
+  clearActiveFileMention,
+  composerHasSubmittableContent,
   parseActiveFileMention,
   rankFileMentionSuggestions,
-  replaceActiveFileMention,
+  removeComposerFileMention,
   type FileMentionSuggestion,
 } from '@/lib/composer-mention';
 import { isDraftConversationId } from '@/lib/draft-conversation';
@@ -128,6 +133,7 @@ export default function ChatPane({
   const [integrationSlots, setIntegrationSlots] = useState<ReadinessSlot[]>([]);
   const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [composerFileMentions, setComposerFileMentions] = useState<FileMentionSuggestion[]>([]);
   const [deepResearch, setDeepResearch] = useState(false);
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
@@ -469,8 +475,13 @@ export default function ChatPane({
   }
 
   function applyFileMentionSuggestion(file: FileMentionSuggestion): void {
-    setInput(replaceActiveFileMention(input, file.name));
+    setInput(clearActiveFileMention(input));
+    setComposerFileMentions((current) => addComposerFileMention(current, file));
     setSelectedSuggestionIndex(0);
+  }
+
+  function removeFileMention(path: string): void {
+    setComposerFileMentions((current) => removeComposerFileMention(current, path));
   }
 
   function handleSuggestionKeyDown(
@@ -564,20 +575,26 @@ export default function ChatPane({
   }
 
   async function handleSubmit(): Promise<void> {
-    const trimmed = input.trim();
-    if (!trimmed || isLoading || dispatchBlocked) {
+    const message = buildComposerSubmitMessage(input, composerFileMentions);
+    if (!composerHasSubmittableContent(input, composerFileMentions) || isLoading || dispatchBlocked) {
       return;
     }
 
+    const mentionAttachments = composerFileMentions.map((file) => ({
+      name: file.name,
+      path: file.path,
+    }));
+
     setInput('');
+    setComposerFileMentions([]);
     setAttachments([]);
 
     await dispatchMessage({
-      message: trimmed,
+      message,
       projectId,
       mode: deepResearch ? 'deep_research' : 'default',
       integrationSlots: selectedIntegrations,
-      attachments,
+      attachments: [...attachments, ...mentionAttachments],
     });
   }
 
@@ -830,6 +847,25 @@ export default function ChatPane({
             disabled={isLoading}
             className="p-2"
           >
+            {composerFileMentions.length > 0 ? (
+              <div
+                className="mb-2 flex flex-wrap gap-2 px-1"
+                data-testid="composer-file-mention-badges"
+              >
+                {composerFileMentions.map((file) => (
+                  <ComposerFileMentionBadge
+                    key={file.path}
+                    file={file}
+                    disabled={isLoading}
+                    onOpen={(filePath) => {
+                      void openArtifact(filePath, projectId);
+                    }}
+                    onRemove={() => removeFileMention(file.path)}
+                  />
+                ))}
+              </div>
+            ) : null}
+
             <div className="flex items-end gap-1">
               <input
                 id={fileInputId}
@@ -872,7 +908,7 @@ export default function ChatPane({
                 size="icon"
                 data-testid={showStopMode ? 'chat-stop-run' : 'chat-pane-send'}
                 className={`h-9 w-9 shrink-0 rounded-full ${showStopMode ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                disabled={showStopMode ? false : isLoading || dispatchBlocked || input.trim().length === 0}
+                disabled={showStopMode ? false : isLoading || dispatchBlocked || !composerHasSubmittableContent(input, composerFileMentions)}
                 aria-label={showStopMode ? 'Stop run' : isLoading ? 'Streaming' : 'Send message'}
                 onClick={() => {
                   if (showStopMode) {

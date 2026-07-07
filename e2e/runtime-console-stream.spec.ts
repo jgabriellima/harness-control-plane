@@ -33,7 +33,7 @@ test.describe('runtime console stream QA', () => {
     }
   });
 
-  test('file mention menu lists workspace output and upload files', async ({ page, request }) => {
+  test('file mention selection renders clickable badge instead of raw text', async ({ page, request }) => {
     const filesResponse = await request.get(`${BASE}/api/workspace/files?q=design-system&project_id=default`);
     expect(filesResponse.status()).toBe(200);
     const body = (await filesResponse.json()) as {
@@ -41,25 +41,36 @@ test.describe('runtime console stream QA', () => {
     };
     expect(body.files.some((file) => file.name === 'design-system.json')).toBeTruthy();
 
-    const filesLoaded = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/workspace/files') && response.status() === 200,
-    );
-
-    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+    await page.goto(`${BASE}/?artifact-e2e=1&layout=single`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 120_000,
+    });
     await expect(page.getByTestId('chat-pane')).toBeVisible({ timeout: 60_000 });
 
     const textarea = page.getByPlaceholder(/type '\/' for commands, or '@' for workspace files/);
     await textarea.click();
-    await textarea.fill('@design-syste');
-    await filesLoaded;
+    await textarea.pressSequentially('@design-syste', { delay: 20 });
 
     const suggestions = page.getByTestId('file-mention-suggestions');
-    await expect(suggestions).toBeVisible({ timeout: 15_000 });
-    await expect(suggestions.getByText('@design-system.json')).toBeVisible();
-    await expect(suggestions.getByText(/playbooks\/runs\/playbook-/)).toBeVisible();
+    await expect(suggestions).toBeVisible({ timeout: 30_000 });
+    await suggestions.getByRole('option').first().click();
+
+    const badges = page.getByTestId('composer-file-mention-badges');
+    await expect(badges).toBeVisible();
+    await expect(textarea).toHaveValue('');
+    await expect(page.getByTestId('composer-file-mention-badge').first()).toContainText('design-system.json');
+
+    await page
+      .getByTestId('composer-file-mention-badge')
+      .first()
+      .getByRole('button', { name: /Open .* in preview/i })
+      .click();
+
+    await expect(page.getByTestId('chat-artifact-panel')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('chat-artifact-filename')).toContainText('design-system.json');
   });
 
+  test('active-runs endpoint exposes live active run index', async ({ request }) => {
     const response = await request.get(`${BASE}/api/runtime/active-runs`);
     expect(response.status()).toBe(200);
     const body = (await response.json()) as {
