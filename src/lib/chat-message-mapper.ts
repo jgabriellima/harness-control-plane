@@ -2,6 +2,7 @@ import type { StoredChatMessage } from './conversation-store';
 import type { ChatMessage } from './runtime-hub-types';
 import type { NormalizedMessage } from './runtime-adapters/types';
 import { normalizeInspectablePayload } from './format-inspect';
+import { stripCursorPromptEnvelope } from './strip-cursor-prompt-envelope';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 
 function serializeToolPayload(value: unknown): string | undefined {
@@ -39,7 +40,9 @@ export function mapNormalizedMessageToChatMessage(message: NormalizedMessage): C
   const content =
     message.role === 'assistant' || message.role === 'thinking'
       ? stripRedactedReasoningContent(message.content)
-      : message.content;
+      : message.role === 'user'
+        ? stripCursorPromptEnvelope(message.content)
+        : message.content;
 
   return {
     id: message.id,

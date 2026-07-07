@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { joinAssistantTextBlocks } from '../assistant-text';
 import { resolveAppRoot } from '../app-root';
+import { stripCursorPromptEnvelope } from '../strip-cursor-prompt-envelope';
 import { stripRedactedReasoningContent } from '../strip-redacted-content';
 import { loadSessionStoreBinding } from './resolve-binding';
 import type {
@@ -142,7 +143,7 @@ function parseTranscriptLine(
       }
     }
 
-    const content = extractTextContent(raw);
+    const content = stripCursorPromptEnvelope(extractTextContent(raw));
     return content.length > 0 ? [{ id, role: 'user', content, recordedAt }] : [];
   }
 

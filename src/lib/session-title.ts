@@ -1,3 +1,5 @@
+import { stripCursorPromptEnvelope } from './strip-cursor-prompt-envelope';
+
 export const PLACEHOLDER_SESSION_TITLES = new Set(['New chat', 'New session']);
 
 export function isPlaceholderSessionTitle(title: string): boolean {
@@ -8,7 +10,7 @@ export function isPlaceholderSessionTitle(title: string): boolean {
  * Derives a sidebar title from the first user message (slash command token stripped when followed by body).
  */
 export function deriveSessionTitleFromMessage(message: string, maxLength = 72): string {
-  const trimmed = message.trim();
+  const trimmed = stripCursorPromptEnvelope(message).trim();
   if (trimmed.length === 0) {
     return 'New session';
   }
