@@ -70,22 +70,24 @@ function resolveToolRecord(message: ThreadFileMessage): {
  * Collect all workspace file paths generated or referenced across a conversation thread.
  */
 export function collectThreadFilePaths(messages: ThreadFileMessage[]): string[] {
-  const paths = new Set<string>();
+  const paths: string[] = [];
 
-  for (const message of messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
     if (message.role === 'tool') {
       const tool = resolveToolRecord(message);
       for (const path of extractFilePathsFromTool(tool.name, tool.args, tool.result)) {
-        paths.add(path);
+        paths.push(path);
       }
     }
 
     if (message.role === 'assistant') {
       for (const path of extractFilePathsFromMarkdown(message.content)) {
-        paths.add(path);
+        paths.push(path);
       }
     }
   }
 
-  return dedupeArtifactPaths([...paths]);
+  return dedupeArtifactPaths(paths, { preserveOrder: true });
 }

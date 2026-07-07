@@ -29,4 +29,27 @@ describe('collectThreadFilePaths', () => {
   it('returns empty array when no file paths are present', () => {
     assert.deepEqual(collectThreadFilePaths([{ role: 'assistant', content: 'Hello world.' }]), []);
   });
+
+  it('orders paths from most recently referenced to oldest', () => {
+    const paths = collectThreadFilePaths([
+      { role: 'user', content: 'Create deck' },
+      {
+        role: 'assistant',
+        content: 'Created `artifacts/presentation-production.pb.yaml` and `artifacts/page.pdf`.',
+      },
+      { role: 'user', content: 'Update the deck' },
+      {
+        role: 'tool',
+        content: 'write · completed',
+        toolInput: JSON.stringify({ path: 'artifacts/deck.html' }),
+      },
+      { role: 'assistant', content: 'Updated `artifacts/deck.html`.' },
+    ]);
+
+    assert.deepEqual(paths, [
+      'artifacts/deck.html',
+      'artifacts/presentation-production.pb.yaml',
+      'artifacts/page.pdf',
+    ]);
+  });
 });

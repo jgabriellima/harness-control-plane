@@ -235,7 +235,10 @@ export function normalizeArtifactPath(raw: string): string {
 }
 
 /** Prefer fully-qualified harness paths over bare filenames when both exist. */
-export function dedupeArtifactPaths(paths: string[]): string[] {
+export function dedupeArtifactPaths(
+  paths: string[],
+  options?: { preserveOrder?: boolean },
+): string[] {
   const byBasename = new Map<string, string>();
 
   for (const rawPath of paths) {
@@ -258,7 +261,11 @@ export function dedupeArtifactPaths(paths: string[]): string[] {
     }
   }
 
-  return [...byBasename.values()].sort((left, right) => left.localeCompare(right));
+  const values = [...byBasename.values()];
+  if (options?.preserveOrder) {
+    return values;
+  }
+  return values.sort((left, right) => left.localeCompare(right));
 }
 
 export function buildWorkspaceFileRawUrl(path: string, projectId?: string): string {

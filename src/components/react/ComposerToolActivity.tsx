@@ -37,7 +37,7 @@ function currentTurnToolMessages(messages: ChatMessage[]): ChatMessage[] {
       break;
     }
     if (message.role === 'tool') {
-      tools.unshift(message);
+      tools.push(message);
     }
   }
 
@@ -66,7 +66,7 @@ export default function ComposerToolActivity({ messages, streaming }: ComposerTo
 
   const activeToolId = useMemo(() => {
     const running = tools.find((message) => isRunningToolMessage(message, streaming));
-    return running?.id ?? tools[tools.length - 1]?.id;
+    return running?.id ?? tools[0]?.id;
   }, [streaming, tools]);
 
   useEffect(() => {
