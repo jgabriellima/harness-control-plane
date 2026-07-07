@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { SettingsSnapshot } from '../../lib/settings-snapshot';
 import SecretInput from './SecretInput';
 import IntegrationConnectButton from './IntegrationConnectButton';
+import ComputerUseActivatePanel from './ComputerUseActivatePanel';
 
 interface CredentialPresence {
   env_var: string;
@@ -262,6 +263,15 @@ export default function SettingsView() {
           </ul>
         )}
       </SettingsSection>
+
+      {settings.computerUse ? (
+        <SettingsSection title="Computer Use">
+          <ComputerUseActivatePanel
+            initial={settings.computerUse}
+            onUpdated={(next) => setSettings((current) => (current ? { ...current, computerUse: next } : current))}
+          />
+        </SettingsSection>
+      ) : null}
       </div>
     </div>
   );

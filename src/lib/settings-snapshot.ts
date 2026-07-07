@@ -6,6 +6,8 @@ import * as Sentry from '@sentry/astro';
 
 import { resolveHarnessBinding } from './harness-binding';
 import { loadBusinessConfig } from './harness-reader';
+import { loadComputerUseStatus } from './runtime-computer-use-preferences';
+import type { ComputerUsePreferences } from './runtime-computer-use-types';
 
 export interface IntegrationSlotSummary {
   slotId: string;
@@ -21,6 +23,18 @@ export interface RuntimeProfileSummary {
   commands: string[];
 }
 
+export interface ComputerUseSettingsSummary {
+  enabled: boolean;
+  requireConsent: boolean;
+  hostControlEnabled: boolean;
+  allowForegroundCursor: boolean;
+  driverOnPath: boolean;
+  consentedAt: string | null;
+  active: boolean;
+  setupPhase: string;
+  setupReady: boolean;
+}
+
 export interface SettingsSnapshot {
   project: {
     name: string;
@@ -33,6 +47,7 @@ export interface SettingsSnapshot {
   };
   runtime: RuntimeProfileSummary | null;
   integrations: IntegrationSlotSummary[];
+  computerUse: ComputerUseSettingsSummary | null;
   generatedAt: string;
 }
 
@@ -90,6 +105,51 @@ function parseRuntimeProfile(root: Record<string, unknown>): RuntimeProfileSumma
   };
 }
 
+function parseComputerUseContract(root: Record<string, unknown>): { enabled: boolean; requireConsent: boolean } | null {
+  const runtime = root.runtime;
+  if (!isRecord(runtime)) {
+    return null;
+  }
+
+  const computerUse = runtime.computer_use;
+  if (!isRecord(computerUse)) {
+    return null;
+  }
+
+  return {
+    enabled: computerUse.enabled === true,
+    requireConsent: computerUse.require_consent !== false,
+  };
+}
+
+function buildComputerUseSummary(
+  contract: { enabled: boolean; requireConsent: boolean } | null,
+  status: Awaited<ReturnType<typeof loadComputerUseStatus>> | null,
+): ComputerUseSettingsSummary | null {
+  if (!contract?.enabled) {
+    return null;
+  }
+
+  const preferences: ComputerUsePreferences = status?.preferences ?? {
+    hostControlEnabled: false,
+    allowForegroundCursor: false,
+    consentedAt: null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  return {
+    enabled: contract.enabled,
+    requireConsent: contract.requireConsent,
+    hostControlEnabled: preferences.hostControlEnabled,
+    allowForegroundCursor: preferences.allowForegroundCursor,
+    driverOnPath: status?.driverOnPath ?? false,
+    consentedAt: preferences.consentedAt,
+    active: status?.active ?? false,
+    setupPhase: status?.setup.phase ?? 'idle',
+    setupReady: status?.setup.ready ?? false,
+  };
+}
+
 export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
   return Sentry.startSpan({ name: 'loadSettingsSnapshot', op: 'fs.read' }, async () => {
     const binding = await resolveHarnessBinding();
@@ -105,6 +165,17 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
     const defaultWorkflow =
       execution?.defaultWorkflow ?? execution?.default_workflow ?? null;
 
+    const computerUseContract = parseComputerUseContract(root);
+    let computerUseStatus: Awaited<ReturnType<typeof loadComputerUseStatus>> | null = null;
+
+    if (computerUseContract?.enabled) {
+      try {
+        computerUseStatus = await loadComputerUseStatus(binding.workspaceRoot);
+      } catch {
+        computerUseStatus = null;
+      }
+    }
+
     return {
       project: {
         name: config.project.name,
@@ -117,6 +188,7 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
       },
       runtime: parseRuntimeProfile(root),
       integrations: parseIntegrations(root),
+      computerUse: buildComputerUseSummary(computerUseContract, computerUseStatus),
       generatedAt: new Date().toISOString(),
     };
   });

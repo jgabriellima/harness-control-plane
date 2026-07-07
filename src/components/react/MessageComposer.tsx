@@ -3,6 +3,7 @@ import React, { useId, useState } from 'react';
 import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import { isUnknownSlashCommand } from '../../lib/slash-command';
 import { subscribeRuntimeStream } from '../../lib/sse-client';
+import ComputerUseBadge from './ComputerUseBadge';
 
 interface ChatDispatchResponse {
   run_id: string;
@@ -228,6 +229,7 @@ export default function MessageComposer({
           </div>
 
           <div className="flex items-center gap-2">
+            <ComputerUseBadge />
             <button
               type="button"
               className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"

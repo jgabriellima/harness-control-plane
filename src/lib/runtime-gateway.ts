@@ -4,6 +4,8 @@ import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from './runtime-logger';
 import { registerRuntimeRun, registerRuntimeSession } from './runtime-sessions';
+import { loadComputerUsePreferences, isComputerUseContractEnabled } from './runtime-computer-use-preferences';
+import { buildComputerUsePromptInjection } from './runtime-computer-use-types';
 
 export class RuntimeGatewayError extends Error {
   readonly statusCode: number;
@@ -41,11 +43,15 @@ function requireApiKey(requestId: string): string {
   return apiKey;
 }
 
-function buildPrompt(request: ChatRequest): string {
+function buildPrompt(request: ChatRequest, computerUseLine: string | null): string {
   const sections: string[] = [request.message.trim()];
 
   if (request.mode === 'deep_research') {
     sections.unshift('[mode: deep_research]');
+  }
+
+  if (computerUseLine) {
+    sections.unshift(computerUseLine);
   }
 
   if (request.integration_slots && request.integration_slots.length > 0) {
@@ -192,7 +198,11 @@ export async function dispatchChatToRuntime(
     cwd,
   );
 
-  const prompt = buildPrompt(request);
+  const computerUseLine = (await isComputerUseContractEnabled(cwd))
+    ? buildComputerUsePromptInjection(await loadComputerUsePreferences(cwd))
+    : null;
+
+  const prompt = buildPrompt(request, computerUseLine);
   if (prompt.trim().length === 0) {
     throw new RuntimeGatewayError('message is required', 400, 'chat.sdk.dispatch', requestId);
   }
