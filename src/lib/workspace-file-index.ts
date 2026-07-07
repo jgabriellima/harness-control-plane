@@ -115,6 +115,12 @@ export async function listWorkspaceMentionFiles(
     'output',
     collected,
   );
+  await walkDirectoryFiles(
+    join(binding.harnessRoot, 'workflows', 'output'),
+    resolvedWorkspaceRoot,
+    'output',
+    collected,
+  );
   await collectPlaybookArtifactFiles(binding.harnessRoot, resolvedWorkspaceRoot, collected);
 
   return rankFileMentionSuggestions(dedupeMentionFiles(collected), query, MAX_RESULTS);

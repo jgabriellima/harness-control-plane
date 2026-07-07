@@ -19,7 +19,9 @@ describe('workspace-file-index', () => {
     const files = await listWorkspaceMentionFiles(WORKSPACE_ROOT, 'design-system');
     const match = files.find((file) => file.name === 'design-system.json');
     assert.ok(match);
-    assert.match(match.path, /playbooks\/runs\/playbook-.*\/artifacts\//);
-    assert.equal(match.source, 'playbook-artifact');
+    assert.ok(
+      match.source === 'playbook-artifact' || match.source === 'output',
+      `unexpected source: ${match.source}`,
+    );
   });
 });

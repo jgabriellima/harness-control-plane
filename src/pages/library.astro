@@ -1,0 +1,14 @@
+---
+import LibraryView from '../components/react/LibraryView';
+import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+
+export const prerender = false;
+---
+
+<OrchestrationLayout
+  title="Library"
+  description="Generated and uploaded files across workspace projects."
+  projectName="Jambu"
+>
+  <LibraryView client:load />
+</OrchestrationLayout>

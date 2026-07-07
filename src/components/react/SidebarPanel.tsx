@@ -75,6 +75,10 @@ function projectsHref(): string {
   return '/projects';
 }
 
+function libraryHref(): string {
+  return '/library';
+}
+
 function activeConversationFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/conversation\/([^/]+)/);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
@@ -90,7 +94,7 @@ function isRunsSectionActive(pathname: string): boolean {
 }
 
 function isLibraryActive(pathname: string): boolean {
-  return pathname === '/projects' || pathname.startsWith('/project/');
+  return pathname === '/library' || pathname.startsWith('/library/');
 }
 
 function isAppsActive(pathname: string): boolean {
@@ -593,7 +597,7 @@ function CollapsedSidebarRail({
           label="Library"
           testId="sidebar-rail-library"
           active={libraryActive}
-          onClick={() => navigateShell(projectsHref())}
+          onClick={() => navigateShell(libraryHref())}
         >
           <Library className="h-4 w-4" />
         </SidebarIconButton>
@@ -934,7 +938,7 @@ export default function SidebarPanel() {
             label="Library"
             testId="sidebar-library"
             active={libraryActive}
-            onClick={() => navigateShell(projectsHref())}
+            onClick={() => navigateShell(libraryHref())}
             icon={<Library className="h-4 w-4" />}
           />
           <SidebarNavRow
