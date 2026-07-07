@@ -113,7 +113,12 @@ export function useVoiceInput({
 
     setError(null);
 
-    if (phase === 'listening' || phase === 'processing') {
+    if (phase === 'listening') {
+      stop();
+      return;
+    }
+
+    if (phase === 'processing') {
       stop({ abort: true });
       return;
     }

@@ -215,11 +215,14 @@ export function createBrowserSpeechEngine(callbacks: VoiceInputCallbacks): Voice
   };
 }
 
+const MEDIA_RECORDER_TIMESLICE_MS = 250;
+
 export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): VoiceInputEngine {
   let mediaStream: MediaStream | null = null;
   let mediaRecorder: MediaRecorder | null = null;
   let chunks: Blob[] = [];
   let interimBase = '';
+  let discardPendingTranscription = false;
 
   async function cleanup(): Promise<void> {
     mediaRecorder = null;
@@ -243,6 +246,7 @@ export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): Voice
       }
 
       await cleanup();
+      discardPendingTranscription = false;
       interimBase = baseText.trim() ? `${baseText.trim()} ` : '';
       callbacks.onPhaseChange('listening');
 
@@ -267,9 +271,21 @@ export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): Voice
 
       mediaRecorder.onstop = () => {
         void (async () => {
+          if (discardPendingTranscription) {
+            discardPendingTranscription = false;
+            await cleanup();
+            callbacks.onPhaseChange('idle');
+            return;
+          }
+
           callbacks.onPhaseChange('processing');
           try {
             const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+            if (blob.size === 0) {
+              callbacks.onError('No audio captured — hold the mic a moment longer and try again.');
+              callbacks.onPhaseChange('idle');
+              return;
+            }
             const formData = new FormData();
             formData.append('audio', blob, 'voice-input.webm');
 
@@ -298,10 +314,16 @@ export function createMediaRecorderEngine(callbacks: VoiceInputCallbacks): Voice
         })();
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(MEDIA_RECORDER_TIMESLICE_MS);
     },
     stop(options) {
       if (options?.abort) {
+        discardPendingTranscription = true;
+        const activeRecorder = mediaRecorder;
+        if (activeRecorder && activeRecorder.state !== 'inactive') {
+          activeRecorder.stop();
+          return;
+        }
         void cleanup();
         callbacks.onPhaseChange('idle');
         return;
