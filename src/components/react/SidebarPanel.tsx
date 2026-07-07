@@ -16,6 +16,7 @@ import {
 import type { ExecutionSummary } from '../../lib/harness-types';
 
 import BrandLogo from './BrandLogo';
+import ChatSearchModal from './ChatSearchModal';
 import SidebarProfileMenu from './SidebarProfileMenu';
 import {
   invalidateSidebarCache,
@@ -128,19 +129,6 @@ function initialsFromName(name: string): string {
     return parts[0].slice(0, 2).toUpperCase();
   }
   return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-}
-
-function filterConversations(
-  conversations: ConversationItem[],
-  query: string,
-): ConversationItem[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return conversations;
-  }
-  return conversations.filter((conversation) =>
-    formatSessionTitle(conversation).toLowerCase().includes(normalized),
-  );
 }
 
 function usePinnedConversationIds(): Set<string> {
@@ -505,8 +493,7 @@ function CollapsedSidebarRail({
   pinnedConversations,
   conversations,
   activeConversationId,
-  searchQuery,
-  onSearchQueryChange,
+  onOpenSearchModal,
   onNewChat,
   onOpenConversation,
   displayName,
@@ -519,8 +506,7 @@ function CollapsedSidebarRail({
   pinnedConversations: ConversationItem[];
   conversations: ConversationItem[];
   activeConversationId: string | null;
-  searchQuery: string;
-  onSearchQueryChange: (value: string) => void;
+  onOpenSearchModal: () => void;
   onNewChat: () => void;
   onOpenConversation: (conversationId: string) => void;
   displayName: string;
@@ -528,15 +514,9 @@ function CollapsedSidebarRail({
   initials: string;
   harnessSpec: string | null;
 }) {
-  const [searchOpen, setSearchOpen] = useState(false);
   const [pinnedOpen, setPinnedOpen] = useState(false);
-  const filteredConversations = useMemo(
-    () => filterConversations(conversations, searchQuery),
-    [conversations, searchQuery],
-  );
 
   function closeFlyouts(): void {
-    setSearchOpen(false);
     setPinnedOpen(false);
   }
 
@@ -561,56 +541,13 @@ function CollapsedSidebarRail({
           <SquarePen className="h-4 w-4" />
         </SidebarIconButton>
 
-        <SidebarRailFlyout
+        <SidebarIconButton
           label="Search chats"
           testId="sidebar-rail-search"
-          menuTestId="sidebar-rail-search-menu"
-          open={searchOpen}
-          onOpen={() => {
-            closeFlyouts();
-            setSearchOpen(true);
-          }}
-          onClose={() => setSearchOpen(false)}
-          triggerMode="hover"
-          menu={
-            <>
-              <div className="px-3 py-2">
-                <input
-                  type="search"
-                  value={searchQuery}
-                  placeholder="Search chats"
-                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-200"
-                  onChange={(event) => onSearchQueryChange(event.target.value)}
-                  data-testid="sidebar-rail-search-input"
-                />
-              </div>
-              {filteredConversations.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-500">No chats found</p>
-              ) : (
-                filteredConversations.slice(0, 8).map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    type="button"
-                    role="menuitem"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                      conversation.id === activeConversationId
-                        ? 'bg-gray-100 font-medium text-gray-900'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      closeFlyouts();
-                      onOpenConversation(conversation.id);
-                    }}
-                  >
-                    <span className="truncate">{formatSessionTitle(conversation)}</span>
-                  </button>
-                ))
-              )}
-            </>
-          }
+          onClick={onOpenSearchModal}
         >
           <Search className="h-4 w-4" />
-        </SidebarRailFlyout>
+        </SidebarIconButton>
 
         <SidebarRailFlyout
           label="Pinned"
@@ -695,8 +632,7 @@ export default function SidebarPanel() {
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
 
@@ -716,12 +652,23 @@ export default function SidebarPanel() {
     [conversations, pinnedIds],
   );
 
-  const filteredConversations = useMemo(
-    () => filterConversations(conversations, searchQuery),
-    [conversations, searchQuery],
-  );
-
   const visibleProjects = projectsExpanded ? projects : projects.slice(0, PROJECTS_PREVIEW_LIMIT);
+
+  const chatSearchModal = (
+    <ChatSearchModal
+      open={searchModalOpen}
+      onOpenChange={setSearchModalOpen}
+      conversations={conversations}
+      activeConversationId={activeConversationId}
+      onSelectConversation={(conversationId) => {
+        hub.navigateToConversation(conversationId);
+      }}
+      onNewChat={() => {
+        void handleNewChat();
+      }}
+      formatTitle={formatSessionTitle}
+    />
+  );
 
   async function loadSidebarData(projectId?: string, options?: { background?: boolean }): Promise<void> {
     const background = options?.background ?? false;
@@ -918,33 +865,36 @@ export default function SidebarPanel() {
 
   if (!sidebarExpanded) {
     return (
-      <CollapsedSidebarRail
-        runsSectionActive={runsSectionActive}
-        libraryActive={libraryActive}
-        pinnedConversations={pinnedConversations}
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
-        onNewChat={() => {
-          void handleNewChat();
-        }}
-        onOpenConversation={(conversationId) => {
-          hub.navigateToConversation(conversationId);
-        }}
-        displayName={displayName}
-        subtitle={subtitle}
-        initials={initials}
-        harnessSpec={harnessSpec}
-      />
+      <>
+        <CollapsedSidebarRail
+          runsSectionActive={runsSectionActive}
+          libraryActive={libraryActive}
+          pinnedConversations={pinnedConversations}
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          onOpenSearchModal={() => setSearchModalOpen(true)}
+          onNewChat={() => {
+            void handleNewChat();
+          }}
+          onOpenConversation={(conversationId) => {
+            hub.navigateToConversation(conversationId);
+          }}
+          displayName={displayName}
+          subtitle={subtitle}
+          initials={initials}
+          harnessSpec={harnessSpec}
+        />
+        {chatSearchModal}
+      </>
     );
   }
 
   return (
-    <aside
-      className="relative flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 bg-white"
-      data-testid="sidebar-panel"
-    >
+    <>
+      <aside
+        className="relative flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 bg-white"
+        data-testid="sidebar-panel"
+      >
       <div className="flex h-12 items-center justify-between gap-2 px-3">
         <button
           type="button"
@@ -976,8 +926,8 @@ export default function SidebarPanel() {
           <SidebarNavRow
             label="Search chats"
             testId="sidebar-search-toggle"
-            active={searchFocused}
-            onClick={() => setSearchFocused((current) => !current)}
+            active={searchModalOpen}
+            onClick={() => setSearchModalOpen(true)}
             icon={<Search className="h-4 w-4" />}
           />
           <SidebarNavRow
@@ -1064,20 +1014,6 @@ export default function SidebarPanel() {
           </div>
         </div>
 
-        {searchFocused ? (
-          <div className="px-3 pt-2">
-            <input
-              type="search"
-              value={searchQuery}
-              placeholder="Search chats"
-              autoFocus
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-200"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              data-testid="sidebar-search-input"
-            />
-          </div>
-        ) : null}
-
         {pinnedConversations.length > 0 ? (
           <div>
             <SectionLabel>Pinned</SectionLabel>
@@ -1148,7 +1084,7 @@ export default function SidebarPanel() {
             <p className="mb-2 px-5 text-xs text-gray-400">Loading chats…</p>
           ) : null}
           <ul className="space-y-0.5 px-2">
-            {filteredConversations.slice(0, CHATS_PREVIEW_LIMIT).map((conversation) => {
+            {conversations.slice(0, CHATS_PREVIEW_LIMIT).map((conversation) => {
               const isActive = conversation.id === activeConversationId;
               return (
                 <li key={conversation.id}>
@@ -1157,7 +1093,7 @@ export default function SidebarPanel() {
               );
             })}
           </ul>
-          {filteredConversations.length === 0 && !isRefreshing ? (
+          {conversations.length === 0 && !isRefreshing ? (
             <p className="px-5 text-xs text-gray-400">No chats</p>
           ) : null}
         </div>
@@ -1173,6 +1109,8 @@ export default function SidebarPanel() {
           testId="sidebar-operator-settings"
         />
       </div>
-    </aside>
+      </aside>
+      {chatSearchModal}
+    </>
   );
 }
