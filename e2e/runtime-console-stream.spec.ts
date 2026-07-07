@@ -33,7 +33,33 @@ test.describe('runtime console stream QA', () => {
     }
   });
 
-  test('active-runs endpoint reads workspace runs-index', async ({ request }) => {
+  test('file mention menu lists workspace output and upload files', async ({ page, request }) => {
+    const filesResponse = await request.get(`${BASE}/api/workspace/files?q=design-system&project_id=default`);
+    expect(filesResponse.status()).toBe(200);
+    const body = (await filesResponse.json()) as {
+      files: Array<{ name: string; path: string }>;
+    };
+    expect(body.files.some((file) => file.name === 'design-system.json')).toBeTruthy();
+
+    const filesLoaded = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/workspace/files') && response.status() === 200,
+    );
+
+    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+    await expect(page.getByTestId('chat-pane')).toBeVisible({ timeout: 60_000 });
+
+    const textarea = page.getByPlaceholder(/type '\/' for commands, or '@' for workspace files/);
+    await textarea.click();
+    await textarea.fill('@design-syste');
+    await filesLoaded;
+
+    const suggestions = page.getByTestId('file-mention-suggestions');
+    await expect(suggestions).toBeVisible({ timeout: 15_000 });
+    await expect(suggestions.getByText('@design-system.json')).toBeVisible();
+    await expect(suggestions.getByText(/playbooks\/runs\/playbook-/)).toBeVisible();
+  });
+
     const response = await request.get(`${BASE}/api/runtime/active-runs`);
     expect(response.status()).toBe(200);
     const body = (await response.json()) as {

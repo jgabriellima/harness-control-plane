@@ -36,6 +36,12 @@ import {
   hideEmptyStateCommand,
   readHiddenEmptyStateCommands,
 } from '@/lib/empty-state-commands';
+import {
+  parseActiveFileMention,
+  rankFileMentionSuggestions,
+  replaceActiveFileMention,
+  type FileMentionSuggestion,
+} from '@/lib/composer-mention';
 import { isDraftConversationId } from '@/lib/draft-conversation';
 import { collectThreadFilePaths } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
@@ -125,6 +131,7 @@ export default function ChatPane({
   const [deepResearch, setDeepResearch] = useState(false);
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [workspaceMentionFiles, setWorkspaceMentionFiles] = useState<FileMentionSuggestion[]>([]);
   const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [voiceInputConfig, setVoiceInputConfig] = useState<VoiceInputConfig>(
@@ -237,16 +244,62 @@ export default function ChatPane({
     return commands.filter((item) => item.command.startsWith(token));
   }, [commands, input]);
 
-  const isSelectingSlashCommand = slashSuggestions.length > 0;
+  const activeMentionQuery = useMemo(() => parseActiveFileMention(input), [input]);
+
+  const threadMentionFiles = useMemo(
+    () =>
+      threadFilePaths.map((path) => ({
+        path,
+        name: path.split('/').pop() ?? path,
+        source: 'thread' as const,
+      })),
+    [threadFilePaths],
+  );
+
+  const fileMentionSuggestions = useMemo(() => {
+    if (activeMentionQuery === null) {
+      return [];
+    }
+
+    return rankFileMentionSuggestions([...threadMentionFiles, ...workspaceMentionFiles], activeMentionQuery);
+  }, [activeMentionQuery, threadMentionFiles, workspaceMentionFiles]);
+
+  const isSelectingFileMention = fileMentionSuggestions.length > 0;
+  const isSelectingSlashCommand = !isSelectingFileMention && slashSuggestions.length > 0;
 
   useEffect(() => {
     setSelectedSuggestionIndex(0);
-  }, [slashSuggestions.length, input]);
+  }, [fileMentionSuggestions.length, slashSuggestions.length, input]);
+
+  useEffect(() => {
+    if (activeMentionQuery === null) {
+      setWorkspaceMentionFiles([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      q: activeMentionQuery,
+      project_id: projectId,
+    });
+
+    void fetch(`/api/workspace/files?${params.toString()}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { files: FileMentionSuggestion[] };
+        setWorkspaceMentionFiles(payload.files ?? []);
+      })
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [activeMentionQuery, projectId]);
 
   useEffect(() => {
     const activeItem = suggestionRefs.current[selectedSuggestionIndex];
     activeItem?.scrollIntoView({ block: 'nearest' });
-  }, [selectedSuggestionIndex, slashSuggestions.length]);
+  }, [fileMentionSuggestions.length, selectedSuggestionIndex, slashSuggestions.length]);
 
   useEffect(() => {
     if (!conversationId || isDraftConversationId(conversationId)) {
@@ -415,41 +468,75 @@ export default function ChatPane({
     setSelectedSuggestionIndex(0);
   }
 
-  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    if (!isSelectingSlashCommand) {
-      return;
-    }
+  function applyFileMentionSuggestion(file: FileMentionSuggestion): void {
+    setInput(replaceActiveFileMention(input, file.name));
+    setSelectedSuggestionIndex(0);
+  }
 
+  function handleSuggestionKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+    suggestions: Array<{ command?: string; file?: FileMentionSuggestion }>,
+    onApply: (item: { command?: string; file?: FileMentionSuggestion }) => void,
+  ): void {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedSuggestionIndex((current) => (current + 1) % slashSuggestions.length);
+      setSelectedSuggestionIndex((current) => (current + 1) % suggestions.length);
       return;
     }
 
     if (event.key === 'ArrowUp') {
       event.preventDefault();
       setSelectedSuggestionIndex(
-        (current) => (current - 1 + slashSuggestions.length) % slashSuggestions.length,
+        (current) => (current - 1 + suggestions.length) % suggestions.length,
       );
       return;
     }
 
     if (event.key === 'Tab') {
       event.preventDefault();
-      const selected = slashSuggestions[selectedSuggestionIndex];
+      const selected = suggestions[selectedSuggestionIndex];
       if (selected) {
-        applySlashSuggestion(selected.command);
+        onApply(selected);
       }
       return;
     }
 
     if (event.key === 'Enter' && !event.shiftKey) {
-      const selected = slashSuggestions[selectedSuggestionIndex];
+      const selected = suggestions[selectedSuggestionIndex];
       if (selected) {
         event.preventDefault();
-        applySlashSuggestion(selected.command);
+        onApply(selected);
       }
     }
+  }
+
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (isSelectingFileMention) {
+      handleSuggestionKeyDown(
+        event,
+        fileMentionSuggestions.map((file) => ({ file })),
+        (item) => {
+          if (item.file) {
+            applyFileMentionSuggestion(item.file);
+          }
+        },
+      );
+      return;
+    }
+
+    if (!isSelectingSlashCommand) {
+      return;
+    }
+
+    handleSuggestionKeyDown(
+      event,
+      slashSuggestions.map((item) => ({ command: item.command })),
+      (item) => {
+        if (item.command) {
+          applySlashSuggestion(item.command);
+        }
+      },
+    );
   }
 
   async function handleUpload(file: File): Promise<void> {
@@ -602,6 +689,37 @@ export default function ChatPane({
             </div>
           ) : null}
 
+          {fileMentionSuggestions.length > 0 ? (
+            <div
+              className="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-lg"
+              data-testid="file-mention-suggestions"
+              role="listbox"
+              aria-label="Workspace file mentions"
+            >
+              {fileMentionSuggestions.map((item, index) => (
+                <button
+                  key={`${item.path}:${item.source}`}
+                  ref={(element) => {
+                    suggestionRefs.current[index] = element;
+                  }}
+                  type="button"
+                  role="option"
+                  className={`flex w-full flex-col items-start px-4 py-2 text-left ${
+                    index === selectedSuggestionIndex
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'hover:bg-gray-100'
+                  }`}
+                  aria-selected={index === selectedSuggestionIndex}
+                  onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                  onClick={() => applyFileMentionSuggestion(item)}
+                >
+                  <span className="font-mono text-xs font-semibold text-gray-700">@{item.name}</span>
+                  <span className="truncate text-xs text-gray-500">{item.path}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {slashSuggestions.length > 0 ? (
             <div
               className="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-lg"
@@ -736,7 +854,7 @@ export default function ChatPane({
               />
               <PromptInputTextarea
                 className="min-h-[36px] flex-1 px-1 py-2"
-                placeholder="Ask the runtime or type '/' for harness commands..."
+                placeholder="Ask the runtime, type '/' for commands, or '@' for workspace files..."
                 onKeyDown={handleComposerKeyDown}
               />
               {voiceInputConfig.enabled && voiceTranscriptionReady ? (
