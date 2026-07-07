@@ -6,6 +6,7 @@ import type {
   RunPhase,
   RuntimeHubWireEvent,
 } from './runtime-hub-types';
+import { mergeStreamingAssistantText } from './assistant-text';
 import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 import { WELCOME_MESSAGE } from './runtime-hub-types';
@@ -103,7 +104,10 @@ export function applyHubEvent(
         ...state,
         messages: state.messages.map((message) =>
           message.id === assistantMessageId
-            ? { ...message, content: message.content + text }
+            ? {
+                ...message,
+                content: mergeStreamingAssistantText(message.content, text),
+              }
             : message,
         ),
       },
@@ -129,7 +133,7 @@ export function applyHubEvent(
             message.id === thinkingMessageId
               ? {
                   ...message,
-                  content: `${message.content}${text}`,
+                  content: mergeStreamingAssistantText(message.content, text),
                   streaming: true,
                   durationMs: durationMs ?? message.durationMs,
                   recordedAt: message.recordedAt ?? event.timestamp,

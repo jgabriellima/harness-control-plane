@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { joinAssistantTextBlocks } from './assistant-text.ts';
+import { joinAssistantTextBlocks, mergeStreamingAssistantText } from './assistant-text.ts';
 
 describe('joinAssistantTextBlocks', () => {
   it('joins multiple blocks with newlines preserving GFM structure', () => {
@@ -22,12 +22,44 @@ describe('joinAssistantTextBlocks', () => {
     assert.equal(joined.includes('| Col A | Col B |\n|-------|-------|'), true);
   });
 
-  it('trims blocks and drops empty entries', () => {
-    assert.equal(joinAssistantTextBlocks(['  hello  ', '', '   ', 'world']), 'hello\nworld');
+  it('preserves trailing spaces inside blocks for word boundaries', () => {
+    assert.equal(joinAssistantTextBlocks(['template ', 'corporativo']), 'template \ncorporativo');
+    assert.equal(joinAssistantTextBlocks(['a ', 'materialização']), 'a \nmaterialização');
+  });
+
+  it('drops only empty blocks without trimming content', () => {
+    assert.equal(joinAssistantTextBlocks(['  hello  ', '', '   ', 'world']), '  hello  \n   \nworld');
   });
 
   it('returns empty string for no content', () => {
     assert.equal(joinAssistantTextBlocks([]), '');
-    assert.equal(joinAssistantTextBlocks(['', '  ']), '');
+    assert.equal(joinAssistantTextBlocks(['', '  ']), '  ');
+  });
+});
+
+describe('mergeStreamingAssistantText', () => {
+  it('replaces with cumulative snapshots', () => {
+    assert.equal(
+      mergeStreamingAssistantText('template', 'template corporativo'),
+      'template corporativo',
+    );
+  });
+
+  it('appends bare deltas with a word boundary space', () => {
+    assert.equal(mergeStreamingAssistantText('template', 'corporativo'), 'template corporativo');
+    assert.equal(mergeStreamingAssistantText('a', 'materialização'), 'a materialização');
+    assert.equal(mergeStreamingAssistantText('está', 'presa'), 'está presa');
+  });
+
+  it('preserves explicit leading spaces on deltas', () => {
+    assert.equal(mergeStreamingAssistantText('template', ' corporativo'), 'template corporativo');
+  });
+
+  it('merges overlapping token boundaries', () => {
+    assert.equal(mergeStreamingAssistantText('hello wor', 'orld'), 'hello world');
+  });
+
+  it('ignores duplicate trailing chunks', () => {
+    assert.equal(mergeStreamingAssistantText('hello world', 'world'), 'hello world');
   });
 });
