@@ -90,14 +90,14 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
       }
     }
 
-    if (selection.previewUrl) {
-      const previewUrl = selection.previewUrl;
+    if (selection.path) {
+      const artifactPath = selection.path;
       actions.push({
-        id: 'copy-link',
-        label: 'Copy link',
-        testId: 'chat-artifact-action-copy-link',
+        id: 'copy-path',
+        label: 'Copy path',
+        testId: 'chat-artifact-action-copy-path',
         onSelect: () => {
-          void copyTextToClipboard(new URL(previewUrl, window.location.origin).href);
+          void copyTextToClipboard(artifactPath);
         },
       });
     }

@@ -117,14 +117,14 @@ test.describe('Chat artifact split panel', () => {
     expect(body).toContain('fitDeckToViewport');
   });
 
-  test('artifact panel kebab menu exposes copy link and copy content actions', async ({ page }) => {
+  test('artifact panel kebab menu exposes copy path and copy content actions', async ({ page }) => {
     await page.goto(`/?artifact-e2e=1&layout=single&artifact-open=${encodeURIComponent(FIXTURE_PATH)}`);
 
     const panel = page.getByTestId('chat-artifact-panel');
     await expect(panel).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('chat-artifact-actions-menu').click();
-    await expect(page.getByTestId('chat-artifact-action-copy-link')).toBeVisible();
+    await expect(page.getByTestId('chat-artifact-action-copy-path')).toBeVisible();
     await expect(page.getByTestId('chat-artifact-action-copy-content')).toBeVisible();
     await expect(page.getByTestId('chat-artifact-action-download')).toBeVisible();
     await expect(page.getByTestId('chat-artifact-action-open-external')).toBeVisible();
@@ -138,13 +138,13 @@ test.describe('Chat artifact split panel', () => {
     expect(clipboardText).toContain('Chat Artifact E2E Fixture');
 
     await page.getByTestId('chat-artifact-actions-menu').click();
-    await page.getByTestId('chat-artifact-action-copy-link').click();
+    await page.getByTestId('chat-artifact-action-copy-path').click();
     await expect(page.getByTestId('chat-artifact-copy-feedback')).toBeVisible();
 
-    const clipboardLink = await page.evaluate(async () => navigator.clipboard.readText());
-    expect(clipboardLink).toContain('/api/workspace/file?');
-    expect(clipboardLink).toContain('raw=1');
-    expect(clipboardLink).toContain('chat-artifact-target.md');
+    const clipboardPath = await page.evaluate(async () => navigator.clipboard.readText());
+    expect(clipboardPath).toBe(FIXTURE_PATH);
+    expect(clipboardPath).not.toContain('/api/workspace/file');
+    expect(clipboardPath).not.toContain('http://');
   });
 
   test('artifact panel renders PDF preview and download action', async ({ page }) => {
