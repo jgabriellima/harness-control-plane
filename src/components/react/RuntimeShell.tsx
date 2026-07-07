@@ -13,6 +13,7 @@ import { RuntimeBrowserProvider, RuntimeBrowserSplitShell } from './RuntimeBrows
 import SidebarPanel from './SidebarPanel';
 import WorkspaceHeader from './WorkspaceHeader';
 import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
+import DesktopCloseGuard from './DesktopCloseGuard';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
 import { conversationIdFromPath, isChatRoute, useShellPathname } from '@/lib/shell-navigation';
 
@@ -113,6 +114,7 @@ function RuntimeShellBody({
   seedArtifactE2e = false,
   children,
 }: RuntimeShellProps) {
+  const hub = useRuntimeHub();
   const pathname = useShellPathname(initialPathname);
   const chatRoute = isChatRoute(pathname);
 
@@ -131,6 +133,7 @@ function RuntimeShellBody({
 
   return (
     <>
+      <DesktopCloseGuard activeRunCount={hub.activeRunCount} />
       <ResizableOrchestrationShell
         sidebar={<SidebarPanel />}
         main={

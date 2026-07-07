@@ -8,6 +8,7 @@ import {
   isConnectUnauthenticated,
 } from './runtime-connect-errors';
 import { installRuntimeProcessGuard } from './runtime-process-guard';
+import { appendRunInterrupted, type RunInterruptReason } from './runtime-run-interrupt';
 import { appendRunTerminal, readAggregatedActiveRuns } from './runtime-run-registry';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { hasRuntimeSdkCredentials, localGetRunOptions } from './runtime-sdk-local';
@@ -139,6 +140,27 @@ function broadcastEvent(event: RuntimeHubWireEvent | RuntimeStreamWireEvent): vo
   }
 }
 
+export function broadcastRunInterrupted(input: {
+  runId: string;
+  agentId: string;
+  conversationId: string;
+  reason: RunInterruptReason | string;
+  message?: string;
+}): void {
+  broadcastEvent({
+    type: 'run.interrupted',
+    run_id: input.runId,
+    agent_id: input.agentId,
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      reason: input.reason,
+      message: input.message ?? `Run interrupted (${input.reason})`,
+      resumable: true,
+    },
+  });
+}
+
 interface CompleteRunFanoutOptions {
   workspaceRoot?: string;
   notifyClient?: boolean;
@@ -199,12 +221,20 @@ async function completeRunFanout(
       // Registry append is best-effort on terminal path.
     }
   } else {
+    broadcastRunInterrupted({
+      runId,
+      agentId,
+      conversationId,
+      reason: 'stale_reattach',
+      message: 'Background run reattach abandoned',
+    });
+
     try {
-      await appendRunTerminal({
+      await appendRunInterrupted({
         runId,
-        event: 'run.failed',
-        status: 'stale',
+        reason: 'stale_reattach',
         message: 'Background run reattach abandoned',
+        resumable: true,
         workspaceRoot: resolvedWorkspaceRoot,
       });
     } catch {
@@ -231,11 +261,29 @@ async function abandonRunFanout(
     reason,
   });
 
-  await completeRunFanout(runId, agentId, conversationId, 'failed', {
-    workspaceRoot: cwd,
-    notifyClient: false,
-    errorMessage: reason,
+  broadcastRunInterrupted({
+    runId,
+    agentId,
+    conversationId,
+    reason: 'stale_reattach',
+    message: reason,
   });
+
+  try {
+    await appendRunInterrupted({
+      runId,
+      reason: 'stale_reattach',
+      message: reason,
+      resumable: true,
+      workspaceRoot: cwd,
+    });
+  } catch {
+    // Registry append is best-effort.
+  }
+
+  releaseRuntimeRun(runId);
+  releaseAgentSlot();
+  fanoutStarted.delete(runId);
 }
 
 export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; message?: string }> {

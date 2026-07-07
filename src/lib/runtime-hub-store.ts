@@ -226,6 +226,17 @@ export function applyHubEvent(
     };
   }
 
+  if (event.type === 'run.interrupted') {
+    const message =
+      typeof event.payload.message === 'string'
+        ? event.payload.message
+        : 'Run was interrupted before completion';
+    return {
+      ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'interrupted'),
+      error: message,
+    };
+  }
+
   if (event.type === 'run_complete') {
     return finalizeTurn(state, assistantMessageId, thinkingMessageId, 'completed');
   }
@@ -273,7 +284,7 @@ export function finalizeTurn(
     toolActivity: [],
     runActivity: 'idle',
     activeRunId: null,
-    runPhase: phase === 'completed' ? 'completed' : phase,
+    runPhase: phase,
   };
 }
 

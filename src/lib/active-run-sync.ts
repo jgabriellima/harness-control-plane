@@ -26,17 +26,52 @@ export async function fetchActiveRunsIndex(): Promise<ActiveRunRegistryEntry[]> 
   return payload.active ?? [];
 }
 
-export async function attachActiveRunStream(runId: string): Promise<boolean> {
+export async function attachActiveRunStream(runId: string): Promise<'attached' | 'stale' | 'failed'> {
   const response = await fetch(`/api/runtime/runs/${encodeURIComponent(runId)}/attach`, {
     method: 'POST',
-  });
-  return response.ok;
+  }).catch(() => null);
+
+  if (!response) {
+    return 'failed';
+  }
+
+  if (response.status === 410) {
+    return 'stale';
+  }
+
+  return response.ok ? 'attached' : 'failed';
 }
 
-export async function purgeStaleActiveRun(runId: string): Promise<void> {
-  await fetch(`/api/runtime/runs/${encodeURIComponent(runId)}/reconcile`, {
+export async function purgeStaleActiveRun(runId: string): Promise<boolean> {
+  const response = await fetch(`/api/runtime/runs/${encodeURIComponent(runId)}/reconcile`, {
     method: 'POST',
-  }).catch(() => undefined);
+  }).catch(() => null);
+
+  return response?.ok ?? false;
+}
+
+export function applyInterruptedConversationState(
+  state: ConversationRuntimeState,
+  message?: string,
+): ConversationRuntimeState {
+  const runId = state.activeRunId ?? 'unknown';
+  const tracking = resolveTurnTrackingForActiveRun(state, runId);
+
+  const finalized = {
+    ...state,
+    messages: state.messages.map((entry) =>
+      entry.id === tracking.assistantMessageId || entry.id === tracking.thinkingMessageId
+        ? { ...entry, streaming: false }
+        : entry,
+    ),
+    toolActivity: [],
+    runActivity: 'idle' as const,
+    activeRunId: null,
+    runPhase: 'interrupted' as const,
+    error: message ?? state.error,
+  };
+
+  return finalized;
 }
 
 export function resolveTurnTrackingForActiveRun(

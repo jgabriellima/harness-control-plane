@@ -11,7 +11,7 @@ export interface ChatMessage {
   toolOutput?: string;
 }
 
-export type RunPhase = 'idle' | 'streaming' | 'completed' | 'failed';
+export type RunPhase = 'idle' | 'streaming' | 'completed' | 'failed' | 'interrupted';
 
 export type RunActivityPhase = 'idle' | 'dispatching' | 'thinking' | 'tool' | 'responding';
 

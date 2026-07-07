@@ -20,6 +20,7 @@ import {
 import {
   applyActiveRunToConversationState,
   attachActiveRunStream,
+  applyInterruptedConversationState,
   fetchActiveRunsIndex,
   findActiveRunForConversation,
   purgeStaleActiveRun,
@@ -278,7 +279,12 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           tracking.thinkingMessageId,
         );
 
-        if (event.type === 'run_complete' || event.type === 'error' || event.type === 'run.aborted') {
+        if (
+          event.type === 'run_complete' ||
+          event.type === 'error' ||
+          event.type === 'run.aborted' ||
+          event.type === 'run.interrupted'
+        ) {
           terminalEvent = true;
         }
 
@@ -288,10 +294,15 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       if (terminalEvent) {
         turnTrackingRef.current.delete(conversationId);
         setTimeout(() => {
-          updateConversation(conversationId, (state) => ({
-            ...state,
-            runPhase: state.runPhase === 'failed' ? 'failed' : 'idle',
-          }));
+          updateConversation(conversationId, (state) => {
+            if (state.runPhase === 'interrupted' || state.runPhase === 'failed') {
+              return state;
+            }
+            return {
+              ...state,
+              runPhase: 'idle',
+            };
+          });
         }, 0);
       }
     },
@@ -342,9 +353,22 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         return true;
       }
 
-      const attached = await attachActiveRunStream(entry.runId);
-      if (!attached) {
+      const attachResult = await attachActiveRunStream(entry.runId);
+      if (attachResult === 'stale') {
+        updateConversation(entry.conversationId, (state) =>
+          applyInterruptedConversationState(
+            state,
+            'Run was interrupted — local runtime session is no longer available',
+          ),
+        );
+        return false;
+      }
+
+      if (attachResult === 'failed') {
         await purgeStaleActiveRun(entry.runId);
+        updateConversation(entry.conversationId, (state) =>
+          applyInterruptedConversationState(state, 'Could not reattach to active run'),
+        );
         return false;
       }
 
@@ -358,6 +382,39 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     },
     [updateConversation],
   );
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void (async () => {
+        const activeRuns = await fetchActiveRunsIndex();
+        const activeRunIds = new Set(activeRuns.map((entry) => entry.runId));
+        const activeConversationIds = new Set(activeRuns.map((entry) => entry.conversationId));
+
+        for (const [conversationId, state] of conversationsRef.current.entries()) {
+          if (state.runPhase !== 'streaming') {
+            continue;
+          }
+
+          const runTracked =
+            (state.activeRunId && activeRunIds.has(state.activeRunId)) ||
+            activeConversationIds.has(conversationId);
+
+          if (!runTracked) {
+            updateConversation(conversationId, (current) =>
+              applyInterruptedConversationState(
+                current,
+                'Run is no longer active in the runtime registry',
+              ),
+            );
+          }
+        }
+      })().catch(() => undefined);
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [updateConversation]);
 
   useEffect(() => {
     void (async () => {

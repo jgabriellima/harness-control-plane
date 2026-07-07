@@ -5,16 +5,16 @@ export interface ApiErrorBody {
   detail?: string;
 }
 
-export function jsonOk(body: unknown): Response {
+export function jsonOk(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
 export function jsonError(
   message: string,
-  status: 400 | 404 | 500 | 502 | 503 | 504,
+  status: 400 | 404 | 409 | 410 | 500 | 502 | 503 | 504,
   extras?: Omit<ApiErrorBody, 'error'>,
 ): Response {
   const body: ApiErrorBody = {

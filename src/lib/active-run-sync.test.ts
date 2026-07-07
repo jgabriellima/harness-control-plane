@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   applyActiveRunToConversationState,
+  applyInterruptedConversationState,
   findActiveRunForConversation,
   resolveTurnTrackingForActiveRun,
   type ActiveRunRegistryEntry,
@@ -33,12 +34,13 @@ describe('active-run-sync', () => {
     assert.ok(next.messages.some((message) => message.role === 'assistant' && message.streaming));
   });
 
-  it('resolveTurnTrackingForActiveRun reuses streaming assistant when present', () => {
-    const base = createConversationState('conv-test-1');
-    const withAssistant = applyActiveRunToConversationState(base, entry);
-    const tracking = resolveTurnTrackingForActiveRun(withAssistant, entry.runId);
+  it('applyInterruptedConversationState clears streaming and marks interrupted', () => {
+    const base = applyActiveRunToConversationState(createConversationState('conv-test-1'), entry);
+    const next = applyInterruptedConversationState(base, 'Run interrupted');
 
-    assert.ok(tracking.assistantMessageId.length > 0);
-    assert.ok(tracking.thinkingMessageId.length > 0);
+    assert.equal(next.runPhase, 'interrupted');
+    assert.equal(next.activeRunId, null);
+    assert.equal(next.error, 'Run interrupted');
+    assert.ok(next.messages.every((message) => !message.streaming));
   });
 });

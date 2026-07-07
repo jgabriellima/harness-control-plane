@@ -108,10 +108,11 @@ export async function appendRunStarted(input: {
 
 export async function appendRunTerminal(input: {
   runId: string;
-  event: 'run.completed' | 'run.failed' | 'run.aborted';
+  event: 'run.completed' | 'run.failed' | 'run.aborted' | 'run.interrupted';
   status?: string;
   message?: string;
   reason?: string;
+  resumable?: boolean;
   workspaceRoot?: string;
 }): Promise<void> {
   const paths = await runRegistryPaths(input.workspaceRoot);
@@ -133,11 +134,35 @@ export async function appendRunTerminal(input: {
   if (input.reason) {
     args.push('--reason', input.reason);
   }
+  if (input.resumable !== undefined) {
+    args.push('--resumable', input.resumable ? 'true' : 'false');
+  }
 
   await execFileAsync('python3', args, {
     cwd: paths.workspaceRoot,
     maxBuffer: 1024 * 1024,
   });
+}
+
+export async function interruptAllActiveRuns(reason: string): Promise<number> {
+  const index = await readAggregatedActiveRuns();
+  let count = 0;
+
+  for (const entry of index.active) {
+    const located = await findActiveRunEntry(entry.runId);
+    await appendRunTerminal({
+      runId: entry.runId,
+      event: 'run.interrupted',
+      status: 'interrupted',
+      reason,
+      message: `Run interrupted (${reason})`,
+      resumable: true,
+      workspaceRoot: located?.workspaceRoot,
+    });
+    count += 1;
+  }
+
+  return count;
 }
 
 /** Union of active runs across all provisioned workspace directories. */
