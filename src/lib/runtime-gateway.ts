@@ -1,4 +1,5 @@
 import type { ChatDispatchResponse, ChatRequest } from './harness-types';
+import { sendAgentPromptWithRelease } from './runtime-agent-run-release';
 import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from './runtime-logger';
@@ -209,7 +210,15 @@ export async function dispatchChatToRuntime(
     await agent[Symbol.asyncDispose]();
   });
 
-  const run = await withDispatchTimeout(agent.send(prompt), timeoutMs, requestId);
+  const run = await sendAgentPromptWithRelease({
+    agent,
+    prompt,
+    conversationId: conversationKey,
+    workspaceRoot: cwd,
+    requestId,
+    timeoutMs,
+    withTimeout: withDispatchTimeout,
+  });
   const runId = run.id;
   const agentId = agent.agentId;
   const durationMs = Date.now() - startedAt;
@@ -284,6 +293,15 @@ export function mapDispatchError(
 
   if (lower.includes('timed out') || lower.includes('timeout')) {
     return new RuntimeGatewayError(message, 504, phase, requestId);
+  }
+
+  if (lower.includes('already has active run')) {
+    return new RuntimeGatewayError(
+      'O runtime ainda tinha uma execução ativa para este agente. Tente enviar novamente — runs obsoletas são liberadas automaticamente.',
+      409,
+      phase,
+      requestId,
+    );
   }
 
   return new RuntimeGatewayError(message, 500, phase, requestId);
