@@ -1,9 +1,22 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  Calendar,
+  Code2,
+  Folder,
+  LayoutGrid,
+  Library,
+  MoreHorizontal,
+  PanelLeftClose,
+  Pin,
+  Search,
+  SquarePen,
+} from 'lucide-react';
 
 import type { ExecutionSummary } from '../../lib/harness-types';
 
 import BrandLogo from './BrandLogo';
+import SidebarProfileMenu from './SidebarProfileMenu';
 import {
   invalidateSidebarCache,
   readSidebarCache,
@@ -15,6 +28,7 @@ import { navigateShell, useShellPathname } from '@/lib/shell-navigation';
 import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
+import { readPinnedConversationIds } from '@/lib/pinned-conversations';
 
 interface ProjectItem {
   id: string;
@@ -40,11 +54,15 @@ interface ConversationsResponse {
   conversations: ConversationItem[];
 }
 
+const EXECUTIONS_CACHE_KEY = 'executions-list';
+const SIDEBAR_FLYOUT_WIDTH_PX = 224;
+const SIDEBAR_FLYOUT_GAP_PX = 8;
+const PROJECTS_PREVIEW_LIMIT = 5;
+const CHATS_PREVIEW_LIMIT = 24;
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-      {children}
-    </p>
+    <p className="mb-1 px-3 pt-3 text-[11px] font-medium text-gray-400">{children}</p>
   );
 }
 
@@ -70,17 +88,78 @@ function isRunsSectionActive(pathname: string): boolean {
   return pathname === '/executions' || pathname.startsWith('/execution/');
 }
 
-function settingsHref(): string {
-  return '/settings';
+function isLibraryActive(pathname: string): boolean {
+  return pathname === '/projects' || pathname.startsWith('/project/');
 }
 
-function isSettingsActive(pathname: string): boolean {
+function isAppsActive(pathname: string): boolean {
   return pathname === '/settings' || pathname.startsWith('/settings/');
+}
+
+function isCodexActive(pathname: string): boolean {
+  return pathname === '/dashboard' || pathname.startsWith('/dashboard/');
+}
+
+function settingsHref(): string {
+  return '/settings';
 }
 
 function toggleSidebarExpanded(expanded: boolean): void {
   sidebarLayoutStore.setExpanded(expanded);
   void sidebarLayoutStore.persistExpanded(expanded).catch(() => undefined);
+}
+
+function formatSessionTitle(conversation: ConversationItem): string {
+  if (conversation.title !== 'New chat') {
+    return conversation.title;
+  }
+  if (conversation.agentId) {
+    return `Session ${conversation.agentId.slice(0, 8)}`;
+  }
+  return conversation.title;
+}
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return 'JM';
+  }
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+}
+
+function filterConversations(
+  conversations: ConversationItem[],
+  query: string,
+): ConversationItem[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return conversations;
+  }
+  return conversations.filter((conversation) =>
+    formatSessionTitle(conversation).toLowerCase().includes(normalized),
+  );
+}
+
+function usePinnedConversationIds(): Set<string> {
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => readPinnedConversationIds());
+
+  useEffect(() => {
+    function refresh(): void {
+      setPinnedIds(readPinnedConversationIds());
+    }
+
+    window.addEventListener('runtime:pinned-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('runtime:pinned-changed', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
+
+  return pinnedIds;
 }
 
 function SidebarToggleButton({
@@ -99,20 +178,10 @@ function SidebarToggleButton({
       title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
       onClick={() => toggleSidebarExpanded(!expanded)}
     >
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        {expanded ? (
-          <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
-        ) : (
-          <path d="M13 17l5-5-5-5M6 17l5-5-5-5" />
-        )}
-      </svg>
+      <PanelLeftClose className={`h-4 w-4 ${expanded ? '' : 'rotate-180'}`} />
     </button>
   );
 }
-
-const EXECUTIONS_CACHE_KEY = 'executions-list';
-const SIDEBAR_FLYOUT_WIDTH_PX = 224;
-const SIDEBAR_FLYOUT_GAP_PX = 8;
 
 function computeSidebarFlyoutPosition(
   triggerRect: DOMRect,
@@ -178,6 +247,7 @@ function SidebarRailFlyout({
   open,
   onOpen,
   onClose,
+  triggerMode,
   menu,
   children,
 }: {
@@ -188,12 +258,14 @@ function SidebarRailFlyout({
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  triggerMode: 'click' | 'hover';
   menu: React.ReactNode;
   children: React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
 
   useDismissOnOutside(open, onClose, containerRef, menuRef);
@@ -237,6 +309,18 @@ function SidebarRailFlyout({
         )
       : null);
 
+  function clearHoverTimer(): void {
+    if (hoverCloseTimerRef.current) {
+      clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+  }
+
+  function scheduleHoverClose(): void {
+    clearHoverTimer();
+    hoverCloseTimerRef.current = setTimeout(() => onClose(), 120);
+  }
+
   const flyoutMenu =
     open && resolvedPosition && typeof document !== 'undefined'
       ? createPortal(
@@ -250,8 +334,13 @@ function SidebarRailFlyout({
               top: resolvedPosition.top,
               zIndex: 100,
             }}
-            className="max-h-64 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+            className="max-h-72 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+            onMouseEnter={triggerMode === 'hover' ? clearHoverTimer : undefined}
+            onMouseLeave={triggerMode === 'hover' ? scheduleHoverClose : undefined}
           >
+            <p className="border-b border-gray-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              {label}
+            </p>
             {menu}
           </div>,
           document.body,
@@ -259,13 +348,28 @@ function SidebarRailFlyout({
       : null;
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div
+      className="relative"
+      ref={containerRef}
+      onMouseEnter={
+        triggerMode === 'hover'
+          ? () => {
+              clearHoverTimer();
+              onOpen();
+            }
+          : undefined
+      }
+      onMouseLeave={triggerMode === 'hover' ? scheduleHoverClose : undefined}
+    >
       <SidebarIconButton
         ref={triggerRef}
         label={label}
         active={active || open}
         testId={testId}
         onClick={() => {
+          if (triggerMode === 'hover') {
+            return;
+          }
           if (open) {
             onClose();
             return;
@@ -278,10 +382,6 @@ function SidebarRailFlyout({
       {flyoutMenu}
     </div>
   );
-}
-
-function runsHref(): string {
-  return '/executions';
 }
 
 const SidebarIconButton = React.forwardRef<
@@ -303,7 +403,7 @@ const SidebarIconButton = React.forwardRef<
       data-testid={testId}
       className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
         active
-          ? 'bg-gray-100 text-gray-700'
+          ? 'bg-gray-100 text-gray-800'
           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
       }`}
       onClick={onClick}
@@ -313,251 +413,34 @@ const SidebarIconButton = React.forwardRef<
   );
 });
 
-function CollapsedSidebarRail({
-  runsSectionActive,
-  settingsActive,
-  projects,
-  executions,
-  conversations,
-  activeProjectId,
-  activeProjectName,
-  activeConversationId,
-  onNewChat,
-  onActivateProject,
-  onOpenConversation,
+function SidebarNavRow({
+  label,
+  active,
+  testId,
+  onClick,
+  icon,
 }: {
-  runsSectionActive: boolean;
-  settingsActive: boolean;
-  projects: ProjectItem[];
-  executions: ExecutionSummary[];
-  conversations: ConversationItem[];
-  activeProjectId: string | null;
-  activeProjectName: string | null;
-  activeConversationId: string | null;
-  onNewChat: () => void;
-  onActivateProject: (projectId: string) => void;
-  onOpenConversation: (conversationId: string) => void;
+  label: string;
+  active?: boolean;
+  testId?: string;
+  onClick: () => void;
+  icon: React.ReactNode;
 }) {
-  const [projectsOpen, setProjectsOpen] = useState(false);
-  const [chatsOpen, setChatsOpen] = useState(false);
-  const [runsOpen, setRunsOpen] = useState(false);
-
-  function closeFlyouts(): void {
-    setProjectsOpen(false);
-    setChatsOpen(false);
-    setRunsOpen(false);
-  }
-
   return (
-    <aside
-      className="relative flex h-full min-h-0 w-full flex-col items-center overflow-x-visible overflow-y-auto border-r border-gray-200 bg-white py-3"
-      data-testid="sidebar-panel-collapsed"
+    <button
+      type="button"
+      data-testid={testId}
+      className={`mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+        active
+          ? 'bg-gray-100 font-medium text-gray-900'
+          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+      }`}
+      onClick={onClick}
     >
-      <div className="mb-4 flex w-full items-center justify-between px-2">
-        <BrandLogo variant="icon" className="shrink-0" />
-        <SidebarToggleButton expanded={false} testId="sidebar-rail-expand" />
-      </div>
-
-      <div className="flex flex-1 flex-col items-center gap-2">
-        <SidebarIconButton label="New chat" testId="sidebar-rail-new-chat" onClick={onNewChat}>
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </SidebarIconButton>
-
-        <SidebarRailFlyout
-          label={activeProjectName ? `Project: ${activeProjectName}` : 'Projects'}
-          testId="sidebar-rail-projects"
-          menuTestId="sidebar-rail-projects-menu"
-          active={Boolean(activeProjectId)}
-          open={projectsOpen}
-          onOpen={() => {
-            closeFlyouts();
-            setProjectsOpen(true);
-          }}
-          onClose={() => setProjectsOpen(false)}
-          menu={
-            <>
-              {activeProjectName ? (
-                <p className="border-b border-gray-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Active · {activeProjectName}
-                </p>
-              ) : null}
-              {projects.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-500">No projects</p>
-              ) : (
-                projects.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    role="menuitem"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                      project.id === activeProjectId
-                        ? 'bg-gray-100 font-medium text-gray-900'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      closeFlyouts();
-                      onActivateProject(project.id);
-                    }}
-                  >
-                    <span className="truncate">{project.name}</span>
-                  </button>
-                ))
-              )}
-              <a
-                href={projectsHref()}
-                role="menuitem"
-                className="block border-t border-gray-100 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                onClick={closeFlyouts}
-              >
-                Manage projects
-              </a>
-            </>
-          }
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 7h18M3 12h18M3 17h18" />
-          </svg>
-        </SidebarRailFlyout>
-
-        <SidebarRailFlyout
-          label="Chats"
-          testId="sidebar-rail-chats"
-          menuTestId="sidebar-rail-chats-menu"
-          active={Boolean(activeConversationId)}
-          open={chatsOpen}
-          onOpen={() => {
-            closeFlyouts();
-            setChatsOpen(true);
-          }}
-          onClose={() => setChatsOpen(false)}
-          menu={
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-gray-50"
-                onClick={() => {
-                  closeFlyouts();
-                  onNewChat();
-                }}
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                New chat
-              </button>
-              {conversations.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-500">No chats</p>
-              ) : (
-                conversations.slice(0, 12).map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    type="button"
-                    role="menuitem"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                      conversation.id === activeConversationId
-                        ? 'bg-gray-100 font-medium text-gray-900'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      closeFlyouts();
-                      onOpenConversation(conversation.id);
-                    }}
-                  >
-                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </svg>
-                    <span className="truncate">{formatSessionTitle(conversation)}</span>
-                  </button>
-                ))
-              )}
-            </>
-          }
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </SidebarRailFlyout>
-
-        <SidebarRailFlyout
-          label="Workflow runs"
-          testId="sidebar-rail-runs"
-          menuTestId="sidebar-rail-runs-menu"
-          active={runsSectionActive}
-          open={runsOpen}
-          onOpen={() => {
-            closeFlyouts();
-            setRunsOpen(true);
-          }}
-          onClose={() => setRunsOpen(false)}
-          menu={
-            <>
-              {executions.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-500">No workflow runs</p>
-              ) : (
-                executions.slice(0, 8).map((execution) => (
-                  <button
-                    key={execution.id}
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full flex-col px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                      closeFlyouts();
-                      navigateShell(`/execution/${encodeURIComponent(execution.id)}`);
-                    }}
-                  >
-                    <span className="truncate font-medium">{execution.intent || execution.workflowId}</span>
-                    <span className="truncate text-[10px] text-gray-400">{execution.status}</span>
-                  </button>
-                ))
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full border-t border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-50"
-                onClick={() => {
-                  closeFlyouts();
-                  navigateShell('/executions');
-                }}
-              >
-                View all runs
-              </button>
-            </>
-          }
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-          </svg>
-        </SidebarRailFlyout>
-      </div>
-
-      <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-200 pt-3">
-        <SidebarIconButton
-          label="Harness settings"
-          active={settingsActive}
-          testId="sidebar-rail-settings"
-          onClick={() => navigateShell(settingsHref())}
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-        </SidebarIconButton>
-      </div>
-    </aside>
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-500">{icon}</span>
+      <span className="truncate">{label}</span>
+    </button>
   );
-}
-
-function formatSessionTitle(conversation: ConversationItem): string {
-  if (conversation.title !== 'New chat') {
-    return conversation.title;
-  }
-  if (conversation.agentId) {
-    return `Session ${conversation.agentId.slice(0, 8)}`;
-  }
-  return conversation.title;
 }
 
 function ConversationSidebarLink({
@@ -595,25 +478,202 @@ function ConversationSidebarLink({
     <a
       href={conversationHref(conversation.id)}
       onClick={handleClick}
-      className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+      className={`block w-full truncate rounded-lg px-3 py-1.5 text-sm transition-colors ${
         isActive
-          ? 'bg-gray-100 font-medium text-gray-700'
+          ? 'bg-gray-100 font-medium text-gray-800'
           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
       }`}
       aria-current={isActive ? 'page' : undefined}
     >
-      <svg className="h-4 w-4 shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-      <span className="truncate">{formatSessionTitle(conversation)}</span>
-      {isStreaming ? (
-        <span
-          className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-gray-400"
-          aria-label="Streaming"
-          data-testid={`sidebar-streaming-${conversation.id}`}
-        />
-      ) : null}
+      <span className="flex items-center gap-2">
+        <span className="truncate">{formatSessionTitle(conversation)}</span>
+        {isStreaming ? (
+          <span
+            className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-gray-400"
+            aria-label="Streaming"
+            data-testid={`sidebar-streaming-${conversation.id}`}
+          />
+        ) : null}
+      </span>
     </a>
+  );
+}
+
+function CollapsedSidebarRail({
+  runsSectionActive,
+  libraryActive,
+  pinnedConversations,
+  conversations,
+  activeConversationId,
+  searchQuery,
+  onSearchQueryChange,
+  onNewChat,
+  onOpenConversation,
+  displayName,
+  subtitle,
+  initials,
+  harnessSpec,
+}: {
+  runsSectionActive: boolean;
+  libraryActive: boolean;
+  pinnedConversations: ConversationItem[];
+  conversations: ConversationItem[];
+  activeConversationId: string | null;
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
+  onNewChat: () => void;
+  onOpenConversation: (conversationId: string) => void;
+  displayName: string;
+  subtitle: string;
+  initials: string;
+  harnessSpec: string | null;
+}) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const filteredConversations = useMemo(
+    () => filterConversations(conversations, searchQuery),
+    [conversations, searchQuery],
+  );
+
+  function closeFlyouts(): void {
+    setSearchOpen(false);
+    setPinnedOpen(false);
+  }
+
+  return (
+    <aside
+      className="relative flex h-full min-h-0 w-full flex-col items-center overflow-x-visible overflow-y-auto border-r border-gray-200 bg-white py-3"
+      data-testid="sidebar-panel-collapsed"
+    >
+      <div className="mb-4 flex w-full items-center justify-center px-2">
+        <button
+          type="button"
+          className="rounded-lg p-1 hover:bg-gray-50"
+          aria-label="Expand sidebar"
+          onClick={() => toggleSidebarExpanded(true)}
+        >
+          <BrandLogo variant="icon" className="shrink-0" />
+        </button>
+      </div>
+
+      <div className="flex flex-1 flex-col items-center gap-1.5">
+        <SidebarIconButton label="New chat" testId="sidebar-rail-new-chat" onClick={onNewChat}>
+          <SquarePen className="h-4 w-4" />
+        </SidebarIconButton>
+
+        <SidebarRailFlyout
+          label="Search chats"
+          testId="sidebar-rail-search"
+          menuTestId="sidebar-rail-search-menu"
+          open={searchOpen}
+          onOpen={() => {
+            closeFlyouts();
+            setSearchOpen(true);
+          }}
+          onClose={() => setSearchOpen(false)}
+          triggerMode="hover"
+          menu={
+            <>
+              <div className="px-3 py-2">
+                <input
+                  type="search"
+                  value={searchQuery}
+                  placeholder="Search chats"
+                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-200"
+                  onChange={(event) => onSearchQueryChange(event.target.value)}
+                  data-testid="sidebar-rail-search-input"
+                />
+              </div>
+              {filteredConversations.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No chats found</p>
+              ) : (
+                filteredConversations.slice(0, 8).map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    role="menuitem"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                      conversation.id === activeConversationId
+                        ? 'bg-gray-100 font-medium text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      closeFlyouts();
+                      onOpenConversation(conversation.id);
+                    }}
+                  >
+                    <span className="truncate">{formatSessionTitle(conversation)}</span>
+                  </button>
+                ))
+              )}
+            </>
+          }
+        >
+          <Search className="h-4 w-4" />
+        </SidebarRailFlyout>
+
+        <SidebarRailFlyout
+          label="Pinned"
+          testId="sidebar-rail-pinned"
+          menuTestId="sidebar-rail-pinned-menu"
+          active={pinnedConversations.some((entry) => entry.id === activeConversationId)}
+          open={pinnedOpen}
+          onOpen={() => {
+            closeFlyouts();
+            setPinnedOpen(true);
+          }}
+          onClose={() => setPinnedOpen(false)}
+          triggerMode="hover"
+          menu={
+            pinnedConversations.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-gray-500">No pinned chats</p>
+            ) : (
+              pinnedConversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  role="menuitem"
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                    conversation.id === activeConversationId
+                      ? 'bg-gray-100 font-medium text-gray-900'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                  onClick={() => {
+                    closeFlyouts();
+                    onOpenConversation(conversation.id);
+                  }}
+                >
+                  <span className="truncate">{formatSessionTitle(conversation)}</span>
+                </button>
+              ))
+            )
+          }
+        >
+          <Pin className="h-4 w-4" />
+        </SidebarRailFlyout>
+
+        <SidebarIconButton
+          label="Library"
+          testId="sidebar-rail-library"
+          active={libraryActive}
+          onClick={() => navigateShell(projectsHref())}
+        >
+          <Library className="h-4 w-4" />
+        </SidebarIconButton>
+      </div>
+
+      <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-200 px-2 pt-3">
+        <SidebarProfileMenu
+          displayName={displayName}
+          subtitle={subtitle}
+          initials={initials}
+          harnessSpec={harnessSpec}
+          expanded={false}
+          testId="sidebar-rail-profile"
+        />
+        <SidebarToggleButton expanded={false} testId="sidebar-rail-expand" />
+      </div>
+    </aside>
   );
 }
 
@@ -621,6 +681,7 @@ export default function SidebarPanel() {
   const pathname = useShellPathname();
   const hub = useRuntimeHub();
   const sidebarExpanded = useSidebarExpanded();
+  const pinnedIds = usePinnedConversationIds();
   const [harnessSpec, setHarnessSpec] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectItem[]>(() => readStaleSidebarCache<ProjectItem[]>('projects') ?? []);
   const [conversations, setConversations] = useState<ConversationItem[]>(
@@ -634,10 +695,33 @@ export default function SidebarPanel() {
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
 
   const activeExecutionId = activeExecutionFromPath(pathname);
   const runsSectionActive = isRunsSectionActive(pathname);
-  const settingsActive = isSettingsActive(pathname);
+  const libraryActive = isLibraryActive(pathname);
+  const appsActive = isAppsActive(pathname);
+  const codexActive = isCodexActive(pathname);
+
+  const activeProject = projects.find((project) => project.active) ?? projects[0];
+  const displayName = activeProject?.name ?? 'Operator';
+  const subtitle = 'Jambu Runtime';
+  const initials = initialsFromName(displayName);
+
+  const pinnedConversations = useMemo(
+    () => conversations.filter((conversation) => pinnedIds.has(conversation.id)),
+    [conversations, pinnedIds],
+  );
+
+  const filteredConversations = useMemo(
+    () => filterConversations(conversations, searchQuery),
+    [conversations, searchQuery],
+  );
+
+  const visibleProjects = projectsExpanded ? projects : projects.slice(0, PROJECTS_PREVIEW_LIMIT);
 
   async function loadSidebarData(projectId?: string, options?: { background?: boolean }): Promise<void> {
     const background = options?.background ?? false;
@@ -680,8 +764,6 @@ export default function SidebarPanel() {
       }
     }
   }
-
-  const activeProject = projects.find((project) => project.active) ?? projects[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -838,22 +920,22 @@ export default function SidebarPanel() {
     return (
       <CollapsedSidebarRail
         runsSectionActive={runsSectionActive}
-        settingsActive={settingsActive}
-        projects={projects}
-        executions={executions}
+        libraryActive={libraryActive}
+        pinnedConversations={pinnedConversations}
         conversations={conversations}
-        activeProjectId={activeProject?.id ?? null}
-        activeProjectName={activeProject?.name ?? null}
         activeConversationId={activeConversationId}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
         onNewChat={() => {
           void handleNewChat();
-        }}
-        onActivateProject={(projectId) => {
-          void handleActivateProject(projectId);
         }}
         onOpenConversation={(conversationId) => {
           hub.navigateToConversation(conversationId);
         }}
+        displayName={displayName}
+        subtitle={subtitle}
+        initials={initials}
+        harnessSpec={harnessSpec}
       />
     );
   }
@@ -863,158 +945,233 @@ export default function SidebarPanel() {
       className="relative flex h-full min-h-0 flex-col overflow-hidden border-r border-gray-200 bg-white"
       data-testid="sidebar-panel"
     >
-      <div className="flex h-9 items-center justify-between gap-2 border-b border-gray-200 px-3">
-        <BrandLogo variant="icon" className="shrink-0" />
+      <div className="flex h-12 items-center justify-between gap-2 px-3">
+        <button
+          type="button"
+          className="truncate text-sm font-semibold tracking-tight text-gray-900"
+          aria-label="Jambu home"
+          onClick={() => navigateShell('/')}
+        >
+          jambu
+        </button>
         <SidebarToggleButton expanded testId="sidebar-collapse" />
       </div>
 
-      <div className="flex-1 overflow-y-auto py-3">
+      <div className="flex-1 overflow-y-auto pb-2">
         {loadError ? (
-          <p className="mb-4 px-4 text-xs text-red-600" role="alert">
+          <p className="mb-2 px-4 text-xs text-red-600" role="alert">
             {loadError}
           </p>
         ) : null}
 
-        <SectionLabel>Projects</SectionLabel>
-        <ul className="mb-4 space-y-0.5 px-2">
-          {projects.map((project) => (
-            <li key={project.id}>
-              <button
-                type="button"
-                className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors ${
-                  project.active
-                    ? 'bg-gray-100 text-gray-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const response = await fetch(
-                        `/api/projects/${encodeURIComponent(project.id)}`,
-                        { method: 'POST' },
-                      );
-                      if (!response.ok) {
-                        throw new Error('Failed to activate project');
-                      }
-                      invalidateSidebarCache('projects');
-                      invalidateSidebarCache('conversations');
-                      await loadSidebarData(project.id);
-                    } catch {
-                      setLoadError('Failed to activate project');
-                    }
-                  })();
-                }}
-              >
-                <span className="truncate">{project.name}</span>
-                {typeof project.sessionCount === 'number' ? (
-                  <span className="ml-auto shrink-0 text-[10px] text-gray-400">
-                    {project.sessionCount}
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          ))}
-          <li>
-            <a
-              href={projectsHref()}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              <span>New Project</span>
-            </a>
-          </li>
-        </ul>
-
-        <SectionLabel>Chats</SectionLabel>
-        {isRefreshing && conversations.length === 0 ? (
-          <p className="mb-2 px-5 text-xs text-gray-400">Loading chats…</p>
-        ) : null}
-        <div className="mb-2 px-2">
-          <button
-            type="button"
-            data-testid="sidebar-new-chat"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+        <div className="space-y-0.5 px-1">
+          <SidebarNavRow
+            label="New chat"
+            testId="sidebar-new-chat"
             onClick={() => {
               void handleNewChat();
             }}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <span>New Chat</span>
-          </button>
+            icon={<SquarePen className="h-4 w-4" />}
+          />
+          <SidebarNavRow
+            label="Search chats"
+            testId="sidebar-search-toggle"
+            active={searchFocused}
+            onClick={() => setSearchFocused((current) => !current)}
+            icon={<Search className="h-4 w-4" />}
+          />
+          <SidebarNavRow
+            label="Library"
+            testId="sidebar-library"
+            active={libraryActive}
+            onClick={() => navigateShell(projectsHref())}
+            icon={<Library className="h-4 w-4" />}
+          />
+          <SidebarNavRow
+            label="Scheduled"
+            testId="sidebar-runs-link"
+            active={runsSectionActive}
+            onClick={() => navigateShell('/executions')}
+            icon={<Calendar className="h-4 w-4" />}
+          />
+          <SidebarNavRow
+            label="Apps"
+            testId="sidebar-apps"
+            active={appsActive}
+            onClick={() => navigateShell(settingsHref())}
+            icon={<LayoutGrid className="h-4 w-4" />}
+          />
+          <SidebarNavRow
+            label="Codex"
+            testId="sidebar-codex"
+            active={codexActive}
+            onClick={() => navigateShell('/dashboard')}
+            icon={<Code2 className="h-4 w-4" />}
+          />
+          <div className="relative">
+            <SidebarNavRow
+              label="More"
+              testId="sidebar-more"
+              active={moreMenuOpen}
+              onClick={() => setMoreMenuOpen((current) => !current)}
+              icon={<MoreHorizontal className="h-4 w-4" />}
+            />
+            {moreMenuOpen ? (
+              <div
+                className="absolute left-2 right-2 z-10 mt-1 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                data-testid="sidebar-more-menu"
+              >
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    navigateShell('/executions');
+                  }}
+                >
+                  Workflow runs
+                  {activeExecutionId ? (
+                    <span className="ml-2 text-[10px] text-gray-400">active</span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    navigateShell(projectsHref());
+                  }}
+                >
+                  Manage projects
+                </button>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    navigateShell('/dashboard');
+                  }}
+                >
+                  Observability dashboard
+                </button>
+                {executions.length > 0 ? (
+                  <p className="border-t border-gray-100 px-3 py-2 text-[10px] text-gray-400">
+                    {executions.length} recent run{executions.length === 1 ? '' : 's'}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
-        <ul className="space-y-0.5 px-2">
-          {conversations.map((conversation) => {
-            const isActive = conversation.id === activeConversationId;
-            return (
-              <li key={conversation.id}>
-                <ConversationSidebarLink conversation={conversation} isActive={isActive} />
-              </li>
-            );
-          })}
-        </ul>
 
-        <div className="mt-6">
-          <SectionLabel>Runs</SectionLabel>
+        {searchFocused ? (
+          <div className="px-3 pt-2">
+            <input
+              type="search"
+              value={searchQuery}
+              placeholder="Search chats"
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-200"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              data-testid="sidebar-search-input"
+            />
+          </div>
+        ) : null}
+
+        {pinnedConversations.length > 0 ? (
+          <div>
+            <SectionLabel>Pinned</SectionLabel>
+            <ul className="space-y-0.5 px-2">
+              {pinnedConversations.map((conversation) => {
+                const isActive = conversation.id === activeConversationId;
+                return (
+                  <li key={conversation.id}>
+                    <ConversationSidebarLink conversation={conversation} isActive={isActive} />
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
+        <div>
+          <SectionLabel>Projects</SectionLabel>
           <ul className="space-y-0.5 px-2">
+            {visibleProjects.map((project) => (
+              <li key={project.id}>
+                <button
+                  type="button"
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
+                    project.active
+                      ? 'bg-gray-100 font-medium text-gray-800'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                  onClick={() => {
+                    void handleActivateProject(project.id);
+                  }}
+                >
+                  <Folder className="h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="truncate">{project.name}</span>
+                  {typeof project.sessionCount === 'number' ? (
+                    <span className="ml-auto shrink-0 text-[10px] text-gray-400">
+                      {project.sessionCount}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+            {projects.length > PROJECTS_PREVIEW_LIMIT ? (
+              <li>
+                <button
+                  type="button"
+                  className="w-full rounded-lg px-3 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                  onClick={() => setProjectsExpanded((current) => !current)}
+                >
+                  {projectsExpanded ? 'Show less' : 'Show more'}
+                </button>
+              </li>
+            ) : null}
             <li>
               <a
-                href={runsHref()}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigateShell('/executions');
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  runsSectionActive
-                    ? 'bg-gray-100 font-medium text-gray-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-                aria-current={runsSectionActive ? 'page' : undefined}
-                data-testid="sidebar-runs-link"
+                href={projectsHref()}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700"
               >
-                <svg className="h-4 w-4 shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-                <span className="truncate">Workflow Runs</span>
-                {activeExecutionId ? (
-                  <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-gray-400" aria-hidden="true" />
-                ) : null}
+                <span className="pl-6">New project</span>
               </a>
             </li>
           </ul>
         </div>
+
+        <div>
+          <SectionLabel>Chats</SectionLabel>
+          {isRefreshing && conversations.length === 0 ? (
+            <p className="mb-2 px-5 text-xs text-gray-400">Loading chats…</p>
+          ) : null}
+          <ul className="space-y-0.5 px-2">
+            {filteredConversations.slice(0, CHATS_PREVIEW_LIMIT).map((conversation) => {
+              const isActive = conversation.id === activeConversationId;
+              return (
+                <li key={conversation.id}>
+                  <ConversationSidebarLink conversation={conversation} isActive={isActive} />
+                </li>
+              );
+            })}
+          </ul>
+          {filteredConversations.length === 0 && !isRefreshing ? (
+            <p className="px-5 text-xs text-gray-400">No chats</p>
+          ) : null}
+        </div>
       </div>
 
       <div className="border-t border-gray-200 p-2">
-        <button
-          type="button"
-          data-testid="sidebar-operator-settings"
-          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
-            settingsActive ? 'bg-gray-100' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => navigateShell(settingsHref())}
-        >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-700">
-            SG
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-gray-900">Operator · Settings</p>
-            {harnessSpec ? (
-              <p className="mt-0.5 line-clamp-2 text-[10px] text-gray-500" data-testid="sidebar-harness-spec">
-                {harnessSpec}
-              </p>
-            ) : (
-              <p className="mt-0.5 text-[10px] text-gray-500">Configure harness from business.yaml</p>
-            )}
-          </div>
-          <svg className="h-4 w-4 shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-        </button>
+        <SidebarProfileMenu
+          displayName={displayName}
+          subtitle={subtitle}
+          initials={initials}
+          harnessSpec={harnessSpec}
+          expanded
+          testId="sidebar-operator-settings"
+        />
       </div>
     </aside>
   );

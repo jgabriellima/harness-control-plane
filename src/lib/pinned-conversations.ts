@@ -25,6 +25,7 @@ export function persistPinnedConversationIds(ids: Set<string>): void {
     return;
   }
   localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify([...ids]));
+  window.dispatchEvent(new CustomEvent('runtime:pinned-changed'));
 }
 
 export function togglePinnedConversation(conversationId: string): boolean {
