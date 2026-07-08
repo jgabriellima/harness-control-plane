@@ -311,8 +311,8 @@ export default function ScheduledView() {
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Scheduled</h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Use the chat composer below to describe a task. The agent interviews you about
-              scope and timing, then registers a scheduled workflow.
+              Use the chat composer to describe a task. The agent interviews you about scope and
+              timing, then registers a scheduled workflow in the list beside it.
             </p>
           </div>
 
@@ -357,59 +357,64 @@ export default function ScheduledView() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-hidden" data-testid="schedule-interview-pane">
-        <ChatPane
-          conversationId={interviewConversationId}
-          variant="schedule"
-          compact
-          onScheduleRegistered={() => {
-            setInterviewConversationId(SCHEDULE_INTERVIEW_CONVERSATION_ID);
-            void loadSchedules();
-          }}
-        />
-      </div>
-
       {error ? (
         <p className="shrink-0 px-6 py-2 text-sm text-red-600" role="alert">
           {error}
         </p>
       ) : null}
 
-      <section
-        className="shrink-0 border-t border-gray-200 bg-white"
-        aria-label="Registered schedules"
-        data-testid="schedule-registry-list"
+      <div
+        className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-2"
+        data-testid="scheduled-workspace"
       >
-        <div className="border-b border-gray-100 px-6 py-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Your schedules
-          </h2>
+        <div className="min-h-0 overflow-hidden" data-testid="schedule-interview-pane">
+          <ChatPane
+            conversationId={interviewConversationId}
+            variant="schedule"
+            compact
+            onScheduleRegistered={() => {
+              setInterviewConversationId(SCHEDULE_INTERVIEW_CONVERSATION_ID);
+              void loadSchedules();
+            }}
+          />
         </div>
-        <div className="max-h-56 overflow-y-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading schedules…
-            </div>
-          ) : filteredEntries.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-gray-500">
-              No scheduled tasks yet — start the interview above.
-            </p>
-          ) : (
-            <ul>
-              {filteredEntries.map((entry) => (
-                <ScheduleRow
-                  key={entry.id}
-                  entry={entry}
-                  onToggle={() => void patchEntry(entry.id, !entry.enabled)}
-                  onRunNow={() => void triggerRunNow(entry.id)}
-                  onDelete={() => void removeEntry(entry.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+
+        <section
+          className="flex min-h-0 flex-col overflow-hidden border-gray-200 bg-white md:border-l"
+          aria-label="Registered schedules"
+          data-testid="schedule-registry-list"
+        >
+          <div className="shrink-0 border-b border-gray-100 px-6 py-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Your schedules
+            </h2>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading schedules…
+              </div>
+            ) : filteredEntries.length === 0 ? (
+              <p className="px-6 py-8 text-center text-sm text-gray-500">
+                No scheduled tasks yet — start the interview on the left.
+              </p>
+            ) : (
+              <ul>
+                {filteredEntries.map((entry) => (
+                  <ScheduleRow
+                    key={entry.id}
+                    entry={entry}
+                    onToggle={() => void patchEntry(entry.id, !entry.enabled)}
+                    onRunNow={() => void triggerRunNow(entry.id)}
+                    onDelete={() => void removeEntry(entry.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

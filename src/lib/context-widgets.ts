@@ -2,8 +2,8 @@ import * as Sentry from '@sentry/astro';
 
 import { composioConnectAvailable } from './composio-auth-config';
 import { formatStatusLabel } from './execution-events';
-import { listExecutions, loadReadinessSnapshot } from './harness-reader';
-import type { ExecutionStatus, ReadinessSlot } from './harness-types';
+import { listExecutions, loadReadinessSnapshot, loadScheduleRegistry } from './harness-reader';
+import type { ExecutionStatus, ReadinessSlot, ScheduleRegistryEntry } from './harness-types';
 
 export interface ContextWidgetItem {
   id: string;
@@ -61,9 +61,40 @@ function toWidgetItem(
   };
 }
 
+function scheduleEntryLabel(entry: ScheduleRegistryEntry): string {
+  if (entry.title?.trim()) {
+    return entry.title.trim();
+  }
+  if (entry.description?.trim()) {
+    return entry.description.trim().slice(0, 56);
+  }
+  return entry.workflowId;
+}
+
+function toScheduleJobItem(entry: ScheduleRegistryEntry): ContextWidgetItem {
+  return {
+    id: `schedule-${entry.id}`,
+    label: scheduleEntryLabel(entry),
+    status: null,
+    statusLabel: 'Next run',
+    href: '/scheduled',
+    timestamp: entry.nextRunAt,
+  };
+}
+
+function compareNextRunAt(left: ScheduleRegistryEntry, right: ScheduleRegistryEntry): number {
+  const leftTime = left.nextRunAt ? new Date(left.nextRunAt).getTime() : Number.POSITIVE_INFINITY;
+  const rightTime = right.nextRunAt ? new Date(right.nextRunAt).getTime() : Number.POSITIVE_INFINITY;
+  return leftTime - rightTime;
+}
+
 export async function collectContextWidgets(): Promise<ContextWidgetsSnapshot> {
   return Sentry.startSpan({ name: 'collectContextWidgets', op: 'fs.read' }, async () => {
-    const [executions, readiness] = await Promise.all([listExecutions(), loadReadinessSnapshot()]);
+    const [executions, readiness, scheduleRegistry] = await Promise.all([
+      listExecutions(),
+      loadReadinessSnapshot(),
+      loadScheduleRegistry(),
+    ]);
 
     const attention = executions
       .filter((execution) => needsAttention(execution.status))
@@ -73,13 +104,24 @@ export async function collectContextWidgets(): Promise<ContextWidgetsSnapshot> {
         toWidgetItem(execution.id, execution.intent, execution.status, execution.updatedAt),
       );
 
-    const jobs = executions
+    const scheduledJobs = (scheduleRegistry?.spec.entries ?? [])
+      .filter(
+        (entry) =>
+          entry.trigger.type === 'schedule' && entry.enabled && entry.nextRunAt != null,
+      )
+      .sort(compareNextRunAt)
+      .slice(0, 5)
+      .map(toScheduleJobItem);
+
+    const queuedExecutions = executions
       .filter((execution) => isQueued(execution.status))
       .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
       .slice(0, 5)
       .map((execution) =>
         toWidgetItem(execution.id, execution.intent, execution.status, execution.recordedAt),
       );
+
+    const jobs = scheduledJobs.length > 0 ? scheduledJobs : queuedExecutions;
 
     const activity = [...executions]
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))

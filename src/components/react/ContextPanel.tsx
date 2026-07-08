@@ -424,6 +424,10 @@ export default function ContextPanel() {
           return;
         }
 
+        if (event.type.startsWith('schedule.')) {
+          void refreshWidgets();
+        }
+
         const label =
           typeof event.payload.message === 'string'
             ? event.payload.message
@@ -455,7 +459,7 @@ export default function ContextPanel() {
         });
       },
     });
-  }, []);
+  }, [refreshWidgets]);
 
   const visibleWidgets = useMemo(
     () =>
