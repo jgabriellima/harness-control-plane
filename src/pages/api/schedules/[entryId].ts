@@ -5,7 +5,12 @@ import * as Sentry from '@sentry/astro';
 import { jsonError, jsonOk } from '../../../lib/api-json';
 import { loadRecentScheduleEvents, loadScheduleRegistry } from '../../../lib/harness-reader';
 import { parseScheduleIntent } from '../../../lib/schedule-intent';
-import { registerScheduleEntry } from '../../../lib/schedule-service';
+import {
+  deleteScheduleEntry,
+  registerScheduleEntry,
+  runScheduleNow,
+  setScheduleEnabled,
+} from '../../../lib/schedule-service';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -82,4 +87,50 @@ export const POST: APIRoute = async ({ request }) => {
       return jsonError(message, 500);
     }
   });
+};
+
+export const PATCH: APIRoute = async ({ request, params }) => {
+  const entryId = params.entryId?.trim();
+  if (!entryId) {
+    return jsonError('entryId is required', 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError('Request body must be valid JSON', 400);
+  }
+
+  if (!isRecord(body)) {
+    return jsonError('Request body must be an object', 400);
+  }
+
+  try {
+    if (typeof body.enabled === 'boolean') {
+      const entry = await setScheduleEnabled(entryId, body.enabled);
+      return jsonOk({ entry });
+    }
+    return jsonError('No supported patch fields', 400);
+  } catch (error) {
+    Sentry.captureException(error);
+    const message = error instanceof Error ? error.message : 'Failed to update schedule';
+    return jsonError(message, 500);
+  }
+};
+
+export const DELETE: APIRoute = async ({ params }) => {
+  const entryId = params.entryId?.trim();
+  if (!entryId) {
+    return jsonError('entryId is required', 400);
+  }
+
+  try {
+    await deleteScheduleEntry(entryId);
+    return jsonOk({ deleted: true, entryId });
+  } catch (error) {
+    Sentry.captureException(error);
+    const message = error instanceof Error ? error.message : 'Failed to delete schedule';
+    return jsonError(message, 500);
+  }
 };

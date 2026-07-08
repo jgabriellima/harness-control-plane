@@ -93,6 +93,10 @@ function isRunsSectionActive(pathname: string): boolean {
   return pathname === '/executions' || pathname.startsWith('/execution/');
 }
 
+function isScheduledActive(pathname: string): boolean {
+  return pathname === '/scheduled';
+}
+
 function isLibraryActive(pathname: string): boolean {
   return pathname === '/library' || pathname.startsWith('/library/');
 }
@@ -642,6 +646,7 @@ export default function SidebarPanel() {
 
   const activeExecutionId = activeExecutionFromPath(pathname);
   const runsSectionActive = isRunsSectionActive(pathname);
+  const scheduledActive = isScheduledActive(pathname);
   const libraryActive = isLibraryActive(pathname);
   const appsActive = isAppsActive(pathname);
   const codexActive = isCodexActive(pathname);
@@ -943,9 +948,9 @@ export default function SidebarPanel() {
           />
           <SidebarNavRow
             label="Scheduled"
-            testId="sidebar-runs-link"
-            active={runsSectionActive}
-            onClick={() => navigateShell('/executions')}
+            testId="sidebar-scheduled"
+            active={scheduledActive}
+            onClick={() => navigateShell('/scheduled')}
             icon={<Calendar className="h-4 w-4" />}
           />
           <SidebarNavRow

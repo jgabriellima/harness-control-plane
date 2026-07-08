@@ -158,6 +158,9 @@ export interface ScheduleRegistryEntry {
   lastRunId: string | null;
   lastStatus: string | null;
   source?: string;
+  title?: string;
+  description?: string;
+  icon?: string;
 }
 
 export interface ScheduleRegistry {

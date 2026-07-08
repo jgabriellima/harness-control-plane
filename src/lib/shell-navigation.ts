@@ -37,6 +37,7 @@ export function isShellClientRoute(path: string): boolean {
     isChatRoute(path) ||
     path === '/executions' ||
     path.startsWith('/execution/') ||
+    path === '/scheduled' ||
     path === '/settings' ||
     path.startsWith('/settings/')
   );

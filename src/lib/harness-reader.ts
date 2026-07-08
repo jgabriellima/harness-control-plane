@@ -633,6 +633,9 @@ function assertScheduleRegistry(value: unknown): ScheduleRegistry | null {
         lastRunId: typeof item.lastRunId === 'string' ? item.lastRunId : null,
         lastStatus: typeof item.lastStatus === 'string' ? item.lastStatus : null,
         source: typeof item.source === 'string' ? item.source : undefined,
+        title: typeof item.title === 'string' ? item.title : undefined,
+        description: typeof item.description === 'string' ? item.description : undefined,
+        icon: typeof item.icon === 'string' ? item.icon : undefined,
       });
     }
   }

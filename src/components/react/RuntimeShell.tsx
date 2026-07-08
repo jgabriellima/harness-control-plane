@@ -8,6 +8,7 @@ import { ChatArtifactProvider, ChatArtifactSplitShell } from './ChatArtifactProv
 import ContextPanel from './ContextPanel';
 import ExecutionsListView from './ExecutionsListView';
 import ResizableOrchestrationShell from './ResizableOrchestrationShell';
+import ScheduledView from './ScheduledView';
 import SettingsView from './SettingsView';
 import { RuntimeBrowserProvider, RuntimeBrowserSplitShell } from './RuntimeBrowserProvider';
 import SidebarPanel from './SidebarPanel';
@@ -124,6 +125,9 @@ function RuntimeShellBody({
     }
     if (pathname === '/executions') {
       return <ExecutionsListView />;
+    }
+    if (pathname === '/scheduled') {
+      return <ScheduledView />;
     }
     if (pathname === '/settings' || pathname.startsWith('/settings/')) {
       return <SettingsView />;

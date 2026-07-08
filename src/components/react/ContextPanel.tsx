@@ -11,6 +11,7 @@ import {
   writeContextWidgetsCache,
 } from '../../lib/context-widgets-cache';
 import { subscribeRuntimeHubStream } from '../../lib/sse-client';
+import { navigateShell } from '../../lib/shell-navigation';
 import { panelLayoutStore, usePanelLayout } from '../../lib/panel-layout-store';
 import type { WidgetId, WidgetManifestEntry } from '../../lib/ui-panel-manifest';
 import IntegrationConnectButton from './IntegrationConnectButton';
@@ -306,9 +307,7 @@ function ContextWidget({
                 type="button"
                 className="mt-3 text-sm font-medium text-gray-600 hover:text-gray-700"
                 onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('runtime:schedule-compose', { detail: { prefix: '/schedule ' } }),
-                  );
+                  navigateShell('/scheduled');
                 }}
               >
                 {widget.actionLabel}
