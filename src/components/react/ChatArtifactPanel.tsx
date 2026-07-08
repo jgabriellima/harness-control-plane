@@ -1,11 +1,17 @@
 import { X } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 
 import ArtifactActionsMenu, { type ArtifactMenuAction } from '@/components/react/ArtifactActionsMenu';
 import ArtifactFullscreenOverlay from '@/components/react/ArtifactFullscreenOverlay';
 import ArtifactHtmlFrame from '@/components/react/ArtifactHtmlFrame';
+import ArtifactUnsupportedPreview from '@/components/react/ArtifactUnsupportedPreview';
 import CodeArtifactViewer from '@/components/react/CodeArtifactViewer';
 import { Markdown } from '@/components/ui/markdown';
+import {
+  inferArtifactPreviewMode,
+  isClientParsedBinaryPreview,
+  unsupportedBinaryMessage,
+} from '@/lib/artifact-preview-modes';
 import {
   fileNameFromPath,
   isFullscreenCapableArtifact,
@@ -14,6 +20,17 @@ import {
   isSyntaxHighlightedArtifact,
 } from '@/lib/file-reference';
 import type { ChatArtifactSelection } from '@/lib/chat-artifact-types';
+
+const ArtifactSpreadsheetPreview = lazy(
+  () => import('@/components/react/ArtifactSpreadsheetPreview'),
+);
+const ArtifactDocxPreview = lazy(() => import('@/components/react/ArtifactDocxPreview'));
+const ArtifactPptxPreview = lazy(() => import('@/components/react/ArtifactPptxPreview'));
+const ArtifactModel3DPreview = lazy(() => import('@/components/react/ArtifactModel3DPreview'));
+
+function PreviewLoadingFallback(): React.ReactElement {
+  return <p className="p-4 text-sm text-gray-500">Loading preview…</p>;
+}
 
 interface ChatArtifactPanelProps {
   selection: ChatArtifactSelection;
@@ -33,13 +50,16 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
   }, [selection.path]);
 
   const fileName = fileNameFromPath(selection.path);
-  const isMarkdown = selection.mime === 'text/markdown';
-  const isHtml = selection.mime === 'text/html';
-  const isPdf = selection.mime === 'application/pdf';
-  const isImage = selection.mime.startsWith('image/');
+  const previewMode = inferArtifactPreviewMode(selection.path, selection.mime);
+  const isMarkdown = previewMode === 'markdown';
+  const isHtml = previewMode === 'html';
+  const isPdf = previewMode === 'pdf';
+  const isImage = previewMode === 'image';
   const isBinary = selection.encoding === 'binary';
   const isPresentationHtml = isPresentationHtmlArtifact(selection.path, selection.content);
-  const canInlinePreview = Boolean(selection.previewUrl) && isInlinePreviewMime(selection.mime);
+  const canInlinePreview =
+    Boolean(selection.previewUrl) &&
+    (isInlinePreviewMime(selection.mime) || isClientParsedBinaryPreview(previewMode));
   const useCodeViewer =
     Boolean(selection.content) && isSyntaxHighlightedArtifact(selection.path, selection.mime);
   const showHtmlSource = isHtml && htmlViewMode === 'source' && Boolean(selection.content);
@@ -153,6 +173,11 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
     canInlinePreview ||
     (isMarkdown && selection.content) ||
     (isHtml && (selection.previewUrl || selection.content)) ||
+    previewMode === 'spreadsheet' ||
+    previewMode === 'document' ||
+    previewMode === 'presentation' ||
+    previewMode === 'model-3d' ||
+    previewMode === 'unsupported-binary' ||
     (!isBinary && selection.content);
 
   return (
@@ -209,7 +234,33 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
           ) : null}
 
           {!selection.loading && !selection.error && hasPreviewContent ? (
-            isPdf && selection.previewUrl ? (
+            previewMode === 'spreadsheet' && selection.previewUrl ? (
+              <Suspense fallback={<PreviewLoadingFallback />}>
+                <ArtifactSpreadsheetPreview
+                  previewUrl={selection.previewUrl}
+                  filePath={selection.path}
+                  textContent={selection.content}
+                />
+              </Suspense>
+            ) : previewMode === 'document' && selection.previewUrl ? (
+              <Suspense fallback={<PreviewLoadingFallback />}>
+                <ArtifactDocxPreview previewUrl={selection.previewUrl} />
+              </Suspense>
+            ) : previewMode === 'presentation' && selection.previewUrl ? (
+              <Suspense fallback={<PreviewLoadingFallback />}>
+                <ArtifactPptxPreview previewUrl={selection.previewUrl} fileName={fileName} />
+              </Suspense>
+            ) : previewMode === 'model-3d' && selection.previewUrl ? (
+              <Suspense fallback={<PreviewLoadingFallback />}>
+                <ArtifactModel3DPreview previewUrl={selection.previewUrl} filePath={selection.path} />
+              </Suspense>
+            ) : previewMode === 'unsupported-binary' ? (
+              <ArtifactUnsupportedPreview
+                message={unsupportedBinaryMessage(selection.path)}
+                previewUrl={selection.previewUrl}
+                fileName={fileName}
+              />
+            ) : isPdf && selection.previewUrl ? (
               <object
                 data={`${selection.previewUrl}#view=FitH`}
                 type="application/pdf"

@@ -16,6 +16,7 @@ import {
   sanitizeChatArtifactLayout,
 } from '@/lib/chat-artifact-layout';
 import { buildWorkspaceFileRawUrl, normalizeArtifactPath } from '@/lib/file-reference';
+import { installHcpUiBridge } from '@/lib/runtime-ui-bridge';
 
 interface ChatArtifactContextValue {
   openArtifact: (filePath: string, projectId?: string) => Promise<void>;
@@ -96,6 +97,16 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
     setSelection(null);
   }, []);
 
+  useEffect(() => {
+    return installHcpUiBridge({
+      openArtifact: (path, projectId) => {
+        void openArtifact(path, projectId);
+      },
+      closeArtifact,
+    });
+  }, [closeArtifact, openArtifact]);
+
+  // Auto-open artifact from URL query (?artifact-open=path)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const autoOpenPath = params.get('artifact-open');

@@ -34,6 +34,7 @@
     "tauri:build": "npm run build && node desktop-sidecar/build.mjs && tauri build"
   },
   "dependencies": {
+    "@aiden0z/pptx-renderer": "^1.2.3",
     "@astrojs/node": "^10.1.1",
     "@astrojs/react": "^5.0.6",
     "@cursor/sdk": "^1.0.18",
@@ -49,6 +50,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.17.0",
+    "mammoth": "^1.12.0",
     "monaco-editor": "^0.55.1",
     "playwright": "^1.60.0",
     "react": "^19.2.6",
@@ -60,7 +62,9 @@
     "shiki": "^4.3.1",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
+    "three": "^0.185.1",
     "use-stick-to-bottom": "^1.1.6",
+    "xlsx": "^0.18.5",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
