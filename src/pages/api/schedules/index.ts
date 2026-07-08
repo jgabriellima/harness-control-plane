@@ -43,17 +43,36 @@ export const POST: APIRoute = async ({ request }) => {
       return jsonError('Request body must be an object', 400);
     }
 
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
     const description =
       typeof body.description === 'string'
         ? body.description.trim()
         : typeof body.text === 'string'
           ? body.text.trim()
           : '';
+    const explicitCron = typeof body.cron === 'string' ? body.cron.trim() : '';
+    const icon = typeof body.icon === 'string' ? body.icon.trim() : undefined;
+
+    if (title && description && explicitCron) {
+      try {
+        const entry = await registerScheduleEntry({
+          title,
+          description,
+          cron: explicitCron,
+          icon,
+        });
+        return jsonOk({ entry });
+      } catch (error) {
+        Sentry.captureException(error);
+        const message = error instanceof Error ? error.message : 'Failed to register schedule';
+        return jsonError(message, 500);
+      }
+    }
+
     if (!description) {
       return jsonError('description is required', 400);
     }
 
-    const explicitCron = typeof body.cron === 'string' ? body.cron.trim() : '';
     const parsed = parseScheduleIntent(description);
     const cron = explicitCron || parsed.cron;
 
@@ -70,10 +89,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     try {
       const entry = await registerScheduleEntry({
-        title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : parsed.title,
+        title: title || parsed.title,
         description: parsed.description,
         cron,
-        icon: typeof body.icon === 'string' ? body.icon : parsed.icon,
+        icon: icon || parsed.icon,
       });
       return jsonOk({ entry });
     } catch (error) {

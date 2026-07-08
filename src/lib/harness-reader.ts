@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { resolveHarnessBinding } from './harness-binding';
+import { resolveActiveWorkspaceRoot } from './workspace-manager';
 import type {
   BusinessConfig,
   ConversationSummary,
@@ -650,8 +651,9 @@ function assertScheduleRegistry(value: unknown): ScheduleRegistry | null {
   };
 }
 
-export async function loadScheduleRegistry(): Promise<ScheduleRegistry | null> {
-  const paths = await harnessPaths();
+export async function loadScheduleRegistry(workspaceRoot?: string): Promise<ScheduleRegistry | null> {
+  const resolvedRoot = workspaceRoot ?? (await resolveActiveWorkspaceRoot());
+  const paths = await harnessPaths(resolvedRoot);
   try {
     const raw = await readFile(paths.scheduleRegistryPath, 'utf8');
     return assertScheduleRegistry(parseYaml(raw));
@@ -663,8 +665,12 @@ export async function loadScheduleRegistry(): Promise<ScheduleRegistry | null> {
   }
 }
 
-export async function loadRecentScheduleEvents(limit = 50): Promise<ScheduleEvent[]> {
-  const paths = await harnessPaths();
+export async function loadRecentScheduleEvents(
+  limit = 50,
+  workspaceRoot?: string,
+): Promise<ScheduleEvent[]> {
+  const resolvedRoot = workspaceRoot ?? (await resolveActiveWorkspaceRoot());
+  const paths = await harnessPaths(resolvedRoot);
   try {
     const raw = await readFile(paths.scheduleEventsPath, 'utf8');
     const lines = raw.split('\n').filter((line) => line.trim().length > 0);

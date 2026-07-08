@@ -1,13 +1,13 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { loadScheduleRegistry } from './harness-reader';
 import { resolveHarnessBinding } from './harness-binding';
 import type { ScheduleRegistryEntry } from './harness-types';
+import { materializeScheduledWorkflow } from './schedule-workflow';
 import { resolveActiveWorkspaceRoot } from './workspace-manager';
 
 const execFileAsync = promisify(execFile);
-
-const DEFAULT_WORKFLOW_ID = 'scheduled-task';
 
 async function scheduleScriptPath(): Promise<{ script: string; cwd: string }> {
   const workspaceRoot = await resolveActiveWorkspaceRoot();
@@ -16,14 +16,6 @@ async function scheduleScriptPath(): Promise<{ script: string; cwd: string }> {
     script: `${binding.harnessRoot}/bin/${binding.cliPrefix}_schedule_registry.py`,
     cwd: binding.workspaceRoot,
   };
-}
-
-function parseJsonStdout<T>(stdout: string): T {
-  const trimmed = stdout.trim();
-  if (!trimmed) {
-    throw new Error('Empty response from schedule registry');
-  }
-  return JSON.parse(trimmed) as T;
 }
 
 export interface RegisterScheduleInput {
@@ -35,38 +27,69 @@ export interface RegisterScheduleInput {
   entryId?: string;
 }
 
-export async function registerScheduleEntry(input: RegisterScheduleInput): Promise<ScheduleRegistryEntry> {
+export async function rebuildScheduleRegistry(): Promise<void> {
   const { script, cwd } = await scheduleScriptPath();
-  const workflowId = input.workflowId ?? DEFAULT_WORKFLOW_ID;
-  const intentTemplate = input.description.trim();
+  await execFileAsync('python3', [script, 'rebuild'], { cwd, maxBuffer: 1024 * 1024 });
+}
 
-  const args = [
-    script,
-    'register',
-    '--workflow-id',
-    workflowId,
-    '--schedule',
-    input.cron,
-    '--title',
-    input.title,
-    '--description',
-    input.description,
-    '--icon',
-    input.icon ?? 'calendar',
-    '--intent-template',
-    intentTemplate,
-  ];
-
-  if (input.entryId) {
-    args.push('--entry-id', input.entryId);
+function findScheduleEntry(
+  entries: ScheduleRegistryEntry[],
+  workflowId: string,
+  entryId?: string,
+): ScheduleRegistryEntry | undefined {
+  if (entryId) {
+    const exact = entries.find((entry) => entry.id === entryId);
+    if (exact) {
+      return exact;
+    }
   }
 
-  const { stdout } = await execFileAsync('python3', args, { cwd, maxBuffer: 1024 * 1024 });
-  return parseJsonStdout<ScheduleRegistryEntry>(stdout);
+  const scheduleEntry = entries.find(
+    (entry) => entry.workflowId === workflowId && entry.trigger.type === 'schedule',
+  );
+  if (scheduleEntry) {
+    return scheduleEntry;
+  }
+
+  return entries.find((entry) => entry.workflowId === workflowId);
+}
+
+export async function registerScheduleEntry(input: RegisterScheduleInput): Promise<ScheduleRegistryEntry> {
+  const materialized = await materializeScheduledWorkflow({
+    title: input.title,
+    description: input.description,
+    cron: input.cron,
+    icon: input.icon,
+    workflowId: input.workflowId,
+  });
+
+  await rebuildScheduleRegistry();
+
+  const registry = await loadScheduleRegistry();
+  if (!registry) {
+    throw new Error('Schedule registry missing after rebuild');
+  }
+
+  const expectedEntryId = input.entryId ?? `sched-${materialized.workflowId}-0`;
+  const entry = findScheduleEntry(registry.spec.entries, materialized.workflowId, expectedEntryId);
+  if (!entry) {
+    throw new Error(`Schedule entry not found for workflow ${materialized.workflowId}`);
+  }
+
+  return entry;
 }
 
 export async function setScheduleEnabled(entryId: string, enabled: boolean): Promise<ScheduleRegistryEntry> {
   const { script, cwd } = await scheduleScriptPath();
+
+  function parseJsonStdout<T>(stdout: string): T {
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      throw new Error('Empty response from schedule registry');
+    }
+    return JSON.parse(trimmed) as T;
+  }
+
   const command = enabled ? 'enable' : 'disable';
   const { stdout } = await execFileAsync('python3', [script, command, '--entry-id', entryId], {
     cwd,
@@ -85,6 +108,15 @@ export async function deleteScheduleEntry(entryId: string): Promise<void> {
 
 export async function runScheduleNow(entryId: string): Promise<Record<string, unknown>> {
   const { script, cwd } = await scheduleScriptPath();
+
+  function parseJsonStdout<T>(stdout: string): T {
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      throw new Error('Empty response from schedule registry');
+    }
+    return JSON.parse(trimmed) as T;
+  }
+
   const { stdout } = await execFileAsync('python3', [script, 'run-now', '--entry-id', entryId], {
     cwd,
     maxBuffer: 1024 * 1024,

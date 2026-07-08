@@ -26,4 +26,21 @@ describe('parseScheduleReadyBlock', () => {
     const parsed = parseScheduleReadyBlock('```schedule-ready\n{"title":"Only title"}\n```');
     assert.equal(parsed, null);
   });
+
+  it('parses generic json fence with schedule fields', () => {
+    const content = [
+      'Confirmed. Registration payload:',
+      '```json',
+      '{"title":"Daily tech briefing","description":"Produce a technical briefing on AI","cron":"0 12 * * *"}',
+      '```',
+    ].join('\n');
+
+    const parsed = parseScheduleReadyBlock(content);
+    assert.deepEqual(parsed, {
+      title: 'Daily tech briefing',
+      description: 'Produce a technical briefing on AI',
+      cron: '0 12 * * *',
+      icon: undefined,
+    });
+  });
 });
