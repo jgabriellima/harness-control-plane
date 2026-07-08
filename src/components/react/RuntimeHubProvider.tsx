@@ -29,6 +29,7 @@ import {
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
+import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '@/lib/schedule-tips';
 import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import { isTransientHydrateFailure, waitForRuntimeReady, fetchDispatchHealth } from '@/lib/runtime-readiness-client';
 import {
@@ -511,7 +512,10 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             hydratedIdsRef.current.add(conversationId);
             updateConversation(conversationId, (state) => ({
               ...state,
-              error: 'Conversation not found',
+              error:
+                conversationId === SCHEDULE_INTERVIEW_CONVERSATION_ID
+                  ? null
+                  : 'Conversation not found',
               hydrated: true,
             }));
             return;
@@ -573,16 +577,19 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       conversationId: string | null,
       projectId: string,
     ): Promise<{ conversationId: string; migratedFrom: string | null }> => {
-      if (!isDraftConversationId(conversationId)) {
+      if (!isDraftConversationId(conversationId) && conversationId !== SCHEDULE_INTERVIEW_CONVERSATION_ID) {
         return { conversationId: conversationId as string, migratedFrom: null };
       }
 
-      const draftKey = conversationId ?? DRAFT_CONVERSATION_ID;
+      const draftKey =
+        conversationId === SCHEDULE_INTERVIEW_CONVERSATION_ID
+          ? SCHEDULE_INTERVIEW_CONVERSATION_ID
+          : (conversationId ?? DRAFT_CONVERSATION_ID);
       const response = await fetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: 'New chat',
+          title: draftKey === SCHEDULE_INTERVIEW_CONVERSATION_ID ? 'Schedule setup' : 'New chat',
           project_id: projectId,
         }),
       });
@@ -617,7 +624,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       if (layoutMode === 'single') {
         setForegroundConversationId(persistedId);
-        navigateShell(`/conversation/${encodeURIComponent(persistedId)}`);
+        if (
+          typeof window !== 'undefined' &&
+          window.location.pathname !== '/scheduled' &&
+          draftKey !== SCHEDULE_INTERVIEW_CONVERSATION_ID
+        ) {
+          navigateShell(`/conversation/${encodeURIComponent(persistedId)}`);
+        }
       } else {
         setPaneConversationIdsState((current) => {
           const normalized = normalizePaneIds(current, layoutMode);
@@ -634,6 +647,13 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('runtime:conversations-changed'));
+        if (draftKey === SCHEDULE_INTERVIEW_CONVERSATION_ID) {
+          window.dispatchEvent(
+            new CustomEvent('runtime:schedule-interview-persisted', {
+              detail: { conversationId: persistedId },
+            }),
+          );
+        }
       }
 
       return { conversationId: persistedId, migratedFrom: draftKey };
@@ -752,6 +772,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             attachments: payload.attachments ?? [],
             agent_id: state.agentId,
             computer_use_enabled: payload.computerUseEnabled === true,
+            metadata: payload.scheduleInterview ? { schedule_interview: true } : undefined,
           }),
         });
 

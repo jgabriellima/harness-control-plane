@@ -54,7 +54,10 @@ import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
 import RunDiagnosticsPanel from './RunDiagnosticsPanel';
+import ScheduleTipCard from './ScheduleTipCard';
 import SdkHealthBanner from './SdkHealthBanner';
+import { parseScheduleReadyBlock } from '@/lib/schedule-interview';
+import { SCHEDULE_TIPS } from '@/lib/schedule-tips';
 
 function ChatPaneMessagesSkeleton({ compact = false }: { compact?: boolean }) {
   return (
@@ -86,6 +89,8 @@ interface ChatPaneProps {
   compact?: boolean;
   paneIndex?: number;
   seedArtifactE2e?: boolean;
+  variant?: 'default' | 'schedule';
+  onScheduleRegistered?: () => void;
 }
 
 interface ReadinessResponse {
@@ -114,11 +119,15 @@ export default function ChatPane({
   compact = false,
   paneIndex,
   seedArtifactE2e = false,
+  variant = 'default',
+  onScheduleRegistered,
 }: ChatPaneProps) {
+  const isScheduleVariant = variant === 'schedule';
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suggestionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const registeredScheduleMessageIdsRef = useRef<Set<string>>(new Set());
 
   const {
     state,
@@ -234,7 +243,7 @@ export default function ChatPane({
     isStreaming ||
     (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant'));
 
-  const showHeader = Boolean(conversationId);
+  const showHeader = Boolean(conversationId) && !isScheduleVariant;
   const consoleGridClass = showHeader
     ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
     : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
@@ -659,8 +668,51 @@ export default function ChatPane({
       integrationSlots: selectedIntegrations,
       attachments: [...attachments, ...mentionAttachments],
       computerUseEnabled,
+      scheduleInterview: isScheduleVariant,
     });
   }
+
+  useEffect(() => {
+    if (!isScheduleVariant || isLoading || !onScheduleRegistered) {
+      return;
+    }
+
+    const lastAssistant = [...visibleMessages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && !message.streaming && message.content.trim());
+
+    if (!lastAssistant) {
+      return;
+    }
+
+    if (registeredScheduleMessageIdsRef.current.has(lastAssistant.id)) {
+      return;
+    }
+
+    const ready = parseScheduleReadyBlock(lastAssistant.content);
+    if (!ready) {
+      return;
+    }
+
+    registeredScheduleMessageIdsRef.current.add(lastAssistant.id);
+
+    void (async () => {
+      try {
+        const response = await fetch('/api/schedules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ready),
+        });
+        if (!response.ok) {
+          registeredScheduleMessageIdsRef.current.delete(lastAssistant.id);
+          return;
+        }
+        onScheduleRegistered();
+      } catch {
+        registeredScheduleMessageIdsRef.current.delete(lastAssistant.id);
+      }
+    })();
+  }, [isLoading, isScheduleVariant, onScheduleRegistered, visibleMessages]);
 
   function toggleIntegration(slotId: string): void {
     setSelectedIntegrations((current) =>
@@ -721,11 +773,26 @@ export default function ChatPane({
         {!showMessageList ? (
           <div
             className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-8"
-            data-testid="chat-pane-empty-state"
+            data-testid={isScheduleVariant ? 'schedule-interview-empty-state' : 'chat-pane-empty-state'}
           >
-            {!compact ? <EmptyStateHero /> : null}
+            {!compact && !isScheduleVariant ? <EmptyStateHero /> : null}
+            {isScheduleVariant ? (
+              <div className="w-full max-w-2xl text-center">
+                <h2 className="text-lg font-semibold text-gray-900">Schedule a task</h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  Describe what you want automated. The agent will interview you about scope,
+                  timing, and format before registering the workflow.
+                </p>
+              </div>
+            ) : null}
 
-            {suggestedCommands.length > 0 ? (
+            {isScheduleVariant ? (
+              <div className="mt-6 grid w-full max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2">
+                {SCHEDULE_TIPS.map((tip) => (
+                  <ScheduleTipCard key={tip.id} tip={tip} onSelect={(prompt) => setInput(prompt)} />
+                ))}
+              </div>
+            ) : suggestedCommands.length > 0 ? (
               <div className="mt-4 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 {suggestedCommands.map((item) => (
                   <CommandCard
@@ -957,7 +1024,11 @@ export default function ChatPane({
               />
               <PromptInputTextarea
                 className="min-h-[36px] flex-1 px-1 py-2"
-                placeholder="Ask the runtime, type '/' for commands, or '@' for workspace files..."
+                placeholder={
+                  isScheduleVariant
+                    ? 'Schedule a task'
+                    : "Ask the runtime, type '/' for commands, or '@' for workspace files..."
+                }
                 onKeyDown={handleComposerKeyDown}
               />
               {voiceInputConfig.enabled && voiceTranscriptionReady ? (

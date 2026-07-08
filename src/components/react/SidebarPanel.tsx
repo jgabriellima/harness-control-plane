@@ -26,6 +26,7 @@ import {
 } from '../../lib/sidebar-cache';
 import { DRAFT_CONVERSATION_ID } from '@/lib/draft-conversation';
 import { navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '@/lib/schedule-tips';
 import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
@@ -91,6 +92,10 @@ function activeExecutionFromPath(pathname: string): string | null {
 
 function isRunsSectionActive(pathname: string): boolean {
   return pathname === '/executions' || pathname.startsWith('/execution/');
+}
+
+function filterSidebarConversations(conversations: ConversationItem[]): ConversationItem[] {
+  return conversations.filter((conversation) => conversation.id !== SCHEDULE_INTERVIEW_CONVERSATION_ID);
 }
 
 function isScheduledActive(pathname: string): boolean {
@@ -703,9 +708,9 @@ export default function SidebarPanel() {
       const conversationsPayload = (await conversationsResponse.json()) as ConversationsResponse;
 
       setProjects(projectsPayload.projects);
-      setConversations(conversationsPayload.conversations);
+      setConversations(filterSidebarConversations(conversationsPayload.conversations));
       writeSidebarCache('projects', projectsPayload.projects);
-      writeSidebarCache('conversations', conversationsPayload.conversations);
+      writeSidebarCache('conversations', filterSidebarConversations(conversationsPayload.conversations));
 
       const pathConversationId = activeConversationFromPath(pathname);
       if (pathConversationId) {

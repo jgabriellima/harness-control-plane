@@ -9,41 +9,21 @@ import {
   MoreHorizontal,
   Pause,
   Play,
-  Plus,
   Sun,
   Trash2,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+import ChatPane from './ChatPane';
 import type { ScheduleRegistry, ScheduleRegistryEntry } from '../../lib/harness-types';
-import {
-  SCHEDULE_PRESETS,
-  formatCronLabel,
-  parseScheduleIntent,
-} from '../../lib/schedule-intent';
+import { formatCronLabel } from '../../lib/schedule-intent';
+import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '../../lib/schedule-tips';
 
 type FilterMode = 'active' | 'all' | 'paused';
 
 interface SchedulesResponse {
   registry: ScheduleRegistry | null;
   error?: string;
-}
-
-interface CreateScheduleResponse {
-  needsSchedule?: boolean;
-  draft?: {
-    title: string;
-    description: string;
-    icon: string;
-  };
-  entry?: ScheduleRegistryEntry;
-  error?: string;
-}
-
-interface PendingDraft {
-  title: string;
-  description: string;
-  icon: string;
 }
 
 function ScheduleIcon({ name }: { name: string }) {
@@ -218,12 +198,23 @@ export default function ScheduledView() {
   const [entries, setEntries] = useState<ScheduleRegistryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState<FilterMode>('active');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
-  const [customCron, setCustomCron] = useState('');
+  const [interviewConversationId, setInterviewConversationId] = useState<string>(
+    SCHEDULE_INTERVIEW_CONVERSATION_ID,
+  );
+
+  useEffect(() => {
+    function onPersisted(event: Event): void {
+      const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
+      if (detail?.conversationId) {
+        setInterviewConversationId(detail.conversationId);
+      }
+    }
+
+    window.addEventListener('runtime:schedule-interview-persisted', onPersisted);
+    return () => window.removeEventListener('runtime:schedule-interview-persisted', onPersisted);
+  }, []);
 
   const loadSchedules = useCallback(async (): Promise<void> => {
     setError(null);
@@ -256,82 +247,6 @@ export default function ScheduledView() {
     }
     return entries;
   }, [entries, filter]);
-
-  async function createSchedule(description: string, cron: string): Promise<void> {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description, cron }),
-      });
-      const payload = (await response.json()) as CreateScheduleResponse;
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Failed to create schedule');
-      }
-      if (payload.needsSchedule && payload.draft) {
-        setPendingDraft(payload.draft);
-        return;
-      }
-      setInput('');
-      setPendingDraft(null);
-      setCustomCron('');
-      await loadSchedules();
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : 'Failed to create schedule';
-      setError(message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleSubmit(event: React.FormEvent): Promise<void> {
-    event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || submitting) {
-      return;
-    }
-    const parsed = parseScheduleIntent(trimmed);
-    if (parsed.cron) {
-      await createSchedule(trimmed, parsed.cron);
-      return;
-    }
-    await createSchedule(trimmed, '');
-  }
-
-  async function confirmPendingSchedule(cron: string): Promise<void> {
-    if (!pendingDraft || !cron.trim()) {
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/schedules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: pendingDraft.title,
-          description: pendingDraft.description,
-          icon: pendingDraft.icon,
-          cron: cron.trim(),
-        }),
-      });
-      const payload = (await response.json()) as CreateScheduleResponse;
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Failed to create schedule');
-      }
-      setInput('');
-      setPendingDraft(null);
-      setCustomCron('');
-      await loadSchedules();
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : 'Failed to create schedule';
-      setError(message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function patchEntry(entryId: string, enabled: boolean): Promise<void> {
     try {
@@ -391,13 +306,13 @@ export default function ScheduledView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="scheduled-view">
-      <header className="border-b border-gray-200 bg-white px-6 py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Scheduled</h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Describe a task to create a scheduled workflow. If you do not specify when it should
-              run, you will be asked to choose a schedule.
+              Use the chat composer below to describe a task. The agent interviews you about
+              scope and timing, then registers a scheduled workflow.
             </p>
           </div>
 
@@ -442,114 +357,59 @@ export default function ScheduledView() {
         </div>
       </header>
 
-      <div className="border-b border-gray-200 bg-white px-6 py-4">
-        <form onSubmit={(event) => void handleSubmit(event)} className="mx-auto max-w-3xl">
-          <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 focus-within:border-gray-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-gray-200">
-            <Plus className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
-            <input
-              type="text"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Schedule a task"
-              className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
-              data-testid="schedule-composer-input"
-              disabled={submitting}
-            />
-            <button
-              type="submit"
-              disabled={submitting || input.trim().length === 0}
-              className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
-              data-testid="schedule-composer-submit"
-            >
-              {submitting ? 'Saving…' : 'Schedule'}
-            </button>
-          </div>
-        </form>
-
-        {pendingDraft ? (
-          <div
-            className="mx-auto mt-4 max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-4"
-            data-testid="schedule-timing-prompt"
-          >
-            <p className="text-sm font-medium text-gray-900">When should this run?</p>
-            <p className="mt-1 text-sm text-gray-600">{pendingDraft.description}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {SCHEDULE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  disabled={submitting}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  onClick={() => void confirmPendingSchedule(preset.cron)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="text"
-                value={customCron}
-                onChange={(event) => setCustomCron(event.target.value)}
-                placeholder="Custom cron (e.g. 0 9 * * 1-5)"
-                className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                data-testid="schedule-custom-cron"
-              />
-              <button
-                type="button"
-                disabled={submitting || customCron.trim().length === 0}
-                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                onClick={() => void confirmPendingSchedule(customCron)}
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                onClick={() => setPendingDraft(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : null}
+      <div className="min-h-0 flex-1 overflow-hidden" data-testid="schedule-interview-pane">
+        <ChatPane
+          conversationId={interviewConversationId}
+          variant="schedule"
+          compact
+          onScheduleRegistered={() => {
+            setInterviewConversationId(SCHEDULE_INTERVIEW_CONVERSATION_ID);
+            void loadSchedules();
+          }}
+        />
       </div>
 
       {error ? (
-        <p className="px-6 py-3 text-sm text-red-600" role="alert">
+        <p className="shrink-0 px-6 py-2 text-sm text-red-600" role="alert">
           {error}
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-gray-500">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Loading schedules…
-          </div>
-        ) : filteredEntries.length === 0 ? (
-          <div className="flex flex-col items-center px-6 py-16 text-center">
-            <Calendar className="h-10 w-10 text-gray-300" aria-hidden="true" />
-            <p className="mt-4 text-sm font-medium text-gray-900">No scheduled tasks yet</p>
-            <p className="mt-1 max-w-md text-sm text-gray-500">
-              Describe what you want automated — email monitoring, research digests, recurring
-              reports — and pick when it should run.
+      <section
+        className="shrink-0 border-t border-gray-200 bg-white"
+        aria-label="Registered schedules"
+        data-testid="schedule-registry-list"
+      >
+        <div className="border-b border-gray-100 px-6 py-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Your schedules
+          </h2>
+        </div>
+        <div className="max-h-56 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading schedules…
+            </div>
+          ) : filteredEntries.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-gray-500">
+              No scheduled tasks yet — start the interview above.
             </p>
-          </div>
-        ) : (
-          <ul>
-            {filteredEntries.map((entry) => (
-              <ScheduleRow
-                key={entry.id}
-                entry={entry}
-                onToggle={() => void patchEntry(entry.id, !entry.enabled)}
-                onRunNow={() => void triggerRunNow(entry.id)}
-                onDelete={() => void removeEntry(entry.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
+          ) : (
+            <ul>
+              {filteredEntries.map((entry) => (
+                <ScheduleRow
+                  key={entry.id}
+                  entry={entry}
+                  onToggle={() => void patchEntry(entry.id, !entry.enabled)}
+                  onRunNow={() => void triggerRunNow(entry.id)}
+                  onDelete={() => void removeEntry(entry.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

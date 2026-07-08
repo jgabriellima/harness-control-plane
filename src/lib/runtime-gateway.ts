@@ -1,4 +1,5 @@
 import type { ChatDispatchResponse, ChatRequest } from './harness-types';
+import { SCHEDULE_INTERVIEW_AGENT_BRIEF } from './schedule-tips';
 import { sendAgentPromptWithRelease } from './runtime-agent-run-release';
 import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
@@ -49,7 +50,13 @@ function requireApiKey(requestId: string): string {
 }
 
 function buildPrompt(request: ChatRequest, computerUseLine: string | null): string {
-  const sections: string[] = [request.message.trim()];
+  const sections: string[] = [];
+
+  if (request.metadata?.schedule_interview === true) {
+    sections.push(SCHEDULE_INTERVIEW_AGENT_BRIEF);
+  }
+
+  sections.push(request.message.trim());
 
   if (request.mode === 'deep_research') {
     sections.unshift('[mode: deep_research]');
