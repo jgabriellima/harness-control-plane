@@ -72,20 +72,22 @@ export async function orchestrateChatDispatch(
     throw mapped;
   }
 
-  startRunHubFanout(result.run_id, result.agent_id, conversationKey, cwd, requestId);
-
-  void appendRunStarted({
-    runId: result.run_id,
-    conversationId: conversationKey,
-    agentId: result.agent_id,
-    workspaceRoot: cwd,
-  }).catch((error) => {
+  try {
+    await appendRunStarted({
+      runId: result.run_id,
+      conversationId: conversationKey,
+      agentId: result.agent_id,
+      workspaceRoot: cwd,
+    });
+  } catch (error) {
     runtimeLogger.warn('chat.registry.started.error', {
       request_id: requestId,
       run_id: result.run_id,
       ...errorFields(error),
     });
-  });
+  }
+
+  startRunHubFanout(result.run_id, result.agent_id, conversationKey, cwd, requestId);
 
   if (request.conversation_id) {
     void (async () => {

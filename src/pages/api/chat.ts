@@ -59,6 +59,7 @@ function parseChatRequest(body: unknown): ChatRequest {
     mode,
     integration_slots: integrationSlots,
     agent_id: asString(body.agent_id),
+    computer_use_enabled: body.computer_use_enabled === true,
     metadata: isRecord(body.metadata) ? body.metadata : undefined,
   };
 }

@@ -3,7 +3,7 @@ import React, { useId, useState } from 'react';
 import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import { isUnknownSlashCommand } from '../../lib/slash-command';
 import { subscribeRuntimeStream } from '../../lib/sse-client';
-import ComputerUseBadge from './ComputerUseBadge';
+import ComputerUseSessionBadge from './ComputerUseSessionBadge';
 
 interface ChatDispatchResponse {
   run_id: string;
@@ -26,6 +26,8 @@ interface MessageComposerProps {
   integrationSlots?: string[];
   onSubmit?: (value: string) => void;
   onStreamEvent?: (event: { type: string; payload: Record<string, unknown> }) => void;
+  computerUseEnabled?: boolean;
+  computerUseAvailable?: boolean;
 }
 
 export default function MessageComposer({
@@ -39,6 +41,7 @@ export default function MessageComposer({
   integrationSlots = [],
   onSubmit,
   onStreamEvent,
+  computerUseEnabled = false,
 }: MessageComposerProps) {
   const textareaId = useId();
   const emptyHintId = useId();
@@ -70,6 +73,10 @@ export default function MessageComposer({
 
     if (integrationSlots.length > 0) {
       payload.integration_slots = integrationSlots;
+    }
+
+    if (computerUseEnabled) {
+      payload.computer_use_enabled = true;
     }
 
     const response = await fetch('/api/chat', {
@@ -229,7 +236,7 @@ export default function MessageComposer({
           </div>
 
           <div className="flex items-center gap-2">
-            <ComputerUseBadge />
+            <ComputerUseSessionBadge enabled={computerUseEnabled} />
             <button
               type="button"
               className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"

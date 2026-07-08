@@ -222,6 +222,8 @@ export interface ChatRequest {
   mode?: 'default' | 'deep_research';
   integration_slots?: string[];
   agent_id?: string;
+  /** Per-conversation opt-in — wires CUA bridge tools only when true. */
+  computer_use_enabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 

@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
+import {
+  COMPUTER_USE_PERMISSION_DIALOG_HINT,
+  COMPUTER_USE_PERMISSION_HINT,
+  COMPUTER_USE_PERMISSION_STEPS,
+} from './runtime-computer-use-copy';
 import { resolveHarnessBinding } from './harness-binding';
 
 const execFileAsync = promisify(execFile);
@@ -171,6 +176,36 @@ async function installDriver(): Promise<void> {
     timeout: 180_000,
     maxBuffer: 8 * 1024 * 1024,
   });
+}
+
+export async function stopDaemon(): Promise<void> {
+  await runDriver(['stop'], { timeoutMs: 10_000, ignoreError: true });
+
+  if (platform() === 'darwin') {
+    try {
+      await execFileAsync('osascript', ['-e', 'tell application "CuaDriver" to quit'], {
+        timeout: 5_000,
+      });
+    } catch {
+      // App may not be running.
+    }
+    try {
+      await execFileAsync('killall', ['CuaDriver'], { timeout: 5_000 });
+    } catch {
+      // Process may already be stopped.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+}
+
+/** Stop before permission toggles to avoid macOS "Quit & Reopen" when possible. */
+export async function preparePermissionGrant(): Promise<void> {
+  await stopDaemon();
+}
+
+export async function restartDaemonAfterPermissions(): Promise<boolean> {
+  await stopDaemon();
+  return ensureDaemonRunning();
 }
 
 export async function ensureDaemonRunning(): Promise<boolean> {
@@ -341,9 +376,7 @@ export async function probeComputerUseSetup(workspaceRoot?: string): Promise<Com
     phase = 'permissions';
     message = 'macOS permissions required';
     userAction =
-      platform() === 'darwin'
-        ? 'Click "Grant permissions" — macOS will ask you to allow Accessibility and Screen Recording for CuaDriver.'
-        : 'Complete platform permission prompts for Cua Driver.';
+      platform() === 'darwin' ? COMPUTER_USE_PERMISSION_STEPS : 'Complete platform permission prompts for Cua Driver.';
   } else {
     phase = 'ready';
     message = 'Computer use is ready';
@@ -384,15 +417,18 @@ export async function activateComputerUse(workspaceRoot?: string): Promise<Activ
     }
 
     await wireCuaDriverMcp(root);
-    await ensureDaemonRunning();
 
     if (platform() === 'darwin' && !(await probePermissionsGranted())) {
-      void requestPermissionsGrant();
+      await preparePermissionGrant();
+      startPermissionsGrantDetached();
+    } else {
+      await ensureDaemonRunning();
     }
 
     const setup = await probeComputerUseSetup(root);
 
     if (setup.ready) {
+      await restartDaemonAfterPermissions();
       const { saveComputerUsePreferences } = await import('./runtime-computer-use-preferences');
       await saveComputerUsePreferences({ hostControlEnabled: true }, root);
       return { setup: { ...setup, phase: 'ready' }, activated: true };
@@ -415,20 +451,53 @@ export async function activateComputerUse(workspaceRoot?: string): Promise<Activ
   }
 }
 
+export async function tryCompleteComputerUseSetup(workspaceRoot?: string): Promise<{
+  restarted: boolean;
+  activated: boolean;
+}> {
+  const binding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
+  const root = binding.workspaceRoot;
+  const { loadComputerUsePreferences, saveComputerUsePreferences } = await import(
+    './runtime-computer-use-preferences'
+  );
+
+  const preferences = await loadComputerUsePreferences(root);
+  if (preferences.hostControlEnabled) {
+    return { restarted: false, activated: true };
+  }
+
+  const setup = await probeComputerUseSetup(root);
+  if (!setup.driverInstalled || !setup.mcpConfigured) {
+    return { restarted: false, activated: false };
+  }
+
+  // Daemon must relaunch after TCC toggles — picks up Screen Recording + Accessibility grants.
+  await restartDaemonAfterPermissions();
+  const granted = await probePermissionsGranted();
+  if (!granted) {
+    return { restarted: true, activated: false };
+  }
+
+  await saveComputerUsePreferences({ hostControlEnabled: true }, root);
+  return { restarted: true, activated: true };
+}
+
 export async function finalizeComputerUseActivation(workspaceRoot?: string): Promise<ActivateComputerUseResult> {
   const binding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
   const root = binding.workspaceRoot;
 
   if (platform() === 'darwin') {
-    await requestPermissionsGrant();
+    await preparePermissionGrant();
+    startPermissionsGrantDetached();
   }
 
+  const completed = await tryCompleteComputerUseSetup(root);
   const setup = await probeComputerUseSetup(root);
 
-  if (setup.ready) {
+  if (completed.activated || setup.ready) {
     const { saveComputerUsePreferences } = await import('./runtime-computer-use-preferences');
     await saveComputerUsePreferences({ hostControlEnabled: true }, root);
-    return { setup: { ...setup, phase: 'ready' }, activated: true };
+    return { setup: { ...setup, phase: 'ready', ready: true }, activated: true };
   }
 
   return { setup, activated: false };

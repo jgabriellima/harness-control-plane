@@ -33,6 +33,9 @@ export interface ComputerUseSettingsSummary {
   active: boolean;
   setupPhase: string;
   setupReady: boolean;
+  healthOk: boolean | null;
+  healthLatencyMs: number | null;
+  healthError: string | null;
 }
 
 export interface SettingsSnapshot {
@@ -147,6 +150,9 @@ function buildComputerUseSummary(
     active: status?.active ?? false,
     setupPhase: status?.setup.phase ?? 'idle',
     setupReady: status?.setup.ready ?? false,
+    healthOk: status?.health?.ok ?? null,
+    healthLatencyMs: status?.health?.latencyMs ?? null,
+    healthError: status?.health?.error ?? null,
   };
 }
 

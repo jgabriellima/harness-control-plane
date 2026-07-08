@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import type { SettingsSnapshot } from '../../lib/settings-snapshot';
+import {
+  COMPUTER_USE_CURSOR_SDK_WARNING,
+  COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE,
+  COMPUTER_USE_PERMISSION_DIALOG_HINT,
+  COMPUTER_USE_PERMISSION_HINT,
+  COMPUTER_USE_PERMISSION_PRODUCT_NAME,
+  COMPUTER_USE_PERMISSION_STEPS,
+  COMPUTER_USE_PERMISSION_SYSTEM_NAME,
+} from '../../lib/runtime-computer-use-copy';
 
 type ComputerUseSummary = NonNullable<SettingsSnapshot['computerUse']>;
 
@@ -100,7 +109,7 @@ export default function ComputerUseActivatePanel({
       void refreshStatus().then((payload) => {
         const next = applyStatusPayload(payload);
         if (next?.active) {
-          setStatusMessage('Computer use is active.');
+          setStatusMessage(COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE);
         }
       });
     }, 2000);
@@ -137,7 +146,7 @@ export default function ComputerUseActivatePanel({
       if (!next.active && (payload.setup?.phase === 'permissions' || next.setupPhase === 'permissions')) {
         setStatusMessage(
           payload.setup?.userAction ??
-            'Click Grant permissions — macOS will ask you to allow Accessibility and Screen Recording for CuaDriver.',
+            COMPUTER_USE_PERMISSION_DIALOG_HINT,
         );
       }
     } catch (activateError) {
@@ -154,7 +163,7 @@ export default function ComputerUseActivatePanel({
     setStatusMessage(
       openSettings
         ? 'Opening System Settings…'
-        : 'Opening macOS permission dialogs for CuaDriver…',
+        : COMPUTER_USE_PERMISSION_DIALOG_HINT,
     );
 
     try {
@@ -243,16 +252,41 @@ export default function ComputerUseActivatePanel({
   }
 
   if (summary.active) {
+    const healthDegraded = summary.healthOk === false;
+
     return (
       <div className="space-y-4" data-testid="settings-computer-use-active">
-        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div
+          className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+            healthDegraded
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-emerald-200 bg-emerald-50'
+          }`}
+        >
           <div>
-            <p className="text-sm font-semibold text-emerald-900">Computer Use active</p>
-            <p className="text-xs text-emerald-800">
-              The agent can control native apps on your machine.
+            <p
+              className={`text-sm font-semibold ${
+                healthDegraded ? 'text-amber-900' : 'text-emerald-900'
+              }`}
+            >
+              {healthDegraded ? 'Computer Use — driver unreachable' : 'Computer Use active'}
             </p>
+            <p className={`text-xs ${healthDegraded ? 'text-amber-800' : 'text-emerald-800'}`}>
+              {healthDegraded
+                ? (summary.healthError ?? 'Health probe failed. Retry activation or restart CuaDriver.')
+                : 'Capability ready — enable Computer Use per chat in the composer (+) menu.'}
+            </p>
+            {summary.healthOk === true && summary.healthLatencyMs != null ? (
+              <p className="mt-1 text-xs text-emerald-700">
+                Driver probe {summary.healthLatencyMs}ms
+              </p>
+            ) : null}
           </div>
-          <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-white ${
+              healthDegraded ? 'bg-amber-600' : 'bg-emerald-600'
+            }`}
+          >
             CUA
           </span>
         </div>
@@ -313,7 +347,7 @@ export default function ComputerUseActivatePanel({
   return (
     <div className="space-y-4" data-testid="settings-computer-use-setup">
       <p className="text-sm text-gray-600">
-        One-click setup. We install the driver, configure the agent, and guide macOS permissions.
+        One-click setup installs the driver and macOS permissions. Each chat opts in separately via the composer menu.
       </p>
 
       {!awaitingPermissions ? (
@@ -332,9 +366,20 @@ export default function ComputerUseActivatePanel({
             {activating ? 'Setting up…' : (PHASE_LABELS[summary.setupPhase] ?? 'Setting up')}
           </p>
           <p className="text-sm text-amber-900">
-            {statusMessage ??
-              'Approve the macOS dialogs for Accessibility and Screen Recording (CuaDriver).'}
+            {statusMessage ?? COMPUTER_USE_PERMISSION_STEPS}
           </p>
+          <ol className="list-decimal space-y-1 rounded-md border border-amber-200 bg-white/80 px-4 py-3 text-xs text-amber-950">
+            <li>
+              Toggle <span className="font-semibold">{COMPUTER_USE_PERMISSION_SYSTEM_NAME}</span> ON in
+              Accessibility and Screen Recording.
+            </li>
+            <li>
+              If macOS shows &quot;Quit &amp; Reopen&quot; — click <span className="font-semibold">Later</span>.
+              {' '}{COMPUTER_USE_PERMISSION_PRODUCT_NAME} restarts the driver for you.
+            </li>
+            <li>Stay on this page — setup completes automatically in a few seconds.</li>
+          </ol>
+          <p className="text-xs text-amber-800">{COMPUTER_USE_CURSOR_SDK_WARNING}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

@@ -2,28 +2,22 @@ import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../lib/api-json';
 import { resolveHarnessBinding } from '../../../../lib/harness-binding';
-import { saveComputerUsePreferences } from '../../../../lib/runtime-computer-use-preferences';
 import {
-  ensureDaemonRunning,
+  COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE,
+  COMPUTER_USE_PERMISSION_DIALOG_HINT,
+  COMPUTER_USE_PERMISSION_HINT,
+  COMPUTER_USE_PERMISSION_STEPS,
+} from '../../../../lib/runtime-computer-use-copy';
+import {
   openMacPermissionSettings,
+  preparePermissionGrant,
   probeComputerUseSetup,
   startPermissionsGrantDetached,
-  type ActivateComputerUseResult,
+  tryCompleteComputerUseSetup,
 } from '../../../../lib/runtime-computer-use-setup';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-async function finalizeIfReady(workspaceRoot: string): Promise<ActivateComputerUseResult> {
-  const setup = await probeComputerUseSetup(workspaceRoot);
-
-  if (setup.ready) {
-    await saveComputerUsePreferences({ hostControlEnabled: true }, workspaceRoot);
-    return { setup: { ...setup, phase: 'ready' }, activated: true };
-  }
-
-  return { setup, activated: false };
 }
 
 export const POST: APIRoute = async ({ request }) => {
@@ -42,40 +36,50 @@ export const POST: APIRoute = async ({ request }) => {
     const binding = await resolveHarnessBinding();
     const root = binding.workspaceRoot;
 
-    await ensureDaemonRunning();
+    // Stop driver before toggling permissions — avoids macOS "Quit & Reopen" in most cases.
+    await preparePermissionGrant();
 
     if (openSettings) {
       await openMacPermissionSettings();
-      const result = await finalizeIfReady(root);
+      const completed = await tryCompleteComputerUseSetup(root);
+      const setup = await probeComputerUseSetup(root);
       return jsonOk({
-        ...result,
+        setup,
+        activated: completed.activated,
         opened_settings: true,
-        message: 'System Settings opened — enable CuaDriver under Accessibility and Screen Recording.',
+        restarted: completed.restarted,
+        message: completed.activated
+          ? COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE
+          : `System Settings opened — ${COMPUTER_USE_PERMISSION_STEPS}`,
       });
     }
 
     if (grantOnly) {
       startPermissionsGrantDetached();
-      const result = await finalizeIfReady(root);
+      const completed = await tryCompleteComputerUseSetup(root);
+      const setup = await probeComputerUseSetup(root);
       return jsonOk({
-        ...result,
+        setup,
+        activated: completed.activated,
         grant_started: true,
-        message:
-          result.activated
-            ? 'Permissions granted — computer use is active.'
-            : 'macOS permission dialogs opened — approve Accessibility and Screen Recording for CuaDriver.',
+        restarted: completed.restarted,
+        message: completed.activated
+          ? COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE
+          : COMPUTER_USE_PERMISSION_STEPS,
       });
     }
 
     startPermissionsGrantDetached();
-    const result = await finalizeIfReady(root);
+    const completed = await tryCompleteComputerUseSetup(root);
+    const setup = await probeComputerUseSetup(root);
     return jsonOk({
-      ...result,
+      setup,
+      activated: completed.activated,
       grant_started: true,
-      message:
-        result.activated
-          ? 'Computer use is active.'
-          : 'Permission flow started — approve the macOS dialogs for CuaDriver.',
+      restarted: completed.restarted,
+      message: completed.activated
+        ? COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE
+        : COMPUTER_USE_PERMISSION_DIALOG_HINT,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to grant permissions';

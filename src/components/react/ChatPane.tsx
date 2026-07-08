@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
+import ComputerUseSessionBadge from '@/components/react/ComputerUseSessionBadge';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
 import {
@@ -135,6 +136,8 @@ export default function ChatPane({
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [composerFileMentions, setComposerFileMentions] = useState<FileMentionSuggestion[]>([]);
   const [deepResearch, setDeepResearch] = useState(false);
+  const [computerUseEnabled, setComputerUseEnabled] = useState(false);
+  const [computerUseAvailable, setComputerUseAvailable] = useState(false);
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [workspaceMentionFiles, setWorkspaceMentionFiles] = useState<FileMentionSuggestion[]>([]);
@@ -414,7 +417,50 @@ export default function ChatPane({
         }
       })
       .catch(() => undefined);
+
+    void fetch('/api/settings/computer-use')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { active?: boolean };
+        setComputerUseAvailable(payload.active === true);
+      })
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!conversationId || isDraftConversationId(conversationId)) {
+      setComputerUseEnabled(false);
+      return;
+    }
+
+    let cancelled = false;
+    void fetch(
+      `/api/runtime/computer-use/session?conversation_id=${encodeURIComponent(conversationId)}&project_id=${encodeURIComponent(projectId)}`,
+    )
+      .then(async (response) => {
+        if (!response.ok || cancelled) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          enabled?: boolean;
+          capability_available?: boolean;
+        };
+        if (cancelled) {
+          return;
+        }
+        setComputerUseEnabled(payload.enabled === true);
+        if (payload.capability_available === true) {
+          setComputerUseAvailable(true);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, projectId]);
 
   useEffect(() => {
     if (!voiceInputConfig.enabled || voiceInputConfig.engine !== 'media') {
@@ -574,6 +620,23 @@ export default function ChatPane({
     ]);
   }
 
+  function toggleComputerUse(): void {
+    const next = !computerUseEnabled;
+    setComputerUseEnabled(next);
+
+    if (conversationId && !isDraftConversationId(conversationId)) {
+      void fetch('/api/runtime/computer-use/session', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          project_id: projectId,
+          enabled: next,
+        }),
+      }).catch(() => undefined);
+    }
+  }
+
   async function handleSubmit(): Promise<void> {
     const message = buildComposerSubmitMessage(input, composerFileMentions);
     if (!composerHasSubmittableContent(input, composerFileMentions) || isLoading || dispatchBlocked) {
@@ -595,6 +658,7 @@ export default function ChatPane({
       mode: deepResearch ? 'deep_research' : 'default',
       integrationSlots: selectedIntegrations,
       attachments: [...attachments, ...mentionAttachments],
+      computerUseEnabled,
     });
   }
 
@@ -884,9 +948,12 @@ export default function ChatPane({
                 disabled={isLoading}
                 deepResearch={deepResearch}
                 integrationsOpen={showIntegrations}
+                computerUseEnabled={computerUseEnabled}
+                computerUseAvailable={computerUseAvailable}
                 onAttach={() => fileInputRef.current?.click()}
                 onToggleIntegrations={() => setShowIntegrations((current) => !current)}
                 onToggleDeepResearch={() => setDeepResearch((current) => !current)}
+                onToggleComputerUse={toggleComputerUse}
               />
               <PromptInputTextarea
                 className="min-h-[36px] flex-1 px-1 py-2"
@@ -927,6 +994,14 @@ export default function ChatPane({
             </div>
             {deepResearch ? (
               <p className="mt-1.5 px-1 text-[11px] font-medium text-gray-500">Deep research enabled</p>
+            ) : null}
+            {computerUseEnabled ? (
+              <div className="mt-1.5 flex items-center gap-2 px-1">
+                <ComputerUseSessionBadge enabled />
+                <p className="text-[11px] font-medium text-emerald-700">
+                  Computer use enabled for this chat
+                </p>
+              </div>
             ) : null}
           </PromptInput>
 

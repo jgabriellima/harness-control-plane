@@ -52,6 +52,8 @@ export interface DispatchMessagePayload {
   mode?: 'default' | 'deep_research';
   integrationSlots?: string[];
   attachments?: Array<{ name: string; path?: string; content_type?: string }>;
+  /** Per-conversation opt-in for desktop control tools (default false). */
+  computerUseEnabled?: boolean;
 }
 
 export interface RuntimeHubContextValue {

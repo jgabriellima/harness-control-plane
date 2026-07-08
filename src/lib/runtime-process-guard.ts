@@ -15,9 +15,18 @@ export function installRuntimeProcessGuard(): void {
 
   installed = true;
 
-  process.on('unhandledRejection', (reason) => {
+  const recover = (reason: unknown, promise: unknown): void => {
     if (!isRecoverableRuntimeConnectError(reason)) {
       return;
+    }
+
+    if (
+      promise &&
+      typeof promise === 'object' &&
+      'catch' in promise &&
+      typeof (promise as Promise<unknown>).catch === 'function'
+    ) {
+      void (promise as Promise<unknown>).catch(() => undefined);
     }
 
     if (reason instanceof Error && reason.message.toLowerCase().includes('unauthenticated')) {
@@ -25,5 +34,8 @@ export function installRuntimeProcessGuard(): void {
     }
 
     runtimeLogger.warn('runtime.connect.unhandled_recovered', errorFields(reason));
-  });
+  };
+
+  // Run before Astro/Vite handlers so late Connect aborts are marked handled.
+  process.prependListener('unhandledRejection', recover);
 }

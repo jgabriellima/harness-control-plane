@@ -9,7 +9,8 @@ import {
   type ComputerUseStatus,
   defaultComputerUsePreferences,
 } from './runtime-computer-use-types';
-import { probeComputerUseSetup, type ComputerUseSetupStatus } from './runtime-computer-use-setup';
+import { probeComputerUseHealth } from './runtime-computer-use-bridge';
+import { probeComputerUseSetup } from './runtime-computer-use-setup';
 
 const PREFERENCES_REL = 'state/computer-use-preferences.json';
 
@@ -123,11 +124,15 @@ export async function loadComputerUseStatus(workspaceRoot?: string): Promise<Com
     // Preferences file may not exist yet — defaults apply.
   }
 
+  const active = preferences.hostControlEnabled && setup.ready;
+  const health = active ? await probeComputerUseHealth() : null;
+
   return {
     preferences,
     driverOnPath,
     preferencesPath: path,
     setup,
-    active: preferences.hostControlEnabled && setup.ready,
+    active,
+    health,
   };
 }

@@ -384,39 +384,6 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
   );
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void (async () => {
-        const activeRuns = await fetchActiveRunsIndex();
-        const activeRunIds = new Set(activeRuns.map((entry) => entry.runId));
-        const activeConversationIds = new Set(activeRuns.map((entry) => entry.conversationId));
-
-        for (const [conversationId, state] of conversationsRef.current.entries()) {
-          if (state.runPhase !== 'streaming') {
-            continue;
-          }
-
-          const runTracked =
-            (state.activeRunId && activeRunIds.has(state.activeRunId)) ||
-            activeConversationIds.has(conversationId);
-
-          if (!runTracked) {
-            updateConversation(conversationId, (current) =>
-              applyInterruptedConversationState(
-                current,
-                'Run is no longer active in the runtime registry',
-              ),
-            );
-          }
-        }
-      })().catch(() => undefined);
-    }, 15_000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [updateConversation]);
-
-  useEffect(() => {
     void (async () => {
       const activeRuns = await fetchActiveRunsIndex();
       await Promise.all(activeRuns.map((entry) => reconnectActiveRun(entry)));
@@ -784,6 +751,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             integration_slots: payload.integrationSlots ?? [],
             attachments: payload.attachments ?? [],
             agent_id: state.agentId,
+            computer_use_enabled: payload.computerUseEnabled === true,
           }),
         });
 

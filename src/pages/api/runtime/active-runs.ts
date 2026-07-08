@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro';
 
-import { readAggregatedActiveRuns } from '../../../lib/runtime-run-registry';
+import { readLiveActiveRuns } from '../../../lib/runtime-active-runs';
 import { jsonOk } from '../../../lib/api-json';
 
 export const GET: APIRoute = async () => {
-  const index = await readAggregatedActiveRuns();
+  const index = await readLiveActiveRuns();
   return jsonOk(index);
 };

@@ -142,11 +142,14 @@ export async function probeSdkDispatchHealth(options?: {
   const timeoutMs = options?.timeoutMs ?? resolveProbeTimeoutMs();
   const apiKey = requireCursorApiKey();
 
+  const mePromise = Cursor.me({ apiKey });
+  let probeTimer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     const me = await Promise.race([
-      Cursor.me({ apiKey }),
+      mePromise,
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('SDK probe timed out')), timeoutMs);
+        probeTimer = setTimeout(() => reject(new Error('SDK probe timed out')), timeoutMs);
       }),
     ]);
 
@@ -179,6 +182,12 @@ export async function probeSdkDispatchHealth(options?: {
       ...errorFields(error),
     });
     return health;
+  } finally {
+    if (probeTimer) {
+      clearTimeout(probeTimer);
+    }
+    // Prevent late Connect RPC rejections from surfacing as unhandled after race settles.
+    void mePromise.catch(() => undefined);
   }
 }
 

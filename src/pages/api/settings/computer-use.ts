@@ -1,12 +1,13 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
+import { resolveHarnessBinding } from '../../../lib/harness-binding';
 import {
   loadComputerUseStatus,
   saveComputerUsePreferences,
   type ComputerUsePreferencesPatch,
 } from '../../../lib/runtime-computer-use-preferences';
-import { resolveHarnessBinding } from '../../../lib/harness-binding';
+import { tryCompleteComputerUseSetup } from '../../../lib/runtime-computer-use-setup';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -32,7 +33,14 @@ function parsePatch(body: unknown): ComputerUsePreferencesPatch {
 export const GET: APIRoute = async () => {
   try {
     const binding = await resolveHarnessBinding();
-    const status = await loadComputerUseStatus(binding.workspaceRoot);
+    const root = binding.workspaceRoot;
+    let status = await loadComputerUseStatus(root);
+
+    if (!status.active && status.setup.phase === 'permissions') {
+      await tryCompleteComputerUseSetup(root);
+      status = await loadComputerUseStatus(root);
+    }
+
     return jsonOk(status);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load computer-use settings';

@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Database, Paperclip, Plus, Sparkles } from 'lucide-react';
+import { Check, Database, Monitor, Paperclip, Plus, Sparkles } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -9,18 +9,24 @@ interface ComposerOptionsMenuProps {
   disabled?: boolean;
   deepResearch: boolean;
   integrationsOpen: boolean;
+  computerUseEnabled: boolean;
+  computerUseAvailable: boolean;
   onAttach: () => void;
   onToggleIntegrations: () => void;
   onToggleDeepResearch: () => void;
+  onToggleComputerUse: () => void;
 }
 
 export default function ComposerOptionsMenu({
   disabled = false,
   deepResearch,
   integrationsOpen,
+  computerUseEnabled,
+  computerUseAvailable,
   onAttach,
   onToggleIntegrations,
   onToggleDeepResearch,
+  onToggleComputerUse,
 }: ComposerOptionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -50,7 +56,7 @@ export default function ComposerOptionsMenu({
     };
   }, [open]);
 
-  const hasActiveOption = deepResearch || integrationsOpen;
+  const hasActiveOption = deepResearch || integrationsOpen || computerUseEnabled;
 
   return (
     <div ref={rootRef} className="relative shrink-0 self-end">
@@ -122,6 +128,28 @@ export default function ComposerOptionsMenu({
             <Sparkles className="h-4 w-4 shrink-0 text-gray-500" />
             <span className="flex-1">Deep research</span>
             {deepResearch ? <Check className="h-4 w-4 shrink-0 text-gray-900" /> : null}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="chat-composer-option-computer-use"
+            disabled={!computerUseAvailable}
+            title={
+              computerUseAvailable
+                ? 'Enable desktop control tools for this chat only'
+                : 'Complete Computer Use setup in Settings first'
+            }
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              if (!computerUseAvailable) {
+                return;
+              }
+              onToggleComputerUse();
+            }}
+          >
+            <Monitor className="h-4 w-4 shrink-0 text-gray-500" />
+            <span className="flex-1">Computer use</span>
+            {computerUseEnabled ? <Check className="h-4 w-4 shrink-0 text-gray-900" /> : null}
           </button>
         </div>
       ) : null}

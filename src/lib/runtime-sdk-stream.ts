@@ -1,6 +1,6 @@
 import type { Run, SDKMessage } from '@cursor/sdk';
 
-import { isConnectCanceled, isConnectUnauthenticated } from './runtime-connect-errors';
+import { isConnectCanceled, isConnectUnauthenticated, attachRecoverableConnectHandler } from './runtime-connect-errors';
 import { markRuntimeAuthUnavailable } from './runtime-sdk-auth-gate';
 
 export type RunStreamOutcome = 'completed' | 'cancelled' | 'auth_failed';
@@ -27,7 +27,14 @@ export async function consumeRunStream(
     throw error;
   } finally {
     if (typeof iterator.return === 'function') {
-      await iterator.return().catch(() => undefined);
+      const closePromise = iterator.return();
+      attachRecoverableConnectHandler(closePromise);
+      await closePromise.catch((error) => {
+        if (isConnectCanceled(error)) {
+          return undefined;
+        }
+        throw error;
+      });
     }
   }
 }
@@ -40,7 +47,9 @@ export async function resolveRunTerminalStatus(
   }
 
   try {
-    const result = await run.wait();
+    const waitPromise = run.wait();
+    attachRecoverableConnectHandler(waitPromise);
+    const result = await waitPromise;
     return { status: result.status, cancelled: false, authFailed: false };
   } catch (error) {
     if (isConnectCanceled(error)) {

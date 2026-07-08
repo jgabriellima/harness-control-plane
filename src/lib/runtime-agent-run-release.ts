@@ -7,6 +7,7 @@ import {
   readAggregatedActiveRuns,
   type ActiveRunEntry,
 } from './runtime-run-registry';
+import { cancelRunIgnoringConnectAbort } from './runtime-connect-errors';
 import { probeRunLiveness } from './runtime-run-liveness';
 import { broadcastRunInterrupted } from './runtime-hub-stream';
 import { errorFields, runtimeLogger } from './runtime-logger';
@@ -30,7 +31,7 @@ async function cancelAliveRun(
     return false;
   }
 
-  await run.cancel();
+  await cancelRunIgnoringConnectAbort(run);
 
   await appendRunTerminal({
     runId: entry.runId,
@@ -148,7 +149,7 @@ async function releaseSdkRunningRuns(
 
     try {
       if (run.supports('cancel')) {
-        await run.cancel();
+        await cancelRunIgnoringConnectAbort(run);
       }
 
       await appendRunTerminal({

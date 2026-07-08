@@ -4,8 +4,13 @@ import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from './runtime-logger';
 import { registerRuntimeRun, registerRuntimeSession } from './runtime-sessions';
+import {
+  buildComputerUseCustomTools,
+  probeComputerUseHealth,
+} from './runtime-computer-use-bridge';
 import { loadComputerUsePreferences, isComputerUseContractEnabled } from './runtime-computer-use-preferences';
-import { buildComputerUsePromptInjection } from './runtime-computer-use-types';
+import { probeComputerUseSetup, ensureDaemonRunning } from './runtime-computer-use-setup';
+import { saveComputerUseSession } from './runtime-computer-use-sessions';
 
 export class RuntimeGatewayError extends Error {
   readonly statusCode: number;
@@ -73,11 +78,31 @@ function resolveRuntimeModelId(): string {
   return configured && configured.length > 0 ? configured : 'composer-2.5';
 }
 
-function buildLocalAgentOptions(cwd: string, requestId: string) {
+async function buildLocalAgentOptions(
+  cwd: string,
+  requestId: string,
+  computerUseActive: boolean,
+  computerUseHealthError: string | null,
+) {
+  const local: {
+    cwd: string;
+    settingSources: readonly [];
+    sandboxOptions?: { enabled: boolean };
+    customTools?: Awaited<ReturnType<typeof buildComputerUseCustomTools>>;
+  } = {
+    cwd,
+    settingSources: [] as const,
+  };
+
+  if (computerUseActive && !computerUseHealthError) {
+    local.sandboxOptions = { enabled: false };
+    local.customTools = await buildComputerUseCustomTools();
+  }
+
   return {
     apiKey: requireApiKey(requestId),
     model: { id: resolveRuntimeModelId() },
-    local: { cwd, settingSources: [] as const },
+    local,
   };
 }
 
@@ -119,7 +144,7 @@ async function withDispatchTimeout<T>(
 
 async function resolveAgent(
   request: ChatRequest,
-  agentOptions: ReturnType<typeof buildLocalAgentOptions>,
+  agentOptions: Awaited<ReturnType<typeof buildLocalAgentOptions>>,
   requestId: string,
   cwd: string,
   conversationKey: string,
@@ -176,12 +201,27 @@ export async function dispatchChatToRuntime(
   const conversationKey = request.conversation_id?.trim() || 'ephemeral-new-chat';
   const startedAt = Date.now();
 
+  const contractEnabled = await isComputerUseContractEnabled(cwd);
+  const computerUsePreferences = contractEnabled ? await loadComputerUsePreferences(cwd) : null;
+  const setup = contractEnabled ? await probeComputerUseSetup(cwd) : null;
+  const capabilityAvailable = Boolean(
+    contractEnabled && computerUsePreferences?.hostControlEnabled && setup?.ready,
+  );
+  const sessionEnabled = request.computer_use_enabled === true;
+  const computerUseActive = capabilityAvailable && sessionEnabled;
+
+  if (conversationKey !== 'ephemeral-new-chat') {
+    await saveComputerUseSession(conversationKey, sessionEnabled, cwd);
+  }
+
   runtimeLogger.info('chat.sdk.dispatch.start', {
     request_id: requestId,
     phase: 'chat.sdk.dispatch',
     conversation_id: conversationKey,
     project_id: request.project_id,
     agent_id: request.agent_id,
+    computer_use_enabled: sessionEnabled,
+    computer_use_active: computerUseActive,
     cwd,
   });
 
@@ -198,8 +238,29 @@ export async function dispatchChatToRuntime(
     cwd,
   );
 
-  const computerUseLine = (await isComputerUseContractEnabled(cwd))
-    ? buildComputerUsePromptInjection(await loadComputerUsePreferences(cwd))
+  let computerUseHealthError: string | null = null;
+  if (computerUseActive) {
+    await ensureDaemonRunning();
+    const health = await probeComputerUseHealth();
+    if (!health.ok) {
+      computerUseHealthError = health.error ?? 'daemon health probe failed';
+      runtimeLogger.warn('chat.computer_use.health_failed', {
+        request_id: requestId,
+        phase: 'chat.sdk.dispatch',
+        latency_ms: health.latencyMs,
+        error: computerUseHealthError,
+      });
+    }
+  }
+
+  const computerUseLine = contractEnabled
+    ? buildComputerUsePromptInjection({
+        capabilityAvailable,
+        sessionEnabled,
+        allowForegroundCursor: computerUsePreferences?.allowForegroundCursor ?? false,
+        consentedAt: computerUsePreferences?.consentedAt ?? null,
+        healthError: computerUseHealthError,
+      })
     : null;
 
   const prompt = buildPrompt(request, computerUseLine);
@@ -207,7 +268,12 @@ export async function dispatchChatToRuntime(
     throw new RuntimeGatewayError('message is required', 400, 'chat.sdk.dispatch', requestId);
   }
 
-  const agentOptions = buildLocalAgentOptions(cwd, requestId);
+  const agentOptions = await buildLocalAgentOptions(
+    cwd,
+    requestId,
+    computerUseActive,
+    computerUseHealthError,
+  );
   const timeoutMs = resolveDispatchTimeoutMs();
 
   const { agent, resumed } = await withDispatchTimeout(

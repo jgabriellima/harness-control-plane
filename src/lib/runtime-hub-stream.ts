@@ -6,10 +6,12 @@ import {
   formatRuntimeConnectError,
   isConnectCanceled,
   isConnectUnauthenticated,
+  cancelRunIgnoringConnectAbort,
 } from './runtime-connect-errors';
 import { installRuntimeProcessGuard } from './runtime-process-guard';
 import { appendRunInterrupted, type RunInterruptReason } from './runtime-run-interrupt';
-import { appendRunTerminal, readAggregatedActiveRuns } from './runtime-run-registry';
+import { readLiveActiveRuns } from './runtime-active-runs';
+import { appendRunTerminal } from './runtime-run-registry';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { hasRuntimeSdkCredentials, localGetRunOptions } from './runtime-sdk-local';
 import {
@@ -298,7 +300,7 @@ export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; me
   }
 
   try {
-    await run.cancel();
+    await cancelRunIgnoringConnectAbort(run);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Cancel failed';
     return { ok: false, message };
@@ -574,7 +576,7 @@ async function attachIndexedRunsToHub(): Promise<void> {
   }
 
   try {
-    const index = await readAggregatedActiveRuns();
+    const index = await readLiveActiveRuns();
     for (const entry of index.active) {
       startRunHubFanout(entry.runId, entry.agentId, entry.conversationId, undefined, {
         silent: true,
