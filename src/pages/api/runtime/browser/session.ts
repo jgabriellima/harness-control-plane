@@ -7,6 +7,7 @@ import {
   getBrowserSession,
   getBrowserSessionForConversation,
 } from '../../../../lib/runtime-browser-bridge';
+import { broadcastBrowserSessionReady } from '../../../../lib/runtime-hub-stream';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -58,6 +59,16 @@ export const POST: APIRoute = async ({ request }) => {
       conversationId,
       interactive,
     });
+
+    if (!interactive) {
+      broadcastBrowserSessionReady({
+        conversationId: session.conversationId,
+        sessionId: session.sessionId,
+        url: session.url,
+        interactive: false,
+      });
+    }
+
     return jsonOk({ session });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create browser session';

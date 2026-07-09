@@ -1,14 +1,17 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { hasRuntimeBindingStamp, resolveHarnessBinding } from './harness-binding';
 import type { HarnessCommand } from './harness-types';
+import { resolveHostRepoRoot, resolvePlatformAppRoot } from './repo-root';
 
 export type { HarnessCommand };
 
 const SLASH_COMMAND_RE = /^\/[\w:.-]+/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 const H1_COMMAND_RE = /^#\s+(\/[\w:.-]+)/m;
+
+export type HarnessCommandScope = 'global' | 'local';
 
 function parseFrontmatter(raw: string): Record<string, string> {
   const match = FRONTMATTER_RE.exec(raw);
@@ -69,9 +72,64 @@ function parseDescription(raw: string): string {
   return frontmatter.description?.trim() ?? '';
 }
 
-export async function listHarnessCommands(workspaceRoot?: string): Promise<HarnessCommand[]> {
-  const binding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
-  const commandsDir = binding.commandsDir;
+/**
+ * Platform shell root for inherited global commands (ADR-047).
+ * Returns null when workspaceRoot already is the platform shell.
+ */
+export function resolveGlobalCommandsWorkspaceRoot(workspaceRoot: string): string | null {
+  const normalizedLocal = resolve(workspaceRoot);
+
+  const explicitOverride =
+    process.env.BUSINESS_PLATFORM_ROOT?.trim() ??
+    process.env.CONTROL_PLANE_PLATFORM_ROOT?.trim();
+  if (explicitOverride) {
+    const normalizedOverride = resolve(explicitOverride);
+    if (
+      normalizedOverride !== normalizedLocal &&
+      hasRuntimeBindingStamp(normalizedOverride)
+    ) {
+      return normalizedOverride;
+    }
+  }
+
+  const workspacesMarker = `${sep}workspaces${sep}`;
+  if (normalizedLocal.includes(workspacesMarker)) {
+    const hostRepo = normalizedLocal.split(workspacesMarker)[0];
+    const appCandidate = join(hostRepo, 'app');
+    if (hasRuntimeBindingStamp(appCandidate)) {
+      return resolve(appCandidate);
+    }
+  }
+
+  const candidates: string[] = [];
+  try {
+    candidates.push(resolvePlatformAppRoot());
+  } catch {
+    // continue to host-repo fallback
+  }
+
+  const hostRepo = resolveHostRepoRoot();
+  candidates.push(join(hostRepo, 'app'));
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = resolve(candidate);
+    if (normalizedCandidate === normalizedLocal) {
+      continue;
+    }
+    if (hasRuntimeBindingStamp(normalizedCandidate)) {
+      return normalizedCandidate;
+    }
+  }
+
+  return null;
+}
+
+async function scanCommandsDir(
+  commandsDir: string,
+  scope: HarnessCommandScope,
+  lifecyclePrefix: string,
+  cliPrefix: string,
+): Promise<HarnessCommand[]> {
   let entries: string[];
 
   try {
@@ -92,11 +150,7 @@ export async function listHarnessCommands(workspaceRoot?: string): Promise<Harne
 
     const filePath = join(commandsDir, entry);
     const raw = await readFile(filePath, 'utf8');
-    const command = parseSlashCommand(
-      raw,
-      binding.commandNamespace.lifecycle,
-      binding.cliPrefix,
-    );
+    const command = parseSlashCommand(raw, lifecyclePrefix, cliPrefix);
     if (!command) {
       continue;
     }
@@ -105,10 +159,50 @@ export async function listHarnessCommands(workspaceRoot?: string): Promise<Harne
       command,
       description: parseDescription(raw),
       sourceFile: entry,
+      scope,
     });
   }
 
-  return commands.sort((left, right) => left.command.localeCompare(right.command));
+  return commands;
+}
+
+function mergeHarnessCommands(global: HarnessCommand[], local: HarnessCommand[]): HarnessCommand[] {
+  const merged = new Map<string, HarnessCommand>();
+  for (const item of global) {
+    merged.set(item.command, item);
+  }
+  for (const item of local) {
+    merged.set(item.command, item);
+  }
+  return [...merged.values()].sort((left, right) => left.command.localeCompare(right.command));
+}
+
+export async function listHarnessCommands(workspaceRoot?: string): Promise<HarnessCommand[]> {
+  const localBinding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
+  const localCommands = await scanCommandsDir(
+    localBinding.commandsDir,
+    'local',
+    localBinding.commandNamespace.lifecycle,
+    localBinding.cliPrefix,
+  );
+
+  const globalRoot = workspaceRoot
+    ? resolveGlobalCommandsWorkspaceRoot(workspaceRoot)
+    : null;
+
+  if (!globalRoot) {
+    return localCommands.sort((left, right) => left.command.localeCompare(right.command));
+  }
+
+  const globalBinding = await resolveHarnessBinding({ workspaceRoot: globalRoot });
+  const globalCommands = await scanCommandsDir(
+    globalBinding.commandsDir,
+    'global',
+    globalBinding.commandNamespace.lifecycle,
+    globalBinding.cliPrefix,
+  );
+
+  return mergeHarnessCommands(globalCommands, localCommands);
 }
 
 export { isKnownSlashCommand, isUnknownSlashCommand } from './slash-command';

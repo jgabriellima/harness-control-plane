@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import ChatArtifactPanel from '@/components/react/ChatArtifactPanel';
+import { RuntimeComputerUsePanelSlot, useRuntimeComputerUse } from '@/components/react/RuntimeComputerUseProvider';
 import {
   emptyArtifactSelection,
   type ChatArtifactSelection,
@@ -142,12 +143,12 @@ interface ChatArtifactSplitShellProps {
 
 function ResizableChatArtifactSplitShell({
   children,
-  selection,
   onClose,
+  previewPanel,
 }: {
   children: React.ReactNode;
-  selection: ChatArtifactSelection;
   onClose: () => void;
+  previewPanel: React.ReactNode;
 }) {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     groupId: CHAT_ARTIFACT_LAYOUT_GROUP_ID,
@@ -192,9 +193,9 @@ function ResizableChatArtifactSplitShell({
           defaultSize={
             resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.artifact] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.artifact
           }
-          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:min-h-0"
+          className="relative min-h-0 min-w-0 overflow-hidden [&>*]:h-full [&>*]:min-h-0"
         >
-          <ChatArtifactPanel selection={selection} onClose={onClose} />
+          {previewPanel}
         </Panel>
       </Group>
     </div>
@@ -202,13 +203,37 @@ function ResizableChatArtifactSplitShell({
 }
 
 export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifactSplitShellProps) {
-  const { selection, closeArtifact } = useChatArtifact();
+  const { selection: artifactSelection, closeArtifact } = useChatArtifact();
+  const { selection: computerUseSelection, closePreview } = useRuntimeComputerUse();
+
+  const previewMode = computerUseSelection ? 'computer-use' : artifactSelection ? 'artifact' : null;
 
   if (!enabled) {
     return <>{children}</>;
   }
 
-  if (!selection) {
+  if (!previewMode) {
+    return (
+      <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-console-shell">
+        {children}
+      </div>
+    );
+  }
+
+  if (previewMode === 'computer-use') {
+    return (
+      <ResizableChatArtifactSplitShell
+        onClose={() => {
+          void closePreview();
+        }}
+        previewPanel={<RuntimeComputerUsePanelSlot />}
+      >
+        {children}
+      </ResizableChatArtifactSplitShell>
+    );
+  }
+
+  if (!artifactSelection) {
     return (
       <div className="h-full min-h-0 overflow-hidden" data-testid="runtime-console-shell">
         {children}
@@ -217,7 +242,10 @@ export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifac
   }
 
   return (
-    <ResizableChatArtifactSplitShell selection={selection} onClose={closeArtifact}>
+    <ResizableChatArtifactSplitShell
+      onClose={closeArtifact}
+      previewPanel={<ChatArtifactPanel selection={artifactSelection} onClose={closeArtifact} />}
+    >
       {children}
     </ResizableChatArtifactSplitShell>
   );

@@ -15,6 +15,8 @@ import {
 
 import type { ExecutionSummary } from '../../lib/harness-types';
 
+import type { PresentationAssets } from '@/lib/ui-branding';
+import { homeAriaLabel, runtimeSubtitle } from '@/lib/ui-branding';
 import BrandLogo from './BrandLogo';
 import ChatSearchModal from './ChatSearchModal';
 import SidebarProfileMenu from './SidebarProfileMenu';
@@ -513,6 +515,8 @@ function CollapsedSidebarRail({
   subtitle,
   initials,
   harnessSpec,
+  presentationTitle,
+  brandAssets,
 }: {
   runsSectionActive: boolean;
   libraryActive: boolean;
@@ -526,6 +530,8 @@ function CollapsedSidebarRail({
   subtitle: string;
   initials: string;
   harnessSpec: string | null;
+  presentationTitle: string;
+  brandAssets?: PresentationAssets;
 }) {
   const [pinnedOpen, setPinnedOpen] = useState(false);
 
@@ -545,7 +551,7 @@ function CollapsedSidebarRail({
           aria-label="Expand sidebar"
           onClick={() => toggleSidebarExpanded(true)}
         >
-          <BrandLogo variant="icon" className="shrink-0" />
+          <BrandLogo variant="icon" className="shrink-0" title={presentationTitle} assets={brandAssets} />
         </button>
       </div>
 
@@ -627,7 +633,13 @@ function CollapsedSidebarRail({
   );
 }
 
-export default function SidebarPanel() {
+export default function SidebarPanel({
+  presentationTitle,
+  brandAssets,
+}: {
+  presentationTitle: string;
+  brandAssets?: PresentationAssets;
+}) {
   const pathname = useShellPathname();
   const hub = useRuntimeHub();
   const sidebarExpanded = useSidebarExpanded();
@@ -658,7 +670,7 @@ export default function SidebarPanel() {
 
   const activeProject = projects.find((project) => project.active) ?? projects[0];
   const displayName = activeProject?.name ?? 'Operator';
-  const subtitle = 'Jambu Runtime';
+  const subtitle = runtimeSubtitle(presentationTitle);
   const initials = initialsFromName(displayName);
 
   const pinnedConversations = useMemo(
@@ -897,6 +909,8 @@ export default function SidebarPanel() {
           subtitle={subtitle}
           initials={initials}
           harnessSpec={harnessSpec}
+          presentationTitle={presentationTitle}
+          brandAssets={brandAssets}
         />
         {chatSearchModal}
       </>
@@ -913,10 +927,10 @@ export default function SidebarPanel() {
         <button
           type="button"
           className="truncate text-sm font-semibold tracking-tight text-gray-900"
-          aria-label="Jambu home"
+          aria-label={homeAriaLabel(presentationTitle)}
           onClick={() => navigateShell('/')}
         >
-          jambu
+          {presentationTitle}
         </button>
         <SidebarToggleButton expanded testId="sidebar-collapse" />
       </div>

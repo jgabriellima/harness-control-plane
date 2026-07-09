@@ -14,7 +14,7 @@ export function jsonOk(body: unknown, status = 200): Response {
 
 export function jsonError(
   message: string,
-  status: 400 | 404 | 409 | 410 | 500 | 502 | 503 | 504,
+  status: 400 | 403 | 404 | 409 | 410 | 500 | 502 | 503 | 504,
   extras?: Omit<ApiErrorBody, 'error'>,
 ): Response {
   const body: ApiErrorBody = {

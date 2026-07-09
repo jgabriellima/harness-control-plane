@@ -54,6 +54,8 @@ export interface DispatchMessagePayload {
   attachments?: Array<{ name: string; path?: string; content_type?: string }>;
   /** Per-conversation opt-in for desktop control tools (default false). */
   computerUseEnabled?: boolean;
+  /** host = My computer; sandbox = CUA Sandbox. Required when computerUseEnabled. */
+  computerUseMode?: 'host' | 'sandbox';
   /** Schedule interview mode — agent conducts scheduling dialogue. */
   scheduleInterview?: boolean;
 }

@@ -22,6 +22,7 @@ import {
   type BrowserControlMode,
   type RuntimeBrowserSelection,
 } from '@/lib/runtime-browser-types';
+import { registerHcpUiHandlers } from '@/lib/runtime-ui-bridge';
 
 interface RuntimeBrowserContextValue {
   openBrowser: (url: string, conversationId?: string | null) => Promise<void>;
@@ -291,6 +292,17 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
   }, []);
 
   useEffect(() => {
+    return registerHcpUiHandlers({
+      openBrowser: (url, conversationId) => {
+        void openBrowser(url, conversationId);
+      },
+      closeBrowser: () => {
+        void closeBrowser();
+      },
+    });
+  }, [closeBrowser, openBrowser]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const autoOpenUrl = params.get('browser-open');
     if (!autoOpenUrl) {
@@ -362,7 +374,7 @@ export function RuntimeBrowserProvider({ children }: { children: React.ReactNode
     void syncExistingSession();
     const timer = window.setInterval(() => {
       void syncExistingSession();
-    }, 4000);
+    }, 1000);
 
     return () => {
       cancelled = true;

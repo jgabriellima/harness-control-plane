@@ -215,6 +215,8 @@ export interface HarnessCommand {
   command: string;
   description: string;
   sourceFile: string;
+  /** global = platform shell; local = project workspace (ADR-047) */
+  scope: 'global' | 'local';
 }
 
 export interface ChatRequest {
@@ -225,8 +227,10 @@ export interface ChatRequest {
   mode?: 'default' | 'deep_research';
   integration_slots?: string[];
   agent_id?: string;
-  /** Per-conversation opt-in — wires CUA bridge tools only when true. */
+  /** Per-conversation opt-in — wires CUA bridge tools only when true (host mode). */
   computer_use_enabled?: boolean;
+  /** host = operator machine via cua-driver bridge; sandbox = isolated CUA Sandbox. */
+  computer_use_mode?: 'host' | 'sandbox';
   metadata?: Record<string, unknown>;
 }
 

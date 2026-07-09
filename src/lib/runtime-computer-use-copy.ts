@@ -1,27 +1,50 @@
-/** User-facing copy — macOS shows the driver bundle name, not Jambu. */
+/** User-facing copy — macOS shows the driver bundle name, not the product title. */
+
+import { DEFAULT_PRESENTATION_TITLE, getPresentationTitle } from './ui-branding';
+import type { UIConfig } from './ui-config';
 
 /** Name macOS displays in Privacy & Security (CuaDriver.app bundle). */
 export const COMPUTER_USE_PERMISSION_SYSTEM_NAME = 'CuaDriver';
 
-/** Product name shown to the operator in Jambu UI. */
-export const COMPUTER_USE_PERMISSION_PRODUCT_NAME = 'Jambu';
+/** Fallback product name when ui.config is unavailable. */
+export const COMPUTER_USE_PERMISSION_PRODUCT_NAME = DEFAULT_PRESENTATION_TITLE;
 
-export const COMPUTER_USE_PERMISSION_HINT =
-  `In System Settings, enable ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} — that is ${COMPUTER_USE_PERMISSION_PRODUCT_NAME}'s desktop automation driver (koala icon). Turn it ON under Accessibility and Screen Recording.`;
+export function resolveComputerUsePermissionProductName(config: UIConfig): string {
+  return getPresentationTitle(config, COMPUTER_USE_PERMISSION_PRODUCT_NAME);
+}
 
-export const COMPUTER_USE_PERMISSION_DIALOG_HINT =
-  `When macOS asks, approve ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} (${COMPUTER_USE_PERMISSION_PRODUCT_NAME}'s automation engine).`;
+function withProductName(productName: string) {
+  return {
+    productName,
+    hint: `In System Settings, enable ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} — that is ${productName}'s desktop automation driver (koala icon). Turn it ON under Accessibility and Screen Recording.`,
+    dialogHint: `When macOS asks, approve ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} (${productName}'s automation engine).`,
+    steps: [
+      `Toggle ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} ON (Accessibility and Screen Recording).`,
+      `If macOS shows "Quit & Reopen" — click Later. ${productName} restarts the driver automatically.`,
+      'Wait a few seconds — setup continues on its own.',
+    ].join(' '),
+    activeMessage: `${productName} desktop control is ready.`,
+    cursorSdkWarning: `If macOS shows Cursor SDK in a permission dialog, ignore it — grants belong to CuaDriver (${productName}'s automation engine). Use Settings → Computer Use here in ${productName}.`,
+  };
+}
 
-/** Shown while the operator toggles permissions in System Settings. */
-export const COMPUTER_USE_PERMISSION_STEPS = [
-  `Toggle ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} ON (Accessibility and Screen Recording).`,
-  `If macOS shows "Quit & Reopen" — click Later. ${COMPUTER_USE_PERMISSION_PRODUCT_NAME} restarts the driver automatically.`,
-  'Wait a few seconds — setup continues on its own.',
-].join(' ');
+const defaultCopy = withProductName(COMPUTER_USE_PERMISSION_PRODUCT_NAME);
 
-export const COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE =
-  `${COMPUTER_USE_PERMISSION_PRODUCT_NAME} desktop control is ready.`;
+export const COMPUTER_USE_PERMISSION_HINT = defaultCopy.hint;
+
+export const COMPUTER_USE_PERMISSION_DIALOG_HINT = defaultCopy.dialogHint;
+
+export const COMPUTER_USE_PERMISSION_STEPS = defaultCopy.steps;
+
+export const COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE = defaultCopy.activeMessage;
 
 /** Why macOS may show Cursor SDK during a broken setup path — not the intended grant target. */
-export const COMPUTER_USE_CURSOR_SDK_WARNING =
-  'If macOS shows Cursor SDK in a permission dialog, ignore it — grants belong to CuaDriver (Jambu\'s automation engine). Use Settings → Computer Use here in Jambu.';
+export const COMPUTER_USE_CURSOR_SDK_WARNING = defaultCopy.cursorSdkWarning;
+
+export function buildComputerUseCopyForProduct(productName: string) {
+  return withProductName(productName);
+}
+
+export function resolveComputerUseCopy(config: UIConfig) {
+  return withProductName(resolveComputerUsePermissionProductName(config));
+}

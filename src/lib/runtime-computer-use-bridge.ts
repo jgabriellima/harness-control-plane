@@ -5,10 +5,64 @@ import { promisify } from 'node:util';
 
 import type { SDKCustomTool, SDKJsonValue } from '@cursor/sdk';
 
+import { isComputerUseAgentInputBlocked } from './runtime-computer-use-control-gate';
+import { loadUIConfig } from './ui-config.ts';
+import { resolveProjectRoot } from './project-root.ts';
+
 const execFileAsync = promisify(execFile);
 
-/** macOS bundle id for Jambu control plane — echoed in driver permission reports. */
-export const JAMBU_HOST_BUNDLE_ID = 'ai.jambu.control-plane';
+const DEFAULT_HOST_BUNDLE_ID = 'ai.jambu.control-plane';
+
+let resolvedHostBundleId: string | null = null;
+let hostBundleIdPromise: Promise<string> | null = null;
+
+/**
+ * macOS bundle id for the control plane host — echoed in driver permission reports.
+ * Resolved from ui.config distribution.desktop.identifier at runtime (ADR-048).
+ */
+export async function resolveHostBundleId(): Promise<string> {
+  if (resolvedHostBundleId) {
+    return resolvedHostBundleId;
+  }
+
+  if (!hostBundleIdPromise) {
+    hostBundleIdPromise = (async () => {
+      const envOverride = process.env.JAMBU_HOST_BUNDLE_ID?.trim();
+      if (envOverride) {
+        resolvedHostBundleId = envOverride;
+        return envOverride;
+      }
+
+      try {
+        const config = await loadUIConfig(resolveProjectRoot());
+        const identifier = config.distribution?.desktop?.identifier?.trim();
+        if (identifier) {
+          resolvedHostBundleId = identifier;
+          return identifier;
+        }
+      } catch {
+        // fall through to default
+      }
+
+      resolvedHostBundleId = DEFAULT_HOST_BUNDLE_ID;
+      return DEFAULT_HOST_BUNDLE_ID;
+    })();
+  }
+
+  return hostBundleIdPromise;
+}
+
+/** Synchronous read — prefers env injection from Tauri sidecar; otherwise default until async resolve completes. */
+export function getHostBundleIdSync(): string {
+  return (
+    process.env.JAMBU_HOST_BUNDLE_ID?.trim() ??
+    resolvedHostBundleId ??
+    DEFAULT_HOST_BUNDLE_ID
+  );
+}
+
+/** @deprecated Use resolveHostBundleId() — retained for transitional imports */
+export const JAMBU_HOST_BUNDLE_ID = DEFAULT_HOST_BUNDLE_ID;
 
 const CATALOG_TTL_MS = 300_000;
 const DEFAULT_CALL_TIMEOUT_MS = 45_000;
@@ -182,6 +236,18 @@ export async function buildComputerUseCustomTools(): Promise<Record<string, SDKC
       description: `${definition.description}\n\n(Jambu computer-use bridge → CuaDriver daemon)`,
       inputSchema: definition.input_schema,
       execute: async (args) => {
+        if (isComputerUseAgentInputBlocked()) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Computer use paused — operator has Take control in the preview panel. Ask them to return control to the agent, then retry.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const result = await callCuaDriverTool(definition.name, args);
         if (!result.ok) {
           return {
