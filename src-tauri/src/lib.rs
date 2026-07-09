@@ -2,10 +2,24 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+mod identity_migration;
 mod secrets;
 
 struct SidecarState {
     child: Mutex<Option<tauri_plugin_shell::process::CommandChild>>,
+}
+
+struct SidecarLaunchState {
+    launch_url: Mutex<Option<String>>,
+}
+
+#[tauri::command]
+fn sidecar_launch_url(state: tauri::State<SidecarLaunchState>) -> Option<String> {
+    state
+        .launch_url
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
 }
 
 #[cfg(not(debug_assertions))]
@@ -20,7 +34,11 @@ mod production {
     use tauri_plugin_shell::process::CommandEvent;
     use tauri_plugin_shell::ShellExt;
 
+    use super::identity_migration::{
+        resolve_bundled_host_repo_from_resource_dir, resolve_bundled_shell_from_resource_dir,
+    };
     use super::secrets;
+    use super::SidecarLaunchState;
     use super::SidecarState;
 
     pub fn pick_free_port() -> u16 {
@@ -70,7 +88,11 @@ mod production {
     }
 
     fn resolve_bundled_shell_root(resource_dir: &Path) -> PathBuf {
-        resource_dir.join("shell")
+        resolve_bundled_shell_from_resource_dir(resource_dir)
+    }
+
+    fn resolve_bundled_host_repo(resource_dir: &Path) -> PathBuf {
+        resolve_bundled_host_repo_from_resource_dir(resource_dir)
     }
 
     pub async fn wait_for_readiness(port: u16) -> bool {
@@ -78,7 +100,7 @@ mod production {
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap_or_default();
-        let url = format!("http://127.0.0.1:{port}/api/runtime/readiness");
+        let url = format!("http://127.0.0.1:{port}/");
         let deadline = std::time::Instant::now() + Duration::from_secs(90);
         while std::time::Instant::now() < deadline {
             if let Ok(response) = client.get(&url).send().await {
@@ -99,7 +121,15 @@ mod production {
         let resource_dir_string = resource_dir.to_string_lossy().to_string();
         let shell_root = resolve_bundled_shell_root(&resource_dir);
         let shell_root_string = shell_root.to_string_lossy().to_string();
+        let host_repo = resolve_bundled_host_repo(&resource_dir);
+        let host_repo_string = host_repo.to_string_lossy().to_string();
         let bundle_identifier = app.config().identifier.clone();
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .to_string();
 
         let mut sidecar = app
             .shell()
@@ -110,9 +140,10 @@ mod production {
             .env("HOST", "127.0.0.1")
             .env("PORT", port.to_string())
             .env("CONTROL_PLANE_PROJECT_ROOT", &shell_root_string)
-            .env("CONTROL_PLANE_HOST_REPO", &resource_dir_string)
+            .env("CONTROL_PLANE_HOST_REPO", &host_repo_string)
             .env("TAURI_BUNDLE_IDENTIFIER", &bundle_identifier)
-            .env("JAMBU_HOST_BUNDLE_ID", &bundle_identifier);
+            .env("JAMBU_HOST_BUNDLE_ID", &bundle_identifier)
+            .env("TAURI_APP_DATA_DIR", &app_data_dir);
 
         if let Some(workspaces_root) = ensure_production_workspaces_root() {
             sidecar = sidecar.env("BUSINESS_WORKSPACES_ROOT", workspaces_root);
@@ -160,8 +191,21 @@ mod production {
             }
             if let Some(window) = app_handle.get_webview_window("main") {
                 let url = format!("http://127.0.0.1:{port}/");
+                if let Some(launch) = app_handle.try_state::<SidecarLaunchState>() {
+                    if let Ok(mut guard) = launch.launch_url.lock() {
+                        *guard = Some(url.clone());
+                    }
+                }
+                let _ = app_handle.emit("sidecar-ready", url.clone());
                 if let Ok(parsed) = url.parse() {
-                    let _ = window.navigate(parsed);
+                    match window.navigate(parsed) {
+                        Ok(()) => {
+                            super::harden_webview_against_browser_chrome(&window);
+                        }
+                        Err(error) => {
+                            eprintln!("[business-runtime] navigate failed: {error}");
+                        }
+                    }
                 }
             }
         });
@@ -200,21 +244,52 @@ fn kill_sidecar(app: &AppHandle) {
     }
 }
 
+const BLOCK_CONTEXT_MENU_SCRIPT: &str = r#"
+document.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
+"#;
+
+fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    #[cfg(debug_assertions)]
+    {
+        use tauri_plugin_prevent_default::Flags;
+
+        // Dev: keep devtools + reload; still block browser context menu and other chrome.
+        tauri_plugin_prevent_default::Builder::new()
+            .with_flags(Flags::all().difference(Flags::DEV_TOOLS | Flags::RELOAD))
+            .build()
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        tauri_plugin_prevent_default::init()
+    }
+}
+
+fn harden_webview_against_browser_chrome(window: &tauri::WebviewWindow) {
+    let _ = window.eval(BLOCK_CONTEXT_MENU_SCRIPT);
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(prevent_default_plugin())
         .manage(SidecarState {
             child: Mutex::new(None),
+        })
+        .manage(SidecarLaunchState {
+            launch_url: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_has,
             secrets::secrets_list,
+            sidecar_launch_url,
         ])
         .setup(|app| {
             #[cfg(not(debug_assertions))]
             {
+                identity_migration::run_identity_migration(app.handle());
                 secrets::migrate_config_env(app.handle());
                 production::start(app.handle())?;
             }

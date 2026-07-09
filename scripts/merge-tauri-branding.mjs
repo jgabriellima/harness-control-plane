@@ -50,6 +50,13 @@ function resolveProjectRoot(explicitRoot) {
   if (fromFlagOrEnv) {
     return resolve(fromFlagOrEnv);
   }
+
+  // Staged bundle shell (tauri beforeBuildCommand without explicit project root)
+  const stagedShell = resolve(harnessRoot, 'src-tauri', 'resources', 'shell');
+  if (existsSync(join(stagedShell, 'ui.config.yaml'))) {
+    return stagedShell;
+  }
+
   return resolve(harnessRoot, '..', 'business-workflow', 'app');
 }
 
@@ -99,6 +106,11 @@ function mergeTauriConfig(tauri, branding) {
   }
 
   merged.app.windows[0].title = branding.windowTitle;
+  // Distribution builds must not expose WebView devtools or browser chrome affordances.
+  merged.app.windows[0].devtools = false;
+  if ('zoomHotkeysEnabled' in merged.app.windows[0]) {
+    merged.app.windows[0].zoomHotkeysEnabled = false;
+  }
   return merged;
 }
 

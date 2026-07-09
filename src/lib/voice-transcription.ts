@@ -261,7 +261,10 @@ export function scheduleVoiceTranscriptionBootstrap(): void {
     return;
   }
   bootstrapScheduled = true;
-  void ensureVoiceTranscriptionReady();
+  // Defer heavy pip/model work so desktop sidecar readiness and first paint stay fast.
+  setImmediate(() => {
+    void ensureVoiceTranscriptionReady();
+  });
 }
 
 export async function getVoiceTranscriptionStatus(): Promise<VoiceTranscriptionStatus> {
@@ -539,6 +542,3 @@ export async function transcribeAudioFile(
   return result.stdout.trim();
 }
 
-if (process.env.CONTROL_PLANE_DESKTOP === '1' && process.env.VOICE_TRANSCRIPTION_SKIP_PROVISION !== '1') {
-  scheduleVoiceTranscriptionBootstrap();
-}

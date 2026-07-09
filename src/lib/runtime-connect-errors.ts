@@ -1,5 +1,6 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 
+import { getCachedServerSdkMessageContext, sdkDispatchAuthMessage } from './runtime-sdk-messages';
 /**
  * Connect RPC aborts in-flight requests via AbortSignal when a stream is
  * superseded, the client disconnects, or the SDK cancels a run. Those
@@ -41,7 +42,7 @@ export function isConnectUnauthenticated(error: unknown): boolean {
 
 export function formatRuntimeConnectError(error: unknown): string {
   if (isConnectUnauthenticated(error)) {
-    return 'CURSOR_API_KEY inválida ou rejeitada — verifique harness-control-plane/.env e reinicie o dev server';
+    return sdkDispatchAuthMessage(getCachedServerSdkMessageContext());
   }
 
   if (error instanceof Error) {

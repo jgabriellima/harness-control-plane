@@ -46,9 +46,11 @@ const PHASE_LABELS: Record<string, string> = {
 
 export default function ComputerUseActivatePanel({
   initial,
+  tccReauthRequired = false,
   onUpdated,
 }: {
   initial: ComputerUseSummary;
+  tccReauthRequired?: boolean;
   onUpdated: (next: ComputerUseSummary) => void;
 }) {
   const [summary, setSummary] = useState(initial);
@@ -58,7 +60,7 @@ export default function ComputerUseActivatePanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [computerUseCopy, setComputerUseCopy] = useState(() =>
-    buildComputerUseCopyForProduct(COMPUTER_USE_PERMISSION_PRODUCT_NAME),
+    buildComputerUseCopyForProduct(COMPUTER_USE_PERMISSION_PRODUCT_NAME, { tccReauthRequired }),
   );
 
   useEffect(() => {
@@ -71,7 +73,9 @@ export default function ComputerUseActivatePanel({
         }
         const payload = (await response.json()) as { presentationTitle?: string };
         if (!cancelled && payload.presentationTitle) {
-          setComputerUseCopy(buildComputerUseCopyForProduct(payload.presentationTitle));
+          setComputerUseCopy(
+            buildComputerUseCopyForProduct(payload.presentationTitle, { tccReauthRequired }),
+          );
         }
       })
       .catch(() => undefined);
@@ -79,7 +83,7 @@ export default function ComputerUseActivatePanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tccReauthRequired]);
 
   const applyStatusPayload = useCallback(
     (payload: StatusPayload | null): ComputerUseSummary | null => {

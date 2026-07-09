@@ -59,6 +59,12 @@ import EmptyStateHero from './EmptyStateHero';
 import RunDiagnosticsPanel from './RunDiagnosticsPanel';
 import ScheduleTipCard from './ScheduleTipCard';
 import SdkHealthBanner from './SdkHealthBanner';
+import {
+  clientSdkMessageContext,
+  sdkHealthBannerTitle,
+  sdkHealthCheckingMessage,
+  type RuntimeSdkMessageContext,
+} from '@/lib/runtime-sdk-messages';
 import { parseScheduleReadyBlock } from '@/lib/schedule-interview';
 import { SCHEDULE_TIPS } from '@/lib/schedule-tips';
 
@@ -167,6 +173,9 @@ export default function ChatPane({
   const [voiceTranscriptionMessage, setVoiceTranscriptionMessage] = useState<string | null>(null);
   const [voiceTranscriptionPhase, setVoiceTranscriptionPhase] = useState<string | null>(null);
   const [voiceTranscriptionProgress, setVoiceTranscriptionProgress] = useState(0);
+  const [sdkMessageContext, setSdkMessageContext] = useState<RuntimeSdkMessageContext>(() =>
+    clientSdkMessageContext(),
+  );
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -416,7 +425,15 @@ export default function ChatPane({
             phase?: string | null;
             progress?: number;
           } | null;
+          surface?: RuntimeSdkMessageContext['surface'];
+          presentationTitle?: string;
         };
+        setSdkMessageContext(
+          clientSdkMessageContext({
+            surface: payload.surface,
+            presentationTitle: payload.presentationTitle,
+          }),
+        );
         if (payload.voice_input) {
           setVoiceInputConfig(payload.voice_input);
         }
@@ -1016,9 +1033,10 @@ export default function ChatPane({
 
           {sdkHealth !== 'ready' && sdkHealthMessage ? (
             <SdkHealthBanner
+              title={sdkHealthBannerTitle(sdkMessageContext)}
               message={
                 sdkHealth === 'checking'
-                  ? 'Verificando conectividade com a API Cursor…'
+                  ? sdkHealthCheckingMessage(sdkMessageContext)
                   : sdkHealthMessage
               }
               checking={sdkHealth === 'checking'}

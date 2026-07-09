@@ -4,6 +4,7 @@ export interface DesktopSidecarEnv {
   TAURI_APP_PORT: string;
   HOST: '127.0.0.1';
   PORT: string;
+  RUNTIME_API_KEY?: string;
   CURSOR_API_KEY?: string;
   SENTRY_DSN?: string;
 }

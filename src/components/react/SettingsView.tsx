@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import type { SettingsSnapshot } from '../../lib/settings-snapshot';
+import { clientSdkMessageContext } from '../../lib/runtime-sdk-messages';
+import { dispatchRuntimeCredentialsChanged } from '../../lib/runtime-credentials-events';
 import SecretInput from './SecretInput';
 import IntegrationConnectButton from './IntegrationConnectButton';
 import ComputerUseActivatePanel from './ComputerUseActivatePanel';
@@ -11,6 +13,8 @@ interface CredentialPresence {
   required: boolean;
   description: string;
   present: boolean;
+  saved_at?: string | null;
+  updated_at?: string | null;
 }
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -76,10 +80,33 @@ function IntegrationCredentials({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ env_var: envVar, value }),
     });
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as {
+      error?: string;
+      present?: boolean;
+      saved_at?: string | null;
+      updated_at?: string | null;
+    };
     if (!response.ok) {
       throw new Error(payload.error ?? 'Failed to save credential');
     }
+
+    setCredentials((current) =>
+      current.map((credential) =>
+        credential.env_var === envVar
+          ? {
+              ...credential,
+              present: true,
+              saved_at: payload.saved_at ?? credential.saved_at ?? null,
+              updated_at: payload.updated_at ?? new Date().toISOString(),
+            }
+          : credential,
+      ),
+    );
+
+    if (envVar === 'RUNTIME_API_KEY' || envVar === 'CURSOR_API_KEY') {
+      dispatchRuntimeCredentialsChanged({ env_var: envVar });
+    }
+
     await reload();
   }
 
@@ -107,6 +134,9 @@ function IntegrationCredentials({
               label={credential.description || credential.env_var}
               present={credential.present}
               required={credential.required}
+              hideEnvVar={credential.env_var === 'RUNTIME_API_KEY'}
+              savedAt={credential.saved_at}
+              updatedAt={credential.updated_at}
               onSave={(value) => saveCredential(credential.env_var, value)}
             />
           ))
@@ -202,13 +232,17 @@ export default function SettingsView() {
     return null;
   }
 
+  const shippableDesktop = clientSdkMessageContext().operatorContext === false;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="settings-view">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8 pb-12">
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Project Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Runtime profile and credentials from <code className="text-xs">.business/business.yaml</code> and OS keychain
+          {shippableDesktop
+            ? 'Runtime profile and secure credentials for this installation.'
+            : 'Runtime profile and credentials from .business/business.yaml and OS keychain'}
         </p>
       </header>
 
@@ -230,8 +264,9 @@ export default function SettingsView() {
       <SettingsSection title="Runtime Profile">
         {settings.runtime ? (
           <dl>
-            <FieldRow label="Engine" value={settings.runtime.engine} />
-            <FieldRow label="Specialization Layer" value={settings.runtime.specializationLayer} />
+            {settings.runtime.specializationLayer ? (
+              <FieldRow label="Specialization Layer" value={settings.runtime.specializationLayer} />
+            ) : null}
             <FieldRow label="Command Count" value={String(settings.runtime.commandCount)} />
           </dl>
         ) : (
@@ -246,6 +281,14 @@ export default function SettingsView() {
             ))}
           </ul>
         ) : null}
+      </SettingsSection>
+
+      <SettingsSection title="Runtime">
+        <p className="mb-3 text-xs text-gray-500">
+          Values are stored in the OS keychain (service: {keychainService}). Chat becomes available
+          immediately after saving — no restart required.
+        </p>
+        <IntegrationCredentials slotId="runtime" provider="runtime" keychainService={keychainService} />
       </SettingsSection>
 
       <SettingsSection title="Integrations">
@@ -297,10 +340,37 @@ export default function SettingsView() {
         )}
       </SettingsSection>
 
+      {settings.identityMigration && !shippableDesktop ? (
+        <SettingsSection title="Identity Migration">
+          <dl>
+            <FieldRow label="Bundle ID" value={settings.identityMigration.bundleId} />
+            <FieldRow
+              label="Status"
+              value={settings.identityMigration.completed ? 'Completed' : 'Pending first launch'}
+            />
+            <FieldRow
+              label="Supersedes"
+              value={
+                settings.identityMigration.supersedes.length > 0
+                  ? settings.identityMigration.supersedes.join(', ')
+                  : null
+              }
+            />
+            {settings.identityMigration.keychainKeysMigrated !== null ? (
+              <FieldRow
+                label="Keychain keys migrated"
+                value={String(settings.identityMigration.keychainKeysMigrated)}
+              />
+            ) : null}
+          </dl>
+        </SettingsSection>
+      ) : null}
+
       {settings.computerUse ? (
         <SettingsSection title="Computer Use">
           <ComputerUseActivatePanel
             initial={settings.computerUse}
+            tccReauthRequired={settings.identityMigration?.tccReauthRequired ?? false}
             onUpdated={(next) => setSettings((current) => (current ? { ...current, computerUse: next } : current))}
           />
         </SettingsSection>

@@ -6,7 +6,21 @@ interface SecretInputProps {
   label: string;
   present: boolean;
   required: boolean;
+  hideEnvVar?: boolean;
+  savedAt?: string | null;
+  updatedAt?: string | null;
   onSave: (value: string) => Promise<void>;
+}
+
+function formatCredentialTimestamp(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleString();
 }
 
 export default function SecretInput({
@@ -14,12 +28,16 @@ export default function SecretInput({
   label,
   present,
   required,
+  hideEnvVar = false,
+  savedAt = null,
+  updatedAt = null,
   onSave,
 }: SecretInputProps) {
   const [value, setValue] = useState('');
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!revealed) {
@@ -39,6 +57,7 @@ export default function SecretInput({
       await onSave(value.trim());
       setValue('');
       setRevealed(false);
+      setSavedNotice('Credential saved. Runtime chat is now available.');
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : 'Save failed';
       setError(message);
@@ -52,16 +71,24 @@ export default function SecretInput({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-gray-900">{label}</p>
-          <p className="font-mono text-xs text-gray-500">{envVar}</p>
+          {hideEnvVar ? null : <p className="font-mono text-xs text-gray-500">{envVar}</p>}
         </div>
         <span
           className={`text-xs font-semibold uppercase ${
             present ? 'text-emerald-600' : required ? 'text-amber-600' : 'text-gray-400'
           }`}
         >
-          {present ? 'set' : required ? 'missing' : 'optional'}
+          {present ? 'configured' : required ? 'missing' : 'optional'}
         </span>
       </div>
+      {present ? (
+        <p className="mt-1 text-xs text-emerald-700" data-testid={`secret-status-${envVar}`}>
+          Key stored securely
+          {formatCredentialTimestamp(updatedAt ?? savedAt)
+            ? ` · last updated ${formatCredentialTimestamp(updatedAt ?? savedAt)}`
+            : ''}
+        </p>
+      ) : null}
       <div className="mt-3 flex items-center gap-2">
         <div className="relative flex-1">
           <input
@@ -91,6 +118,11 @@ export default function SecretInput({
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
+      {savedNotice ? (
+        <p className="mt-2 text-xs text-emerald-700" role="status">
+          {savedNotice}
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-2 text-xs text-red-600" role="alert">
           {error}

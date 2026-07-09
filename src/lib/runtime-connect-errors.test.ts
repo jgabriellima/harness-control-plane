@@ -3,7 +3,16 @@ import { describe, it } from 'node:test';
 
 import { Code, ConnectError } from '@connectrpc/connect';
 
-import { isConnectCanceled, isConnectUnauthenticated, formatRuntimeConnectError, isRecoverableRuntimeConnectError } from './runtime-connect-errors.ts';
+import {
+  cacheServerSdkMessageContext,
+  resolveServerSdkMessageContext,
+} from './runtime-sdk-messages.ts';
+import {
+  isConnectCanceled,
+  isConnectUnauthenticated,
+  formatRuntimeConnectError,
+  isRecoverableRuntimeConnectError,
+} from './runtime-connect-errors.ts';
 
 describe('isConnectCanceled', () => {
   it('detects ConnectError with Code.Canceled', () => {
@@ -40,7 +49,35 @@ describe('formatRuntimeConnectError', () => {
     const message = formatRuntimeConnectError(
       new ConnectError('[unauthenticated] Error', Code.Unauthenticated),
     );
-    assert.match(message, /CURSOR_API_KEY/);
+    assert.match(message, /Runtime API Key|app\/\.env|Settings/);
+  });
+
+  it('maps unauthenticated errors to shippable copy in production desktop', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousBundleId = process.env.TAURI_BUNDLE_IDENTIFIER;
+    process.env.NODE_ENV = 'production';
+    process.env.TAURI_BUNDLE_IDENTIFIER = 'com.acme.workflow';
+    const { cacheServerSdkMessageContext: cacheContext } = await import('./runtime-sdk-messages.ts');
+    cacheContext(
+      resolveServerSdkMessageContext({
+        distributionSurface: 'desktop',
+        presentationTitle: 'ACME Workflow',
+        operatorContext: false,
+      }),
+    );
+
+    const message = formatRuntimeConnectError(
+      new ConnectError('[unauthenticated] Error', Code.Unauthenticated),
+    );
+    assert.doesNotMatch(message, /CURSOR|\.env|harness-control-plane/i);
+    assert.match(message, /Configurações/);
+
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousBundleId === undefined) {
+      delete process.env.TAURI_BUNDLE_IDENTIFIER;
+    } else {
+      process.env.TAURI_BUNDLE_IDENTIFIER = previousBundleId;
+    }
   });
 });
 

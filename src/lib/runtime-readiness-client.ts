@@ -1,4 +1,5 @@
 import type { SdkDispatchHealth } from './runtime-sdk-probe';
+import { clientSdkMessageContext, sdkHealthProbeFailedFallback } from './runtime-sdk-messages';
 
 const READINESS_PATH = '/api/runtime/readiness';
 const DISPATCH_HEALTH_PATH = '/api/runtime/dispatch-health';
@@ -74,7 +75,7 @@ export async function fetchDispatchHealth(
   });
 
   if (!response.ok) {
-    throw new Error('Failed to verify Cursor runtime connectivity');
+    throw new Error(sdkHealthProbeFailedFallback(clientSdkMessageContext()));
   }
 
   return (await response.json()) as SdkDispatchHealth;

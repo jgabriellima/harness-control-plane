@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Loading</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      font: 14px/1.5 system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <p id="status">Starting application…</p>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      const deadline = Date.now() + 120000;
+
+      function go(url) {
+        if (!url || typeof url !== 'string') return;
+        window.location.replace(url);
+      }
+
+      function tauriInvoke() {
+        const tauri = window.__TAURI__;
+        if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
+          return tauri.core.invoke.bind(tauri.core);
+        }
+        const internals = window.__TAURI_INTERNALS__;
+        if (internals && typeof internals.invoke === 'function') {
+          return internals.invoke.bind(internals);
+        }
+        return null;
+      }
+
+      function tauriListen() {
+        const tauri = window.__TAURI__;
+        if (tauri && tauri.event && typeof tauri.event.listen === 'function') {
+          return tauri.event.listen.bind(tauri.event);
+        }
+        const internals = window.__TAURI_INTERNALS__;
+        if (internals && internals.event && typeof internals.event.listen === 'function') {
+          return internals.event.listen.bind(internals.event);
+        }
+        return null;
+      }
+
+      async function poll() {
+        const invoke = tauriInvoke();
+        if (!invoke) return false;
+        try {
+          const url = await invoke('sidecar_launch_url');
+          if (url) {
+            go(url);
+            return true;
+          }
+        } catch (_) {
+          /* sidecar not ready */
+        }
+        return false;
+      }
+
+      async function waitForSidecar() {
+        while (Date.now() < deadline) {
+          if (await poll()) return;
+          statusEl.textContent = 'Starting application…';
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        statusEl.textContent = 'Startup timed out. Quit and reopen the application.';
+      }
+
+      const listen = tauriListen();
+      if (listen) {
+        listen('sidecar-ready', function (event) {
+          go(event && event.payload);
+        }).catch(function () {
+          /* polling fallback handles navigation */
+        });
+      }
+
+      waitForSidecar();
+    })();
+  </script>
+</body>
+</html>

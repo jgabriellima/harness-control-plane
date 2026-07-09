@@ -13,18 +13,25 @@ export function resolveComputerUsePermissionProductName(config: UIConfig): strin
   return getPresentationTitle(config, COMPUTER_USE_PERMISSION_PRODUCT_NAME);
 }
 
-function withProductName(productName: string) {
+function withProductName(productName: string, options?: { tccReauthRequired?: boolean }) {
+  const tccReauthNote = options?.tccReauthRequired
+    ? ` After a bundle rebrand or upgrade, macOS Privacy permissions do not transfer automatically — re-approve ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} under Accessibility and Screen Recording even if the previous product already had access.`
+    : '';
+
   return {
     productName,
-    hint: `In System Settings, enable ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} — that is ${productName}'s desktop automation driver (koala icon). Turn it ON under Accessibility and Screen Recording.`,
-    dialogHint: `When macOS asks, approve ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} (${productName}'s automation engine).`,
+    hint: `In System Settings, enable ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} — that is ${productName}'s desktop automation driver (koala icon). Turn it ON under Accessibility and Screen Recording.${tccReauthNote}`,
+    dialogHint: `When macOS asks, approve ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} (${productName}'s automation engine).${tccReauthNote}`,
     steps: [
       `Toggle ${COMPUTER_USE_PERMISSION_SYSTEM_NAME} ON (Accessibility and Screen Recording).`,
       `If macOS shows "Quit & Reopen" — click Later. ${productName} restarts the driver automatically.`,
-      'Wait a few seconds — setup continues on its own.',
+      options?.tccReauthRequired
+        ? 'If you upgraded from a previous branded install, macOS may require fresh permission grants for the automation driver.'
+        : 'Wait a few seconds — setup continues on its own.',
     ].join(' '),
     activeMessage: `${productName} desktop control is ready.`,
     cursorSdkWarning: `If macOS shows Cursor SDK in a permission dialog, ignore it — grants belong to CuaDriver (${productName}'s automation engine). Use Settings → Computer Use here in ${productName}.`,
+    tccReauthNote,
   };
 }
 
@@ -41,10 +48,16 @@ export const COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE = defaultCopy.activeMessage;
 /** Why macOS may show Cursor SDK during a broken setup path — not the intended grant target. */
 export const COMPUTER_USE_CURSOR_SDK_WARNING = defaultCopy.cursorSdkWarning;
 
-export function buildComputerUseCopyForProduct(productName: string) {
-  return withProductName(productName);
+export function buildComputerUseCopyForProduct(
+  productName: string,
+  options?: { tccReauthRequired?: boolean },
+) {
+  return withProductName(productName, options);
 }
 
-export function resolveComputerUseCopy(config: UIConfig) {
-  return withProductName(resolveComputerUsePermissionProductName(config));
+export function resolveComputerUseCopy(
+  config: UIConfig,
+  options?: { tccReauthRequired?: boolean },
+) {
+  return withProductName(resolveComputerUsePermissionProductName(config), options);
 }

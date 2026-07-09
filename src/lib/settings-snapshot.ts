@@ -8,6 +8,7 @@ import { resolveHarnessBinding } from './harness-binding';
 import { loadBusinessConfig } from './harness-reader';
 import { loadComputerUseStatus } from './runtime-computer-use-preferences';
 import type { ComputerUsePreferences } from './runtime-computer-use-types';
+import { loadIdentityMigrationSummary, type IdentityMigrationSummary } from './bundle-identity';
 
 export interface IntegrationSlotSummary {
   slotId: string;
@@ -51,6 +52,7 @@ export interface SettingsSnapshot {
   runtime: RuntimeProfileSummary | null;
   integrations: IntegrationSlotSummary[];
   computerUse: ComputerUseSettingsSummary | null;
+  identityMigration: IdentityMigrationSummary | null;
   generatedAt: string;
 }
 
@@ -173,6 +175,7 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
 
     const computerUseContract = parseComputerUseContract(root);
     let computerUseStatus: Awaited<ReturnType<typeof loadComputerUseStatus>> | null = null;
+    let identityMigration: IdentityMigrationSummary | null = null;
 
     if (computerUseContract?.enabled) {
       try {
@@ -180,6 +183,12 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
       } catch {
         computerUseStatus = null;
       }
+    }
+
+    try {
+      identityMigration = await loadIdentityMigrationSummary(binding.workspaceRoot);
+    } catch {
+      identityMigration = null;
     }
 
     return {
@@ -195,6 +204,7 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
       runtime: parseRuntimeProfile(root),
       integrations: parseIntegrations(root),
       computerUse: buildComputerUseSummary(computerUseContract, computerUseStatus),
+      identityMigration,
       generatedAt: new Date().toISOString(),
     };
   });

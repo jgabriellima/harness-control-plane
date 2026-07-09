@@ -23,7 +23,12 @@ pub fn keychain_service() -> String {
 }
 
 /// Runtime binding vars always injected into sidecar when present in keychain.
-const RUNTIME_ALLOWLIST: &[&str] = &["CURSOR_API_KEY", "CURSOR_DATA_DIR", "SENTRY_DSN"];
+const RUNTIME_ALLOWLIST: &[&str] = &[
+    "RUNTIME_API_KEY",
+    "CURSOR_API_KEY",
+    "CURSOR_DATA_DIR",
+    "SENTRY_DSN",
+];
 
 /// Integration secrets commonly declared in credential manifest.
 const INTEGRATION_ALLOWLIST: &[&str] = &[
@@ -41,8 +46,31 @@ fn is_allowlisted(key: &str) -> bool {
     RUNTIME_ALLOWLIST.contains(&key) || INTEGRATION_ALLOWLIST.contains(&key)
 }
 
+fn keyring_entry_for_service(service: &str, key: &str) -> Result<Entry, String> {
+    Entry::new(service, key).map_err(|e| e.to_string())
+}
+
 fn keyring_entry(key: &str) -> Result<Entry, String> {
-    Entry::new(&keychain_service(), key).map_err(|e| e.to_string())
+    keyring_entry_for_service(&keychain_service(), key)
+}
+
+pub fn allowlisted_secret_keys() -> impl Iterator<Item = &'static str> {
+    RUNTIME_ALLOWLIST.iter().chain(INTEGRATION_ALLOWLIST.iter()).copied()
+}
+
+pub fn keychain_get_from_service(service: &str, key: &str) -> Option<String> {
+    if !is_allowlisted(key) {
+        return None;
+    }
+    let entry = keyring_entry_for_service(service, key).ok()?;
+    match entry.get_password() {
+        Ok(value) if !value.trim().is_empty() => Some(value),
+        _ => None,
+    }
+}
+
+pub fn keychain_has_in_service(service: &str, key: &str) -> bool {
+    keychain_get_from_service(service, key).is_some()
 }
 
 pub fn keychain_get(key: &str) -> Option<String> {
@@ -99,6 +127,9 @@ pub fn load_sidecar_secrets() -> HashMap<String, String> {
         if let Some(value) = keychain_get(key) {
             out.insert((*key).to_string(), value);
         }
+    }
+    if let Some(runtime_key) = out.get("RUNTIME_API_KEY").cloned() {
+        out.entry("CURSOR_API_KEY".to_string()).or_insert(runtime_key);
     }
     out
 }
