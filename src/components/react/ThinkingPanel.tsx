@@ -22,17 +22,17 @@ function formatDuration(durationMs: number): string {
 export default function ThinkingPanel({ content, streaming = false, durationMs }: ThinkingPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [contentHeight, setContentHeight] = useState(REASONING_CONTENT_DEFAULT_HEIGHT);
-  const [hasOverflow, setHasOverflow] = useState(false);
+  const [showResizeHandle, setShowResizeHandle] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const hasContent = content.trim().length > 0;
 
-  const measureOverflow = useCallback(() => {
+  const measureLayout = useCallback(() => {
     const element = contentRef.current;
     if (!element) {
       return;
     }
-    setHasOverflow(element.scrollHeight > element.clientHeight + 1);
+    setShowResizeHandle(element.scrollHeight > REASONING_CONTENT_DEFAULT_HEIGHT + 1);
   }, []);
 
   useEffect(() => {
@@ -40,8 +40,8 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
   }, [content]);
 
   useEffect(() => {
-    measureOverflow();
-  }, [content, contentHeight, collapsed, measureOverflow]);
+    measureLayout();
+  }, [content, contentHeight, collapsed, measureLayout]);
 
   useEffect(() => {
     const element = contentRef.current;
@@ -50,14 +50,14 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     }
 
     const observer = new ResizeObserver(() => {
-      measureOverflow();
+      measureLayout();
     });
     observer.observe(element);
 
     return () => {
       observer.disconnect();
     };
-  }, [collapsed, measureOverflow]);
+  }, [collapsed, measureLayout]);
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     event.preventDefault();
@@ -85,6 +85,18 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     }
     resizeRef.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function handleResizeDoubleClick(event: React.MouseEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+    const fullHeight = element.scrollHeight;
+    const isFullyExpanded = contentHeight >= fullHeight - 1;
+    setContentHeight(isFullyExpanded ? REASONING_CONTENT_DEFAULT_HEIGHT : fullHeight);
   }
 
   return (
@@ -131,15 +143,16 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
               {hasContent ? content : streaming ? 'Processing…' : ''}
             </p>
           </div>
-          {hasOverflow ? (
+          {showResizeHandle ? (
             <div
               className="h-1.5 shrink-0 cursor-row-resize rounded-b-lg bg-gray-100 hover:bg-gray-200"
               onPointerDown={handleResizePointerDown}
               onPointerMove={handleResizePointerMove}
               onPointerUp={handleResizePointerUp}
+              onDoubleClick={handleResizeDoubleClick}
               role="separator"
               aria-orientation="horizontal"
-              aria-label="Expand reasoning panel"
+              aria-label="Resize reasoning panel; double-click to expand or collapse"
               data-testid="chat-message-thinking-resize"
             />
           ) : null}
