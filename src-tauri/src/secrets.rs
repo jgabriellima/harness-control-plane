@@ -6,7 +6,21 @@ use std::path::PathBuf;
 use keyring::Entry;
 use tauri::{AppHandle, Manager};
 
-pub const KEYCHAIN_SERVICE: &str = "ai.jambu.business-runtime";
+/// Keychain service name — must match Tauri `identifier` in tauri.conf.json (ADR-048).
+/// Set at compile time from merged tauri.conf.json via build.rs (`TAURI_BUNDLE_IDENTIFIER`).
+/// Runtime override: `TAURI_BUNDLE_IDENTIFIER` env (sidecar / tests).
+pub fn keychain_service() -> String {
+    if let Ok(identifier) = std::env::var("TAURI_BUNDLE_IDENTIFIER") {
+        let trimmed = identifier.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    option_env!("TAURI_BUNDLE_IDENTIFIER")
+        .unwrap_or("ai.jambu.control-plane")
+        .to_string()
+}
 
 /// Runtime binding vars always injected into sidecar when present in keychain.
 const RUNTIME_ALLOWLIST: &[&str] = &["CURSOR_API_KEY", "CURSOR_DATA_DIR", "SENTRY_DSN"];
@@ -28,7 +42,7 @@ fn is_allowlisted(key: &str) -> bool {
 }
 
 fn keyring_entry(key: &str) -> Result<Entry, String> {
-    Entry::new(KEYCHAIN_SERVICE, key).map_err(|e| e.to_string())
+    Entry::new(&keychain_service(), key).map_err(|e| e.to_string())
 }
 
 pub fn keychain_get(key: &str) -> Option<String> {

@@ -23,7 +23,12 @@ function ensureDir(relativePath) {
   console.log(`[desktop-sidecar] ensured ${relativePath}/`);
 }
 
-for (const relativePath of ['dist/server', 'dist/client']) {
+for (const relativePath of [
+  'dist/server',
+  'dist/client',
+  'src-tauri/resources/shell',
+  'src-tauri/resources/harness-baseline',
+]) {
   ensureDir(relativePath);
 }
 

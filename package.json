@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Domain-neutral harness control plane — Astro SSR, Tauri desktop, workspace binding (ADR-039)",
+  "description": "Domain-neutral harness control plane \u2014 Astro SSR, Tauri desktop, workspace binding (ADR-039)",
   "exports": {
     "./embed": {
       "types": "./embed/index.d.ts",
@@ -23,7 +23,7 @@
     "preview": "node scripts/astro-cli.mjs preview",
     "astro": "astro",
     "test:e2e": "playwright test",
-    "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts src/lib/file-reference.test.ts src/lib/tool-file-paths.test.ts src/lib/thread-file-paths.test.ts src/lib/workspace-files.test.ts src/lib/workspace-file-index.test.ts src/lib/library-index.test.ts src/lib/composer-mention.test.ts src/lib/active-run-sync.test.ts src/lib/runtime-agent-run-release.test.ts src/lib/voice-input-config.test.ts src/lib/keyboard-shortcut.test.ts src/lib/voice-input-engine.test.ts src/lib/voice-transcription.test.ts src/lib/format-inspect.test.ts src/lib/json-syntax-highlight.test.ts src/lib/runtime-connect-errors.test.ts src/lib/runtime-sdk-auth-gate.test.ts src/lib/assistant-text.test.ts src/lib/runtime-hub-store.test.ts src/lib/runtime-hub-stream.test.ts src/lib/strip-cursor-prompt-envelope.test.ts",
+    "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts src/lib/harness-commands.test.ts src/lib/file-reference.test.ts src/lib/tool-file-paths.test.ts src/lib/thread-file-paths.test.ts src/lib/workspace-files.test.ts src/lib/workspace-file-index.test.ts src/lib/library-index.test.ts src/lib/composer-mention.test.ts src/lib/active-run-sync.test.ts src/lib/runtime-agent-run-release.test.ts src/lib/voice-input-config.test.ts src/lib/keyboard-shortcut.test.ts src/lib/voice-input-engine.test.ts src/lib/voice-transcription.test.ts src/lib/format-inspect.test.ts src/lib/json-syntax-highlight.test.ts src/lib/runtime-connect-errors.test.ts src/lib/runtime-sdk-auth-gate.test.ts src/lib/assistant-text.test.ts src/lib/runtime-hub-store.test.ts src/lib/runtime-hub-stream.test.ts src/lib/strip-cursor-prompt-envelope.test.ts",
     "desktop:sidecar": "node desktop-sidecar/build.mjs",
     "desktop:prepare": "node scripts/prepare-desktop-dev.mjs",
     "voice:prepare": "node --import tsx scripts/ensure-voice-transcription.mjs",
@@ -31,7 +31,8 @@
     "desktop:sync-version": "node scripts/sync-desktop-version.mjs",
     "tauri": "tauri",
     "tauri:dev": "node scripts/tauri-dev.mjs",
-    "tauri:build": "npm run build && node desktop-sidecar/build.mjs && tauri build"
+    "tauri:build": "npm run build && node desktop-sidecar/build.mjs && npm run desktop:merge-branding && tauri build",
+    "desktop:merge-branding": "node scripts/merge-tauri-branding.mjs"
   },
   "dependencies": {
     "@aiden0z/pptx-renderer": "^1.2.3",

@@ -2,6 +2,8 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+mod secrets;
+
 struct SidecarState {
     child: Mutex<Option<tauri_plugin_shell::process::CommandChild>>,
 }
@@ -11,13 +13,14 @@ mod production {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     use tauri::{AppHandle, Emitter, Manager};
     use tauri_plugin_shell::process::CommandEvent;
     use tauri_plugin_shell::ShellExt;
 
+    use super::secrets;
     use super::SidecarState;
 
     pub fn pick_free_port() -> u16 {
@@ -66,6 +69,10 @@ mod production {
         path.to_str().map(|value| value.to_string())
     }
 
+    fn resolve_bundled_shell_root(resource_dir: &Path) -> PathBuf {
+        resource_dir.join("shell")
+    }
+
     pub async fn wait_for_readiness(port: u16) -> bool {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
@@ -88,21 +95,31 @@ mod production {
         let resource_dir = app
             .path()
             .resource_dir()
-            .map_err(|e| e.to_string())?
-            .to_string_lossy()
-            .to_string();
+            .map_err(|e| e.to_string())?;
+        let resource_dir_string = resource_dir.to_string_lossy().to_string();
+        let shell_root = resolve_bundled_shell_root(&resource_dir);
+        let shell_root_string = shell_root.to_string_lossy().to_string();
+        let bundle_identifier = app.config().identifier.clone();
 
         let mut sidecar = app
             .shell()
             .sidecar("business-server")
             .map_err(|e| e.to_string())?
-            .env("TAURI_RESOURCE_DIR", resource_dir)
+            .env("TAURI_RESOURCE_DIR", &resource_dir_string)
             .env("TAURI_APP_PORT", port.to_string())
             .env("HOST", "127.0.0.1")
-            .env("PORT", port.to_string());
+            .env("PORT", port.to_string())
+            .env("CONTROL_PLANE_PROJECT_ROOT", &shell_root_string)
+            .env("CONTROL_PLANE_HOST_REPO", &resource_dir_string)
+            .env("TAURI_BUNDLE_IDENTIFIER", &bundle_identifier)
+            .env("JAMBU_HOST_BUNDLE_ID", &bundle_identifier);
 
         if let Some(workspaces_root) = ensure_production_workspaces_root() {
             sidecar = sidecar.env("BUSINESS_WORKSPACES_ROOT", workspaces_root);
+        }
+
+        for (key, value) in secrets::load_sidecar_secrets() {
+            sidecar = sidecar.env(key, value);
         }
 
         for (key, value) in load_config_env(app) {
@@ -189,9 +206,18 @@ pub fn run() {
         .manage(SidecarState {
             child: Mutex::new(None),
         })
+        .invoke_handler(tauri::generate_handler![
+            secrets::secrets_set,
+            secrets::secrets_delete,
+            secrets::secrets_has,
+            secrets::secrets_list,
+        ])
         .setup(|app| {
             #[cfg(not(debug_assertions))]
-            production::start(app.handle())?;
+            {
+                secrets::migrate_config_env(app.handle());
+                production::start(app.handle())?;
+            }
 
             #[cfg(debug_assertions)]
             dev::start(app.handle());
