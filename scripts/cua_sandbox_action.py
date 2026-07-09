@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import shlex
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,12 +40,16 @@ async def connect_sandbox(name: str, *, local: bool):
 
 
 async def run_shell(sb: Any, command: str, *, timeout_s: float = 60.0) -> dict[str, Any]:
-    result = await sb.run(command, timeout=timeout_s)
+    """Execute via Sandbox.shell.run (cua_sandbox API — not Sandbox.run)."""
+    timeout = max(1, int(timeout_s))
+    result = await sb.shell.run(command, timeout=timeout)
     stdout = getattr(result, "stdout", None) or (result.get("stdout") if isinstance(result, dict) else "")
     stderr = getattr(result, "stderr", None) or (result.get("stderr") if isinstance(result, dict) else "")
-    exit_code = getattr(result, "exit_code", None)
+    exit_code = getattr(result, "returncode", None)
+    if exit_code is None:
+        exit_code = getattr(result, "exit_code", None)
     if exit_code is None and isinstance(result, dict):
-        exit_code = result.get("exit_code", result.get("returncode"))
+        exit_code = result.get("returncode", result.get("exit_code"))
     return {
         "stdout": stdout if isinstance(stdout, str) else str(stdout or ""),
         "stderr": stderr if isinstance(stderr, str) else str(stderr or ""),
@@ -60,8 +64,6 @@ async def take_screenshot(sb: Any, out_path: Path) -> Path:
         out_path.write_bytes(bytes(data))
         return out_path
     if isinstance(data, str) and data.startswith("data:image"):
-        import base64
-
         encoded = data.split(",", 1)[1]
         out_path.write_bytes(base64.b64decode(encoded))
         return out_path
@@ -74,9 +76,9 @@ async def take_screenshot(sb: Any, out_path: Path) -> Path:
     raise RuntimeError(f"Unsupported screenshot return type: {type(data)!r}")
 
 
-OPEN_URL_SCRIPT = r"""
-set -e
-URL="$1"
+OPEN_URL_SCRIPT = r"""#!/usr/bin/env bash
+set -euo pipefail
+URL="${1:?url required}"
 export DISPLAY="${DISPLAY:-:1}"
 if command -v firefox >/dev/null 2>&1; then
   nohup firefox --new-window "$URL" >/tmp/jambu-sandbox-browser.log 2>&1 &
@@ -106,11 +108,13 @@ exit 127
 async def action_open_url(name: str, url: str, *, local: bool, out: Path | None) -> dict[str, Any]:
     sb = await connect_sandbox(name, local=local)
     try:
-        shell = await run_shell(
-            sb,
-            f"bash -lc {shlex.quote(OPEN_URL_SCRIPT)} {shlex.quote(url)}",
-            timeout_s=45.0,
+        encoded = base64.b64encode(OPEN_URL_SCRIPT.encode("utf-8")).decode("ascii")
+        install_and_run = (
+            f"echo {shlex.quote(encoded)} | base64 -d > /tmp/jambu-open-url.sh "
+            f"&& chmod +x /tmp/jambu-open-url.sh "
+            f"&& /tmp/jambu-open-url.sh {shlex.quote(url)}"
         )
+        shell = await run_shell(sb, install_and_run, timeout_s=45.0)
         if shell["exit_code"] != 0:
             return {
                 "status": "error",
@@ -123,7 +127,7 @@ async def action_open_url(name: str, url: str, *, local: bool, out: Path | None)
         for line in shell["stdout"].splitlines():
             if line.startswith("browser="):
                 browser = line.split("=", 1)[1].strip() or browser
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(3.0)
         screenshot_path = out or default_screenshot_path(name)
         saved = await take_screenshot(sb, screenshot_path)
         return {
