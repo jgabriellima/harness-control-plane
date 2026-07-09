@@ -33,7 +33,15 @@ function FieldRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function IntegrationCredentials({ slotId, provider }: { slotId: string; provider: string }) {
+function IntegrationCredentials({
+  slotId,
+  provider,
+  keychainService,
+}: {
+  slotId: string;
+  provider: string;
+  keychainService: string;
+}) {
   const [credentials, setCredentials] = useState<CredentialPresence[]>([]);
   const [connectAvailable, setConnectAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -88,7 +96,7 @@ function IntegrationCredentials({ slotId, provider }: { slotId: string; provider
       {connectAvailable ? <IntegrationConnectButton slotId={slotId} onConnected={reload} /> : null}
       {!connectAvailable ? (
         <p className="mb-3 text-xs text-gray-500">
-          Values are stored in the OS keychain (service: ai.jambu.business-runtime). Never written to the repo.
+          Values are stored in the OS keychain (service: {keychainService}). Never written to the repo.
         </p>
       ) : null}
       {!connectAvailable
@@ -113,6 +121,27 @@ export default function SettingsView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
+  const [keychainService, setKeychainService] = useState('control-plane');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch('/api/ui/composer-config')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { desktopIdentifier?: string };
+        if (!cancelled && payload.desktopIdentifier) {
+          setKeychainService(payload.desktopIdentifier);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +284,11 @@ export default function SettingsView() {
                 </button>
                 {expandedSlot === slot.slotId ? (
                   <div className="mt-4 border-t border-gray-100 pt-4">
-                    <IntegrationCredentials slotId={slot.slotId} provider={slot.provider} />
+                    <IntegrationCredentials
+                      slotId={slot.slotId}
+                      provider={slot.provider}
+                      keychainService={keychainService}
+                    />
                   </div>
                 ) : null}
               </li>

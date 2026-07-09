@@ -11,7 +11,15 @@ import {
 } from './runtime-computer-use-bridge';
 import { loadComputerUsePreferences, isComputerUseContractEnabled } from './runtime-computer-use-preferences';
 import { probeComputerUseSetup, ensureDaemonRunning } from './runtime-computer-use-setup';
-import { saveComputerUseSession } from './runtime-computer-use-sessions';
+import { loadComputerUseSession, saveComputerUseSession } from './runtime-computer-use-sessions';
+import { readComputerUsePreviewManifest } from './runtime-computer-use-panel-bridge';
+import {
+  buildComputerUsePromptInjection,
+  parseComputerUseTargetMode,
+  type ComputerUseTargetMode,
+} from './runtime-computer-use-types';
+import { buildSandboxOpenUrlRecipe, readSandboxManifest } from './runtime-computer-use-sandbox-bridge';
+import { resolveControlPlaneInstallRoot } from './repo-root';
 
 export class RuntimeGatewayError extends Error {
   readonly statusCode: number;
@@ -85,10 +93,66 @@ function resolveRuntimeModelId(): string {
   return configured && configured.length > 0 ? configured : 'composer-2.5';
 }
 
+async function resolveComputerUsePreviewPromptHints(
+  conversationId: string,
+  targetMode: ComputerUseTargetMode | null,
+  workspaceRoot?: string,
+): Promise<{
+  previewActive?: boolean;
+  previewControlMode?: 'user' | 'agent';
+  sandboxReady?: boolean;
+  sandboxName?: string;
+  sandboxApiPort?: number;
+  sandboxVncPort?: number;
+  sandboxOpenUrlRecipe?: string;
+}> {
+  const hints: {
+    previewActive?: boolean;
+    previewControlMode?: 'user' | 'agent';
+    sandboxReady?: boolean;
+    sandboxName?: string;
+    sandboxApiPort?: number;
+    sandboxVncPort?: number;
+    sandboxOpenUrlRecipe?: string;
+  } = {};
+
+  const previewManifest = await readComputerUsePreviewManifest();
+  if (previewManifest && typeof previewManifest === 'object') {
+    const active = (previewManifest as Record<string, unknown>).active;
+    if (active && typeof active === 'object') {
+      const record = active as Record<string, unknown>;
+      if (record.conversationId === conversationId) {
+        hints.previewActive = true;
+        hints.previewControlMode = record.controlMode === 'user' ? 'user' : 'agent';
+      }
+    }
+  }
+
+  if (targetMode === 'sandbox') {
+    const sandboxManifest = await readSandboxManifest(conversationId, workspaceRoot);
+    if (sandboxManifest?.phase === 'ready' && sandboxManifest.sandboxName) {
+      const harnessRoot = resolveControlPlaneInstallRoot();
+      hints.sandboxReady = true;
+      hints.sandboxName = sandboxManifest.sandboxName;
+      if (sandboxManifest.apiPort !== null) {
+        hints.sandboxApiPort = sandboxManifest.apiPort;
+      }
+      if (sandboxManifest.vncPort !== null) {
+        hints.sandboxVncPort = sandboxManifest.vncPort;
+      }
+      hints.sandboxOpenUrlRecipe = buildSandboxOpenUrlRecipe(sandboxManifest.sandboxName, harnessRoot);
+    } else {
+      hints.sandboxReady = false;
+    }
+  }
+
+  return hints;
+}
+
 async function buildLocalAgentOptions(
   cwd: string,
   requestId: string,
-  computerUseActive: boolean,
+  hostComputerUseActive: boolean,
   computerUseHealthError: string | null,
 ) {
   const local: {
@@ -101,7 +165,7 @@ async function buildLocalAgentOptions(
     settingSources: [] as const,
   };
 
-  if (computerUseActive && !computerUseHealthError) {
+  if (hostComputerUseActive && !computerUseHealthError) {
     local.sandboxOptions = { enabled: false };
     local.customTools = await buildComputerUseCustomTools();
   }
@@ -215,10 +279,38 @@ export async function dispatchChatToRuntime(
     contractEnabled && computerUsePreferences?.hostControlEnabled && setup?.ready,
   );
   const sessionEnabled = request.computer_use_enabled === true;
-  const computerUseActive = capabilityAvailable && sessionEnabled;
+  const previousSession =
+    conversationKey !== 'ephemeral-new-chat'
+      ? await loadComputerUseSession(conversationKey, cwd)
+      : null;
+
+  let targetMode = parseComputerUseTargetMode(request.computer_use_mode);
+  if (sessionEnabled && !targetMode) {
+    targetMode = previousSession?.mode ?? 'host';
+  }
+
+  const computerUseModeChanged =
+    Boolean(previousSession?.enabled && sessionEnabled) &&
+    previousSession?.mode !== null &&
+    targetMode !== null &&
+    previousSession.mode !== targetMode;
+
+  const hostComputerUseActive =
+    capabilityAvailable && sessionEnabled && targetMode === 'host';
+  const sandboxComputerUseActive = sessionEnabled && targetMode === 'sandbox';
+  const computerUseActive = hostComputerUseActive || sandboxComputerUseActive;
+
+  /** Host↔sandbox switch must not resume an agent that was wired for the other plane. */
+  const effectiveAgentId =
+    computerUseModeChanged && sessionEnabled ? undefined : request.agent_id;
 
   if (conversationKey !== 'ephemeral-new-chat') {
-    await saveComputerUseSession(conversationKey, sessionEnabled, cwd);
+    await saveComputerUseSession(
+      conversationKey,
+      sessionEnabled,
+      cwd,
+      sessionEnabled ? targetMode : null,
+    );
   }
 
   runtimeLogger.info('chat.sdk.dispatch.start', {
@@ -228,7 +320,9 @@ export async function dispatchChatToRuntime(
     project_id: request.project_id,
     agent_id: request.agent_id,
     computer_use_enabled: sessionEnabled,
+    computer_use_mode: targetMode,
     computer_use_active: computerUseActive,
+    computer_use_mode_changed: computerUseModeChanged,
     cwd,
   });
 
@@ -246,7 +340,7 @@ export async function dispatchChatToRuntime(
   );
 
   let computerUseHealthError: string | null = null;
-  if (computerUseActive) {
+  if (hostComputerUseActive) {
     await ensureDaemonRunning();
     const health = await probeComputerUseHealth();
     if (!health.ok) {
@@ -264,9 +358,11 @@ export async function dispatchChatToRuntime(
     ? buildComputerUsePromptInjection({
         capabilityAvailable,
         sessionEnabled,
+        targetMode: targetMode ?? 'host',
         allowForegroundCursor: computerUsePreferences?.allowForegroundCursor ?? false,
         consentedAt: computerUsePreferences?.consentedAt ?? null,
         healthError: computerUseHealthError,
+        ...(await resolveComputerUsePreviewPromptHints(conversationKey, targetMode ?? 'host', cwd)),
       })
     : null;
 
@@ -278,13 +374,18 @@ export async function dispatchChatToRuntime(
   const agentOptions = await buildLocalAgentOptions(
     cwd,
     requestId,
-    computerUseActive,
+    hostComputerUseActive,
     computerUseHealthError,
   );
   const timeoutMs = resolveDispatchTimeoutMs();
 
+  const dispatchRequest: ChatRequest = {
+    ...request,
+    agent_id: effectiveAgentId,
+  };
+
   const { agent, resumed } = await withDispatchTimeout(
-    resolveAgent(request, agentOptions, requestId, cwd, conversationKey),
+    resolveAgent(dispatchRequest, agentOptions, requestId, cwd, conversationKey),
     timeoutMs,
     requestId,
   );

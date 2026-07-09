@@ -1,5 +1,5 @@
 const FILE_EXTENSION =
-  'md|mdx|ts|tsx|js|jsx|json|yaml|yml|html|htm|css|txt|py|sh|astro|toml|xml|csv|pdf|pptx|docx|png|jpg|jpeg|gif|webp|svg';
+  'md|mdx|ts|tsx|js|jsx|json|yaml|yml|html|htm|css|txt|py|sh|astro|toml|xml|csv|tsv|pdf|pptx|ppt|docx|doc|xlsx|xls|odt|odp|rtf|gltf|glb|obj|stl|fbx|usdz|blend|dxf|dwg|step|stp|iges|igs|png|jpg|jpeg|gif|webp|svg';
 
 const PATH_SEGMENT = '[\\w@.+() ~-]+';
 
@@ -35,6 +35,7 @@ const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   md: 'markdown',
   mdx: 'markdown',
   csv: 'plaintext',
+  tsv: 'plaintext',
   txt: 'plaintext',
 };
 
@@ -72,12 +73,56 @@ export function inferMimeFromPath(filePath: string): string {
     return 'application/pdf';
   }
 
-  if (extension === 'pptx') {
+  if (extension === 'pptx' || extension === 'ppt') {
     return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
   }
 
-  if (extension === 'docx') {
+  if (extension === 'docx' || extension === 'doc') {
     return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+
+  if (extension === 'xlsx' || extension === 'xls') {
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+
+  if (extension === 'csv' || extension === 'tsv') {
+    return 'text/csv';
+  }
+
+  if (extension === 'gltf') {
+    return 'model/gltf+json';
+  }
+
+  if (extension === 'glb') {
+    return 'model/gltf-binary';
+  }
+
+  if (extension === 'obj') {
+    return 'model/obj';
+  }
+
+  if (extension === 'stl') {
+    return 'model/stl';
+  }
+
+  if (extension === 'fbx') {
+    return 'model/fbx';
+  }
+
+  if (extension === 'blend') {
+    return 'application/x-blender';
+  }
+
+  if (extension === 'dxf') {
+    return 'image/vnd.dxf';
+  }
+
+  if (extension === 'dwg') {
+    return 'image/vnd.dwg';
+  }
+
+  if (extension === 'step' || extension === 'stp') {
+    return 'model/step';
   }
 
   if (extension === 'png') {
@@ -119,7 +164,15 @@ export function isBinaryWorkspaceFile(mime: string): boolean {
 
   if (
     mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mime === 'application/vnd.ms-excel' ||
+    mime === 'application/msword' ||
+    mime === 'application/vnd.ms-powerpoint' ||
+    mime === 'application/x-blender' ||
+    mime.startsWith('model/') ||
+    mime === 'image/vnd.dxf' ||
+    mime === 'image/vnd.dwg'
   ) {
     return true;
   }
@@ -159,6 +212,11 @@ export function isSyntaxHighlightedArtifact(filePath: string, mime: string): boo
 
   const extension = filePath.split('.').pop()?.toLowerCase() ?? '';
   if (MARKDOWN_EXTENSIONS.has(extension) || HTML_EXTENSIONS.has(extension)) {
+    return false;
+  }
+
+  const spreadsheetExtensions = new Set(['csv', 'tsv', 'xlsx', 'xls']);
+  if (spreadsheetExtensions.has(extension)) {
     return false;
   }
 

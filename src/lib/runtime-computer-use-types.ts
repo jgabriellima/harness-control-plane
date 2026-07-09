@@ -1,3 +1,17 @@
+/** Where desktop automation runs for this chat session. */
+export type ComputerUseTargetMode = 'host' | 'sandbox';
+
+export function computerUseTargetModeLabel(mode: ComputerUseTargetMode): string {
+  return mode === 'host' ? 'My computer' : 'Sandbox';
+}
+
+export function parseComputerUseTargetMode(value: unknown): ComputerUseTargetMode | null {
+  if (value === 'host' || value === 'sandbox') {
+    return value;
+  }
+  return null;
+}
+
 /** Cua Driver MCP and related computer-use tool name detection. */
 
 import type { ComputerUseHealthProbe } from './runtime-computer-use-bridge';
@@ -9,15 +23,21 @@ const CUA_TOOL_NAMES = new Set([
   'screenshot',
   'click',
   'type',
+  'type_text',
   'scroll',
   'list_windows',
   'list_apps',
   'launch_app',
   'get_window_state',
+  'get_desktop_state',
   'move_mouse',
+  'move_cursor',
   'drag',
   'hotkey',
   'press_key',
+  'zoom',
+  'double_click',
+  'right_click',
 ]);
 
 export function isCuaToolName(tool: string): boolean {
@@ -57,20 +77,64 @@ export interface ComputerUseStatus {
 export function buildComputerUsePromptInjection(input: {
   capabilityAvailable: boolean;
   sessionEnabled: boolean;
+  targetMode: ComputerUseTargetMode;
   allowForegroundCursor: boolean;
   consentedAt: string | null;
   healthError?: string | null;
+  previewActive?: boolean;
+  previewControlMode?: 'user' | 'agent';
+  sandboxReady?: boolean;
+  sandboxName?: string;
+  sandboxApiPort?: number;
+  sandboxVncPort?: number;
+  sandboxOpenUrlRecipe?: string;
 }): string | null {
-  if (!input.capabilityAvailable) {
-    return '[computer_use: capability not activated — operator must complete setup in Settings before enabling per chat]';
+  if (!input.sessionEnabled) {
+    return '[computer_use: off for this chat — enable My computer or Sandbox in composer options]';
   }
 
-  if (!input.sessionEnabled) {
-    return '[computer_use: off for this chat — enable Computer Use in composer options to load desktop control tools]';
+  if (input.targetMode === 'sandbox') {
+    const lines: string[] = [
+      '[computer_use: session_enabled target=sandbox]',
+      input.previewActive
+        ? `[computer_use_preview: active target=sandbox stream=vnc controlMode=${input.previewControlMode ?? 'agent'}]`
+        : '[computer_use_preview: inactive target=sandbox stream=vnc — panel embeds live noVNC when sandbox starts]',
+    ];
+
+    if (input.sandboxReady && input.sandboxName) {
+      const attrs = [
+        `sandbox_name=${input.sandboxName}`,
+        input.sandboxApiPort !== undefined ? `api_port=${input.sandboxApiPort}` : null,
+        input.sandboxVncPort !== undefined ? `vnc_port=${input.sandboxVncPort}` : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      lines.push(`[computer_use_sandbox: ready] ${attrs}`);
+      if (input.sandboxOpenUrlRecipe) {
+        lines.push(`open_url_recipe=${input.sandboxOpenUrlRecipe}`);
+      }
+    } else {
+      lines.push('[computer_use_sandbox: not_ready] — sandbox is starting; check the preview panel for status');
+    }
+
+    lines.push(
+      'Sandbox mode is ACTIVE for this chat turn. You are NOT on the operator Mac.',
+      'Execute ALL desktop/shell work INSIDE the CUA Sandbox Linux VM only — via cua_sandbox_action.py, /run:cua --sandbox, or CUA Sandbox SDK one-shot Python.',
+      'FORBIDDEN in sandbox mode: custom-user-tools, cua-driver, launch_app, get_desktop_state, host Terminal, host Shell, opening apps on macOS.',
+      'do not write manifest files or read runtime-sessions state from within a chat turn.',
+      'do not run docker ps or inspect host Docker state — sandbox isolation does not use the host daemon.',
+      'The operator preview panel shows the sandbox noVNC stream — never confuse it with the host desktop.',
+    );
+
+    return lines.join('\n');
+  }
+
+  if (!input.capabilityAvailable) {
+    return '[computer_use: My computer selected but capability not activated — complete setup in Settings first]';
   }
 
   if (input.healthError) {
-    return `[computer_use: enabled for this chat but unavailable — ${input.healthError}. Ask the operator to open Settings → Computer Use and retry activation.]`;
+    return `[computer_use: My computer enabled but unavailable — ${input.healthError}. Ask the operator to open Settings → Computer Use and retry activation.]`;
   }
 
   const modes = ['host_background'];
@@ -79,8 +143,12 @@ export function buildComputerUsePromptInjection(input: {
   }
 
   return [
-    `[computer_use: session_enabled modes=${modes.join(',')} consent_at=${input.consentedAt ?? 'unknown'}]`,
-    'Use the custom-user-tools MCP server (Jambu computer-use bridge). Call tools by exact name: list_apps, list_windows, get_window_state, click, type_text, scroll, launch_app, health_report, etc.',
+    `[computer_use: session_enabled target=host modes=${modes.join(',')} consent_at=${input.consentedAt ?? 'unknown'}]`,
+    input.previewActive
+      ? `[computer_use_preview: active target=host controlMode=${input.previewControlMode ?? 'agent'} — operator may Take control in the artifact preview panel]`
+      : '[computer_use_preview: inactive target=host — panel opens automatically when you call desktop tools]',
+    'Use the custom-user-tools MCP server (Jambu computer-use bridge). Call tools by exact name: list_apps, list_windows, get_window_state, get_desktop_state, click, type_text, scroll, launch_app, health_report, etc.',
     'Never invoke cua-driver via Shell — sandbox blocks the daemon socket. Never ask for macOS permissions again; CuaDriver is already consented in Settings.',
+    'When preview controlMode is user, wait for the operator to return control before desktop actions.',
   ].join('\n');
 }

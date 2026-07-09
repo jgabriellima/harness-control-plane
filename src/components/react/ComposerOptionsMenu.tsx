@@ -1,32 +1,37 @@
 'use client';
 
-import { Check, Database, Monitor, Paperclip, Plus, Sparkles } from 'lucide-react';
+import { Check, Container, Database, Monitor, Paperclip, Plus, Sparkles } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
+import type { ComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
 
 interface ComposerOptionsMenuProps {
   disabled?: boolean;
   deepResearch: boolean;
   integrationsOpen: boolean;
-  computerUseEnabled: boolean;
-  computerUseAvailable: boolean;
+  computerUseMode: ComputerUseTargetMode | null;
+  hostComputerUseAvailable: boolean;
+  sandboxComputerUseAvailable: boolean;
+  sandboxPreflightSummary: string | null;
   onAttach: () => void;
   onToggleIntegrations: () => void;
   onToggleDeepResearch: () => void;
-  onToggleComputerUse: () => void;
+  onSelectComputerUseMode: (mode: ComputerUseTargetMode | null) => void;
 }
 
 export default function ComposerOptionsMenu({
   disabled = false,
   deepResearch,
   integrationsOpen,
-  computerUseEnabled,
-  computerUseAvailable,
+  computerUseMode,
+  hostComputerUseAvailable,
+  sandboxComputerUseAvailable,
+  sandboxPreflightSummary,
   onAttach,
   onToggleIntegrations,
   onToggleDeepResearch,
-  onToggleComputerUse,
+  onSelectComputerUseMode,
 }: ComposerOptionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -56,7 +61,11 @@ export default function ComposerOptionsMenu({
     };
   }, [open]);
 
-  const hasActiveOption = deepResearch || integrationsOpen || computerUseEnabled;
+  const hasActiveOption = deepResearch || integrationsOpen || computerUseMode !== null;
+
+  function toggleMode(mode: ComputerUseTargetMode): void {
+    onSelectComputerUseMode(computerUseMode === mode ? null : mode);
+  }
 
   return (
     <div ref={rootRef} className="relative shrink-0 self-end">
@@ -132,24 +141,48 @@ export default function ComposerOptionsMenu({
           <button
             type="button"
             role="menuitem"
-            data-testid="chat-composer-option-computer-use"
-            disabled={!computerUseAvailable}
+            data-testid="chat-composer-option-computer-use-host"
+            disabled={!hostComputerUseAvailable}
             title={
-              computerUseAvailable
-                ? 'Enable desktop control tools for this chat only'
+              hostComputerUseAvailable
+                ? 'Control this Mac via CuaDriver (background)'
                 : 'Complete Computer Use setup in Settings first'
             }
             className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => {
-              if (!computerUseAvailable) {
+              if (!hostComputerUseAvailable) {
                 return;
               }
-              onToggleComputerUse();
+              toggleMode('host');
             }}
           >
             <Monitor className="h-4 w-4 shrink-0 text-gray-500" />
-            <span className="flex-1">Computer use</span>
-            {computerUseEnabled ? <Check className="h-4 w-4 shrink-0 text-gray-900" /> : null}
+            <span className="flex-1">My computer</span>
+            {computerUseMode === 'host' ? <Check className="h-4 w-4 shrink-0 text-gray-900" /> : null}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="chat-composer-option-computer-use-sandbox"
+            disabled={!sandboxComputerUseAvailable}
+            title={
+              !sandboxComputerUseAvailable
+                ? 'Sandbox requires runtime.computer_use in workspace business.yaml'
+                : sandboxPreflightSummary
+                  ? `Sandbox unavailable — ${sandboxPreflightSummary}`
+                  : 'Isolated CUA Sandbox — preview shows sandbox desktop, not your Mac'
+            }
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              if (!sandboxComputerUseAvailable) {
+                return;
+              }
+              toggleMode('sandbox');
+            }}
+          >
+            <Container className="h-4 w-4 shrink-0 text-gray-500" />
+            <span className="flex-1">Sandbox</span>
+            {computerUseMode === 'sandbox' ? <Check className="h-4 w-4 shrink-0 text-gray-900" /> : null}
           </button>
         </div>
       ) : null}

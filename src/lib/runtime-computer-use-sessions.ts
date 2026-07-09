@@ -2,11 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { resolveHarnessBinding } from './harness-binding';
+import type { ComputerUseTargetMode } from './runtime-computer-use-types';
+import { parseComputerUseTargetMode } from './runtime-computer-use-types';
 
 const SESSIONS_REL = 'state/computer-use-sessions.json';
 
 export interface ComputerUseSessionRecord {
   enabled: boolean;
+  mode: ComputerUseTargetMode | null;
   updatedAt: string;
 }
 
@@ -38,8 +41,10 @@ async function readSessionsFile(workspaceRoot?: string): Promise<SessionsFile> {
       if (!isRecord(value) || typeof value.enabled !== 'boolean') {
         continue;
       }
+      const mode = parseComputerUseTargetMode(value.mode);
       sessions[conversationId] = {
         enabled: value.enabled,
+        mode: value.enabled ? (mode ?? 'host') : null,
         updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
       };
     }
@@ -62,17 +67,25 @@ export async function loadComputerUseSession(
   workspaceRoot?: string,
 ): Promise<ComputerUseSessionRecord> {
   const sessions = await readSessionsFile(workspaceRoot);
-  return sessions[conversationId] ?? { enabled: false, updatedAt: new Date().toISOString() };
+  return (
+    sessions[conversationId] ?? {
+      enabled: false,
+      mode: null,
+      updatedAt: new Date().toISOString(),
+    }
+  );
 }
 
 export async function saveComputerUseSession(
   conversationId: string,
   enabled: boolean,
   workspaceRoot?: string,
+  mode: ComputerUseTargetMode | null = enabled ? 'host' : null,
 ): Promise<ComputerUseSessionRecord> {
   const sessions = await readSessionsFile(workspaceRoot);
   const record: ComputerUseSessionRecord = {
     enabled,
+    mode: enabled ? (mode ?? 'host') : null,
     updatedAt: new Date().toISOString(),
   };
   sessions[conversationId] = record;

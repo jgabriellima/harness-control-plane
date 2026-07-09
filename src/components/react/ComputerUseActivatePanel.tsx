@@ -2,12 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import type { SettingsSnapshot } from '../../lib/settings-snapshot';
 import {
-  COMPUTER_USE_CURSOR_SDK_WARNING,
-  COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE,
-  COMPUTER_USE_PERMISSION_DIALOG_HINT,
-  COMPUTER_USE_PERMISSION_HINT,
+  buildComputerUseCopyForProduct,
   COMPUTER_USE_PERMISSION_PRODUCT_NAME,
-  COMPUTER_USE_PERMISSION_STEPS,
   COMPUTER_USE_PERMISSION_SYSTEM_NAME,
 } from '../../lib/runtime-computer-use-copy';
 
@@ -61,6 +57,29 @@ export default function ComputerUseActivatePanel({
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [computerUseCopy, setComputerUseCopy] = useState(() =>
+    buildComputerUseCopyForProduct(COMPUTER_USE_PERMISSION_PRODUCT_NAME),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch('/api/ui/composer-config')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { presentationTitle?: string };
+        if (!cancelled && payload.presentationTitle) {
+          setComputerUseCopy(buildComputerUseCopyForProduct(payload.presentationTitle));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyStatusPayload = useCallback(
     (payload: StatusPayload | null): ComputerUseSummary | null => {
@@ -109,13 +128,13 @@ export default function ComputerUseActivatePanel({
       void refreshStatus().then((payload) => {
         const next = applyStatusPayload(payload);
         if (next?.active) {
-          setStatusMessage(COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE);
+          setStatusMessage(computerUseCopy.activeMessage);
         }
       });
     }, 2000);
 
     return () => window.clearInterval(interval);
-  }, [summary.active, summary.setupPhase, refreshStatus, applyStatusPayload]);
+  }, [summary.active, summary.setupPhase, refreshStatus, applyStatusPayload, computerUseCopy.activeMessage]);
 
   async function activate(): Promise<void> {
     setActivating(true);
@@ -146,7 +165,7 @@ export default function ComputerUseActivatePanel({
       if (!next.active && (payload.setup?.phase === 'permissions' || next.setupPhase === 'permissions')) {
         setStatusMessage(
           payload.setup?.userAction ??
-            COMPUTER_USE_PERMISSION_DIALOG_HINT,
+            computerUseCopy.dialogHint,
         );
       }
     } catch (activateError) {
@@ -163,7 +182,7 @@ export default function ComputerUseActivatePanel({
     setStatusMessage(
       openSettings
         ? 'Opening System Settings…'
-        : COMPUTER_USE_PERMISSION_DIALOG_HINT,
+        : computerUseCopy.dialogHint,
     );
 
     try {
@@ -366,7 +385,7 @@ export default function ComputerUseActivatePanel({
             {activating ? 'Setting up…' : (PHASE_LABELS[summary.setupPhase] ?? 'Setting up')}
           </p>
           <p className="text-sm text-amber-900">
-            {statusMessage ?? COMPUTER_USE_PERMISSION_STEPS}
+            {statusMessage ?? computerUseCopy.steps}
           </p>
           <ol className="list-decimal space-y-1 rounded-md border border-amber-200 bg-white/80 px-4 py-3 text-xs text-amber-950">
             <li>
@@ -375,11 +394,11 @@ export default function ComputerUseActivatePanel({
             </li>
             <li>
               If macOS shows &quot;Quit &amp; Reopen&quot; — click <span className="font-semibold">Later</span>.
-              {' '}{COMPUTER_USE_PERMISSION_PRODUCT_NAME} restarts the driver for you.
+              {' '}{computerUseCopy.productName} restarts the driver for you.
             </li>
             <li>Stay on this page — setup completes automatically in a few seconds.</li>
           </ol>
-          <p className="text-xs text-amber-800">{COMPUTER_USE_CURSOR_SDK_WARNING}</p>
+          <p className="text-xs text-amber-800">{computerUseCopy.cursorSdkWarning}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

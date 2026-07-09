@@ -11,6 +11,7 @@ import AgentMessageStack from '@/components/react/AgentMessageStack';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import ComputerUseSessionBadge from '@/components/react/ComputerUseSessionBadge';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
+import { useRuntimeComputerUse } from '@/components/react/RuntimeComputerUseProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
 import {
   FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD,
@@ -49,6 +50,8 @@ import {
   type FileMentionSuggestion,
 } from '@/lib/composer-mention';
 import { isDraftConversationId } from '@/lib/draft-conversation';
+import { parseComputerUseTargetMode, type ComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
+import { computerUseTargetModeLabel } from '@/lib/runtime-computer-use-types';
 import { collectThreadFilePaths } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
@@ -145,8 +148,11 @@ export default function ChatPane({
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [composerFileMentions, setComposerFileMentions] = useState<FileMentionSuggestion[]>([]);
   const [deepResearch, setDeepResearch] = useState(false);
-  const [computerUseEnabled, setComputerUseEnabled] = useState(false);
-  const [computerUseAvailable, setComputerUseAvailable] = useState(false);
+  const [computerUseMode, setComputerUseMode] = useState<ComputerUseTargetMode | null>(null);
+  const [hostComputerUseAvailable, setHostComputerUseAvailable] = useState(false);
+  const [sandboxComputerUseAvailable, setSandboxComputerUseAvailable] = useState(false);
+  const [sandboxPreflightSummary, setSandboxPreflightSummary] = useState<string | null>(null);
+  const [computerUseModeError, setComputerUseModeError] = useState<string | null>(null);
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [workspaceMentionFiles, setWorkspaceMentionFiles] = useState<FileMentionSuggestion[]>([]);
@@ -169,6 +175,7 @@ export default function ChatPane({
   );
   const { openArtifact, selection: selectedArtifact } = useChatArtifact();
   const { openBrowser, navigateBrowser, selection: browserSelection } = useRuntimeBrowser();
+  const { openPreview: openComputerUsePreview, restartPreview, selection: computerUseSelection } = useRuntimeComputerUse();
 
   const handleBrowserLinkClick = useCallback(
     (url: string) => {
@@ -433,14 +440,44 @@ export default function ChatPane({
           return;
         }
         const payload = (await response.json()) as { active?: boolean };
-        setComputerUseAvailable(payload.active === true);
+        setHostComputerUseAvailable(payload.active === true);
+      })
+      .catch(() => undefined);
+
+    void fetch('/api/runtime/computer-use/sandbox/preflight?project_id=default')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          contract_enabled?: boolean;
+          preflight?: { ok?: boolean; summary?: string | null };
+        };
+        if (payload.contract_enabled === true) {
+          setSandboxComputerUseAvailable(true);
+        }
+        if (payload.preflight?.ok === false) {
+          setSandboxPreflightSummary(payload.preflight.summary ?? 'Sandbox pre-flight failed');
+        } else {
+          setSandboxPreflightSummary(null);
+        }
+      })
+      .catch(() => undefined);
+
+    void fetch('/api/runtime/computer-use/session?conversation_id=__probe__&project_id=default')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { contract_enabled?: boolean };
+        setSandboxComputerUseAvailable(payload.contract_enabled === true);
       })
       .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     if (!conversationId || isDraftConversationId(conversationId)) {
-      setComputerUseEnabled(false);
+      setComputerUseMode(null);
       return;
     }
 
@@ -454,14 +491,24 @@ export default function ChatPane({
         }
         const payload = (await response.json()) as {
           enabled?: boolean;
+          mode?: unknown;
           capability_available?: boolean;
+          contract_enabled?: boolean;
+          sandbox_preflight?: { ok?: boolean; summary?: string | null };
         };
         if (cancelled) {
           return;
         }
-        setComputerUseEnabled(payload.enabled === true);
+        const mode = parseComputerUseTargetMode(payload.mode);
+        setComputerUseMode(payload.enabled === true && mode ? mode : null);
         if (payload.capability_available === true) {
-          setComputerUseAvailable(true);
+          setHostComputerUseAvailable(true);
+        }
+        if (payload.contract_enabled === true) {
+          setSandboxComputerUseAvailable(true);
+        }
+        if (payload.sandbox_preflight?.ok === false) {
+          setSandboxPreflightSummary(payload.sandbox_preflight.summary ?? 'Sandbox pre-flight failed');
         }
       })
       .catch(() => undefined);
@@ -629,9 +676,15 @@ export default function ChatPane({
     ]);
   }
 
-  function toggleComputerUse(): void {
-    const next = !computerUseEnabled;
-    setComputerUseEnabled(next);
+  function selectComputerUseMode(mode: ComputerUseTargetMode | null): void {
+    setComputerUseModeError(null);
+
+    if (mode === 'sandbox' && sandboxPreflightSummary) {
+      setComputerUseModeError(sandboxPreflightSummary);
+      return;
+    }
+
+    setComputerUseMode(mode);
 
     if (conversationId && !isDraftConversationId(conversationId)) {
       void fetch('/api/runtime/computer-use/session', {
@@ -640,9 +693,29 @@ export default function ChatPane({
         body: JSON.stringify({
           conversation_id: conversationId,
           project_id: projectId,
-          enabled: next,
+          enabled: mode !== null,
+          mode,
         }),
-      }).catch(() => undefined);
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json()) as { error?: string };
+            setComputerUseMode(null);
+            setComputerUseModeError(payload.error ?? 'Failed to enable computer-use mode');
+            return;
+          }
+          if (
+            mode === 'sandbox' &&
+            computerUseSelection?.conversationId === conversationId &&
+            (computerUseSelection.error || computerUseSelection.sessionId)
+          ) {
+            void restartPreview();
+          }
+        })
+        .catch(() => {
+          setComputerUseMode(null);
+          setComputerUseModeError('Failed to enable computer-use mode');
+        });
     }
   }
 
@@ -667,7 +740,8 @@ export default function ChatPane({
       mode: deepResearch ? 'deep_research' : 'default',
       integrationSlots: selectedIntegrations,
       attachments: [...attachments, ...mentionAttachments],
-      computerUseEnabled,
+      computerUseEnabled: computerUseMode !== null,
+      computerUseMode: computerUseMode ?? undefined,
       scheduleInterview: isScheduleVariant,
     });
   }
@@ -1015,12 +1089,14 @@ export default function ChatPane({
                 disabled={isLoading}
                 deepResearch={deepResearch}
                 integrationsOpen={showIntegrations}
-                computerUseEnabled={computerUseEnabled}
-                computerUseAvailable={computerUseAvailable}
+                computerUseMode={computerUseMode}
+                hostComputerUseAvailable={hostComputerUseAvailable}
+                sandboxComputerUseAvailable={sandboxComputerUseAvailable}
+                sandboxPreflightSummary={sandboxPreflightSummary}
                 onAttach={() => fileInputRef.current?.click()}
                 onToggleIntegrations={() => setShowIntegrations((current) => !current)}
                 onToggleDeepResearch={() => setDeepResearch((current) => !current)}
-                onToggleComputerUse={toggleComputerUse}
+                onSelectComputerUseMode={selectComputerUseMode}
               />
               <PromptInputTextarea
                 className="min-h-[36px] flex-1 px-1 py-2"
@@ -1066,13 +1142,23 @@ export default function ChatPane({
             {deepResearch ? (
               <p className="mt-1.5 px-1 text-[11px] font-medium text-gray-500">Deep research enabled</p>
             ) : null}
-            {computerUseEnabled ? (
+            {computerUseMode ? (
               <div className="mt-1.5 flex items-center gap-2 px-1">
-                <ComputerUseSessionBadge enabled />
+                <ComputerUseSessionBadge
+                  mode={computerUseMode}
+                  onOpenPreview={() => {
+                    void openComputerUsePreview(conversationId, computerUseMode);
+                  }}
+                />
                 <p className="text-[11px] font-medium text-emerald-700">
-                  Computer use enabled for this chat
+                  {computerUseTargetModeLabel(computerUseMode)} enabled for this chat
                 </p>
               </div>
+            ) : null}
+            {computerUseModeError ? (
+              <p className="mt-1.5 px-1 text-[11px] font-medium text-red-600" role="alert">
+                {computerUseModeError}
+              </p>
             ) : null}
           </PromptInput>
 

@@ -20,6 +20,12 @@ export interface UIConfig {
     title?: string;
     theme?: ControlPlaneTheme;
     locale?: string;
+    assets?: {
+      icon_light?: string;
+      icon_dark?: string;
+      wordmark_light?: string;
+      wordmark_dark?: string;
+    };
   };
   features?: Record<string, boolean>;
   panels?: {
@@ -109,6 +115,14 @@ function parseAndValidateUIConfig(raw: unknown): UIConfig {
       raw.presentation.theme !== 'dark'
     ) {
       throw new Error('presentation.theme must be one of: system, light, dark');
+    }
+
+    assertOptionalRecord(raw.presentation.assets, 'presentation.assets');
+    if (raw.presentation.assets) {
+      assertOptionalString(raw.presentation.assets.icon_light, 'presentation.assets.icon_light');
+      assertOptionalString(raw.presentation.assets.icon_dark, 'presentation.assets.icon_dark');
+      assertOptionalString(raw.presentation.assets.wordmark_light, 'presentation.assets.wordmark_light');
+      assertOptionalString(raw.presentation.assets.wordmark_dark, 'presentation.assets.wordmark_dark');
     }
   }
 

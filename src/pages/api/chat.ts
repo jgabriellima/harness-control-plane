@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/astro';
 
 import { jsonError, jsonOk } from '../../lib/api-json';
 import { isKnownSlashCommand, listHarnessCommands } from '../../lib/harness-commands';
-import type { ChatRequest } from '../../lib/harness-types';
+import { parseComputerUseTargetMode } from '../../lib/runtime-computer-use-types';
 import { appendDispatchLog } from '../../lib/runtime-dispatch-log';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from '../../lib/runtime-logger';
 import { gatewayErrorDetail, RuntimeGatewayError, orchestrateChatDispatch } from '../../lib/runtime-orchestrator';
@@ -51,6 +51,9 @@ function parseChatRequest(body: unknown): ChatRequest {
         }))
     : undefined;
 
+  const computerUseEnabled = body.computer_use_enabled === true;
+  const computerUseMode = parseComputerUseTargetMode(body.computer_use_mode);
+
   return {
     conversation_id: asString(body.conversation_id),
     project_id: projectId,
@@ -59,7 +62,8 @@ function parseChatRequest(body: unknown): ChatRequest {
     mode,
     integration_slots: integrationSlots,
     agent_id: asString(body.agent_id),
-    computer_use_enabled: body.computer_use_enabled === true,
+    computer_use_enabled: computerUseEnabled,
+    computer_use_mode: computerUseEnabled ? (computerUseMode ?? undefined) : undefined,
     metadata: isRecord(body.metadata) ? body.metadata : undefined,
   };
 }

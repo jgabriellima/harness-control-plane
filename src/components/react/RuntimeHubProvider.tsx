@@ -37,6 +37,7 @@ import {
   isBrowserToolName,
   resolveBrowserPanelTarget,
 } from '@/lib/runtime-browser-types';
+import { isCuaToolName } from '@/lib/runtime-computer-use-types';
 import type {
   ConversationRuntimeState,
   DispatchMessagePayload,
@@ -93,6 +94,73 @@ function dispatchBrowserToolSideEffect(event: RuntimeHubWireEvent): void {
       }),
     );
   }
+}
+
+function dispatchComputerUseToolSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'tool_call') {
+    return;
+  }
+
+  const tool = typeof event.payload.tool === 'string' ? event.payload.tool : '';
+  if (!isCuaToolName(tool)) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:computer-use-tool', {
+      detail: {
+        tool,
+        args: event.payload.args,
+        conversationId: event.conversation_id,
+      },
+    }),
+  );
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:open-computer-use-preview', {
+      detail: {
+        conversationId: event.conversation_id,
+      },
+    }),
+  );
+}
+
+function dispatchComputerUsePreviewSessionSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'computer_use.preview.ready') {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:open-computer-use-preview', {
+      detail: {
+        conversationId: event.conversation_id,
+      },
+    }),
+  );
+}
+
+function dispatchBrowserSessionSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'browser.session.ready') {
+    return;
+  }
+
+  if (event.payload.interactive === true) {
+    return;
+  }
+
+  const url = typeof event.payload.url === 'string' ? event.payload.url : '';
+  if (!url) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:open-browser', {
+      detail: {
+        url,
+        conversationId: event.conversation_id,
+      },
+    }),
+  );
 }
 
 function resolveTurnTracking(
@@ -250,6 +318,9 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
 
       dispatchBrowserToolSideEffect(event);
+      dispatchBrowserSessionSideEffect(event);
+      dispatchComputerUseToolSideEffect(event);
+      dispatchComputerUsePreviewSessionSideEffect(event);
 
       let terminalEvent = false;
 
@@ -772,6 +843,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             attachments: payload.attachments ?? [],
             agent_id: state.agentId,
             computer_use_enabled: payload.computerUseEnabled === true,
+            computer_use_mode: payload.computerUseMode,
             metadata: payload.scheduleInterview ? { schedule_interview: true } : undefined,
           }),
         });

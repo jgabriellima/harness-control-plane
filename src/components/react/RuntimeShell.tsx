@@ -11,6 +11,9 @@ import ResizableOrchestrationShell from './ResizableOrchestrationShell';
 import ScheduledView from './ScheduledView';
 import SettingsView from './SettingsView';
 import { RuntimeBrowserProvider, RuntimeBrowserSplitShell } from './RuntimeBrowserProvider';
+import {
+  RuntimeComputerUseProvider,
+} from './RuntimeComputerUseProvider';
 import SidebarPanel from './SidebarPanel';
 import WorkspaceHeader from './WorkspaceHeader';
 import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
@@ -44,8 +47,12 @@ function resolveSinglePaneConversationId(
   return DRAFT_CONVERSATION_ID;
 }
 
+import type { PresentationAssets } from '@/lib/ui-branding';
+
 interface RuntimeShellProps {
   projectName: string;
+  presentationTitle: string;
+  brandAssets?: PresentationAssets;
   initialPathname?: string;
   seedArtifactE2e?: boolean;
   children?: React.ReactNode;
@@ -111,6 +118,8 @@ function ChatWorkspaceGrid({
 
 function RuntimeShellBody({
   projectName,
+  presentationTitle,
+  brandAssets,
   initialPathname = '/',
   seedArtifactE2e = false,
   children,
@@ -139,7 +148,9 @@ function RuntimeShellBody({
     <>
       <DesktopCloseGuard activeRunCount={hub.activeRunCount} />
       <ResizableOrchestrationShell
-        sidebar={<SidebarPanel />}
+        sidebar={
+          <SidebarPanel presentationTitle={presentationTitle} brandAssets={brandAssets} />
+        }
         main={
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
             <WorkspaceHeader projectName={projectName} />
@@ -154,6 +165,8 @@ function RuntimeShellBody({
 
 export default function RuntimeShell({
   projectName,
+  presentationTitle,
+  brandAssets,
   initialPathname,
   seedArtifactE2e = false,
   children,
@@ -161,15 +174,19 @@ export default function RuntimeShell({
   return (
     <RuntimeHubProvider>
       <RuntimeBrowserProvider>
-        <ChatArtifactProvider>
-          <RuntimeShellBody
-            projectName={projectName}
-            initialPathname={initialPathname}
-            seedArtifactE2e={seedArtifactE2e}
-          >
-            {children}
-          </RuntimeShellBody>
-        </ChatArtifactProvider>
+        <RuntimeComputerUseProvider>
+          <ChatArtifactProvider>
+            <RuntimeShellBody
+              projectName={projectName}
+              presentationTitle={presentationTitle}
+              brandAssets={brandAssets}
+              initialPathname={initialPathname}
+              seedArtifactE2e={seedArtifactE2e}
+            >
+              {children}
+            </RuntimeShellBody>
+          </ChatArtifactProvider>
+        </RuntimeComputerUseProvider>
       </RuntimeBrowserProvider>
     </RuntimeHubProvider>
   );

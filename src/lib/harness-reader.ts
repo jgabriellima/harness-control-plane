@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
+import { DEFAULT_PRESENTATION_TITLE } from './ui-branding';
 import { resolveHarnessBinding } from './harness-binding';
 import { resolveActiveWorkspaceRoot } from './workspace-manager';
 import type {
@@ -42,6 +43,10 @@ async function harnessPaths(workspaceRoot?: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function defaultProjectDisplayName(): string {
+  return process.env.CONTROL_PLANE_PRESENTATION_TITLE?.trim() || DEFAULT_PRESENTATION_TITLE;
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -136,7 +141,7 @@ function parseBusinessConfig(value: unknown): BusinessConfig {
     status: asString(value.status, 'unknown'),
     initialized: typeof value.initialized === 'string' ? value.initialized : null,
     project: {
-      name: asString(project.name, 'Jambu'),
+      name: asString(project.name, defaultProjectDisplayName()),
       description: asString(project.description, ''),
     },
     execution,

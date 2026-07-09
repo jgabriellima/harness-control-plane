@@ -1,5 +1,6 @@
 ---
 import RuntimeShell from '../components/react/RuntimeShell';
+import { loadPageBranding } from '../lib/ui-branding-server';
 
 interface Props {
   title: string;
@@ -8,10 +9,12 @@ interface Props {
   seedArtifactE2e?: boolean;
 }
 
+const branding = await loadPageBranding();
+
 const {
   title,
   description,
-  projectName = 'Jambu',
+  projectName = branding.presentationTitle,
   seedArtifactE2e = false,
 } = Astro.props;
 ---
@@ -24,11 +27,18 @@ const {
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" type="image/png" href="/brand/icon-light.png" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/png" href="/brand/icon-dark.png" media="(prefers-color-scheme: dark)" />
-    <title>{title} · Jambu</title>
+    <title>{title} · {branding.presentationTitle}</title>
     {description ? <meta name="description" content={description} /> : null}
   </head>
   <body class="bg-primary text-gray-900">
-    <RuntimeShell client:load projectName={projectName} initialPathname={Astro.url.pathname} seedArtifactE2e={seedArtifactE2e}>
+    <RuntimeShell
+      client:load
+      projectName={projectName}
+      presentationTitle={branding.presentationTitle}
+      brandAssets={branding.assets}
+      initialPathname={Astro.url.pathname}
+      seedArtifactE2e={seedArtifactE2e}
+    >
       <slot />
     </RuntimeShell>
   </body>

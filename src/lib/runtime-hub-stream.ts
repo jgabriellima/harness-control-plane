@@ -142,6 +142,42 @@ function broadcastEvent(event: RuntimeHubWireEvent | RuntimeStreamWireEvent): vo
   }
 }
 
+export function broadcastBrowserSessionReady(input: {
+  conversationId: string;
+  sessionId: string;
+  url: string;
+  interactive?: boolean;
+}): void {
+  broadcastEvent({
+    type: 'browser.session.ready',
+    run_id: '',
+    agent_id: '',
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      sessionId: input.sessionId,
+      url: input.url,
+      interactive: Boolean(input.interactive),
+    },
+  });
+}
+
+export function broadcastComputerUsePreviewReady(input: {
+  conversationId: string;
+  sessionId: string;
+}): void {
+  broadcastEvent({
+    type: 'computer_use.preview.ready',
+    run_id: '',
+    agent_id: '',
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      sessionId: input.sessionId,
+    },
+  });
+}
+
 export function broadcastRunInterrupted(input: {
   runId: string;
   agentId: string;
