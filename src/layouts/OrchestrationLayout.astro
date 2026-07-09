@@ -31,6 +31,13 @@ const {
     {description ? <meta name="description" content={description} /> : null}
   </head>
   <body class="bg-primary text-gray-900">
+    <script is:inline>
+      document.addEventListener(
+        'contextmenu',
+        (event) => event.preventDefault(),
+        { capture: true },
+      );
+    </script>
     <RuntimeShell
       client:load
       projectName={projectName}

@@ -26,6 +26,8 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["time"] }
 keyring = "3"
+serde_yaml = "0.9"
+tauri-plugin-prevent-default = "0.5.0"
 
 [profile.release]
 panic = "abort"

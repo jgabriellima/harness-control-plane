@@ -3,6 +3,11 @@ import { SCHEDULE_INTERVIEW_AGENT_BRIEF } from './schedule-tips';
 import { sendAgentPromptWithRelease } from './runtime-agent-run-release';
 import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
+import {
+  getCachedServerSdkMessageContext,
+  sdkDispatchAuthMessage,
+  sdkDispatchNetworkMessage,
+} from './runtime-sdk-messages';
 import { createRequestId, errorFields, isDebugLogLevel, runtimeLogger } from './runtime-logger';
 import { registerRuntimeRun, registerRuntimeSession } from './runtime-sessions';
 import {
@@ -20,6 +25,7 @@ import {
 } from './runtime-computer-use-types';
 import { buildSandboxOpenUrlRecipe, readSandboxManifest } from './runtime-computer-use-sandbox-bridge';
 import { resolveControlPlaneInstallRoot } from './repo-root';
+import { resolveRuntimeApiKey } from './runtime-sdk-local';
 
 export class RuntimeGatewayError extends Error {
   readonly statusCode: number;
@@ -45,10 +51,10 @@ function resolveDispatchTimeoutMs(): number {
 }
 
 function requireApiKey(requestId: string): string {
-  const apiKey = process.env.CURSOR_API_KEY?.trim();
+  const apiKey = resolveRuntimeApiKey();
   if (!apiKey) {
     throw new RuntimeGatewayError(
-      'CURSOR_API_KEY is required for runtime chat',
+      'RUNTIME_API_KEY is required for runtime chat',
       503,
       'chat.auth',
       requestId,
@@ -457,9 +463,11 @@ export function mapDispatchError(
   const message = error instanceof Error ? error.message : 'Failed to dispatch chat to runtime';
   const lower = message.toLowerCase();
 
+  const messageContext = getCachedServerSdkMessageContext();
+
   if (isConnectUnauthenticated(error) || lower.includes('invalid api key')) {
     return new RuntimeGatewayError(
-      `${message} — verifique CURSOR_API_KEY em harness-control-plane/.env`,
+      sdkDispatchAuthMessage(messageContext),
       503,
       phase,
       requestId,
@@ -468,7 +476,7 @@ export function mapDispatchError(
 
   if (lower.includes('network request failed') || error instanceof Error && error.name === 'NetworkError') {
     return new RuntimeGatewayError(
-      'Sem conexão com a API Cursor — a verificação de sessão deveria ter bloqueado o envio; tente "Verificar novamente" no banner amarelo',
+      sdkDispatchNetworkMessage(messageContext),
       503,
       phase,
       requestId,

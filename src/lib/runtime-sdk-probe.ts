@@ -4,7 +4,16 @@ import { AuthenticationError, Cursor, NetworkError } from '@cursor/sdk';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { clearRuntimeAuthGate, markRuntimeAuthUnavailable } from './runtime-sdk-auth-gate';
-import { requireCursorApiKey } from './runtime-sdk-local';
+import {
+  sdkAuthFailedMessage,
+  sdkMissingApiKeyMessage,
+  sdkNetworkFailedMessage,
+  sdkTimeoutMessage,
+  sdkUnknownFailureMessage,
+  type RuntimeSdkMessageContext,
+} from './runtime-sdk-messages';
+import { loadServerSdkMessageContext } from './runtime-sdk-messages-server';
+import { requireRuntimeApiKey } from './runtime-sdk-local';
 
 export type SdkHealthErrorCode =
   | 'missing_api_key'
@@ -44,7 +53,11 @@ function resolveProbeTimeoutMs(): number {
   return DEFAULT_PROBE_TIMEOUT_MS;
 }
 
-function mapProbeFailure(error: unknown, startedAt: number): SdkDispatchHealth {
+function mapProbeFailure(
+  error: unknown,
+  startedAt: number,
+  ctx: RuntimeSdkMessageContext,
+): SdkDispatchHealth {
   const checked_at = new Date().toISOString();
   const latency_ms = Date.now() - startedAt;
   const fields = errorFields(error);
@@ -61,8 +74,7 @@ function mapProbeFailure(error: unknown, startedAt: number): SdkDispatchHealth {
       auth: 'failed',
       network: 'ok',
       latency_ms,
-      message:
-        'CURSOR_API_KEY rejeitada pela API Cursor — verifique a chave em harness-control-plane/.env',
+      message: sdkAuthFailedMessage(ctx),
       error_name: fields.error_name,
       error_code: 'auth_failed',
     };
@@ -76,8 +88,7 @@ function mapProbeFailure(error: unknown, startedAt: number): SdkDispatchHealth {
       auth: 'skipped',
       network: 'failed',
       latency_ms,
-      message:
-        'Sem conexão com a API Cursor — verifique rede/VPN/proxy antes de enviar mensagens no chat',
+      message: sdkNetworkFailedMessage(ctx),
       error_name: fields.error_name,
       error_code: 'network_failed',
     };
@@ -94,8 +105,8 @@ function mapProbeFailure(error: unknown, startedAt: number): SdkDispatchHealth {
     network: 'failed',
     latency_ms,
     message: isTimeout
-      ? 'Timeout ao contactar a API Cursor — tente novamente em instantes'
-      : `Runtime Cursor indisponível: ${message}`,
+      ? sdkTimeoutMessage(ctx)
+      : sdkUnknownFailureMessage(ctx, message),
     error_name: fields.error_name,
     error_code: isTimeout ? 'timeout' : 'unknown',
   };
@@ -120,9 +131,10 @@ export async function probeSdkDispatchHealth(options?: {
 
   const startedAt = Date.now();
   const checked_at = new Date().toISOString();
+  const messageContext = await loadServerSdkMessageContext();
 
   try {
-    requireCursorApiKey();
+    requireRuntimeApiKey();
   } catch {
     const health: SdkDispatchHealth = {
       ready: false,
@@ -131,8 +143,7 @@ export async function probeSdkDispatchHealth(options?: {
       auth: 'skipped',
       network: 'skipped',
       latency_ms: null,
-      message:
-        'CURSOR_API_KEY ausente no processo Astro — configure harness-control-plane/.env e reinicie o dev server',
+      message: sdkMissingApiKeyMessage(messageContext),
       error_code: 'missing_api_key',
     };
     probeCache.set(cacheKey, { health, expiresAt: now + cacheTtlMs });
@@ -140,7 +151,7 @@ export async function probeSdkDispatchHealth(options?: {
   }
 
   const timeoutMs = options?.timeoutMs ?? resolveProbeTimeoutMs();
-  const apiKey = requireCursorApiKey();
+  const apiKey = requireRuntimeApiKey();
 
   const mePromise = Cursor.me({ apiKey });
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -172,7 +183,7 @@ export async function probeSdkDispatchHealth(options?: {
     });
     return health;
   } catch (error) {
-    const health = mapProbeFailure(error, startedAt);
+    const health = mapProbeFailure(error, startedAt, messageContext);
     if (health.error_code === 'auth_failed') {
       markRuntimeAuthUnavailable('probe_auth_failed');
     }

@@ -2,9 +2,13 @@
   "identifier": "default",
   "description": "Default desktop shell capabilities",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
   "permissions": [
     "core:default",
     "allow-secrets",
+    "allow-sidecar",
     {
       "identifier": "shell:allow-execute",
       "allow": [

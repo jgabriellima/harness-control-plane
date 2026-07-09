@@ -1,8 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-RESOURCE_ROOT="$(cd "$HERE/../../.." && pwd)"
+
+# Production .app: binary lives in Contents/MacOS, resources in Contents/Resources
+if [ -d "$HERE/../Resources" ]; then
+  RESOURCE_ROOT="$(cd "$HERE/../Resources" && pwd)"
+  SIDECAR="$RESOURCE_ROOT/_up_/desktop-sidecar/index.cjs"
+else
+  # Dev stub under src-tauri/binaries/
+  RESOURCE_ROOT="$(cd "$HERE/../../.." && pwd)"
+  SIDECAR="$(cd "$HERE/../../../desktop-sidecar" && pwd)/index.cjs"
+fi
+
 export TAURI_RESOURCE_DIR="${TAURI_RESOURCE_DIR:-$RESOURCE_ROOT}"
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${TAURI_APP_PORT:-${PORT:-4321}}"
-exec node "$HERE/../../../desktop-sidecar/index.cjs"
+
+if [ ! -f "$SIDECAR" ]; then
+  echo "[business-server] sidecar not found: $SIDECAR" >&2
+  exit 1
+fi
+
+resolve_node() {
+  if [ -n "${NODE_BINARY:-}" ] && [ -x "$NODE_BINARY" ]; then
+    printf '%s\n' "$NODE_BINARY"
+    return 0
+  fi
+  export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+  for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+  echo "[business-server] node runtime not found — install Node.js 22+ or set NODE_BINARY" >&2
+  return 127
+}
+
+NODE_BIN="$(resolve_node)" || exit $?
+exec "$NODE_BIN" "$SIDECAR"

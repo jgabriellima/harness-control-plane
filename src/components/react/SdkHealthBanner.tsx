@@ -5,19 +5,20 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 
 interface SdkHealthBannerProps {
+  title: string;
   message: string;
   checking?: boolean;
   onRetry?: () => void;
 }
 
-export default function SdkHealthBanner({ message, checking = false, onRetry }: SdkHealthBannerProps) {
+export default function SdkHealthBanner({ title, message, checking = false, onRetry }: SdkHealthBannerProps) {
   return (
     <div
       className="mx-4 mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
       data-testid="sdk-health-banner"
       role="status"
     >
-      <p className="font-medium">Runtime Cursor indisponível</p>
+      <p className="font-medium">{title}</p>
       <p className="mt-1 text-xs leading-relaxed">{message}</p>
       {onRetry ? (
         <Button

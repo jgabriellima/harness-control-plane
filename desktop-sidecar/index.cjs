@@ -11,13 +11,25 @@ const resourceDir = process.env.TAURI_RESOURCE_DIR ?? process.cwd();
 const port = process.env.TAURI_APP_PORT ?? process.env.PORT ?? '4321';
 const host = process.env.HOST ?? '127.0.0.1';
 
-const serverDir = path.join(resourceDir, 'dist', 'server');
-const entry = path.join(serverDir, 'entry.mjs');
+function resolveProjectRoot(root) {
+  const nested = path.join(root, '_up_');
+  if (fs.existsSync(path.join(nested, 'dist', 'server', 'entry.mjs'))) {
+    return nested;
+  }
+  if (fs.existsSync(path.join(root, 'dist', 'server', 'entry.mjs'))) {
+    return root;
+  }
+  return null;
+}
 
-if (!fs.existsSync(entry)) {
-  console.error(`[business-server] entry not found: ${entry}`);
+const projectRoot = resolveProjectRoot(resourceDir);
+if (!projectRoot) {
+  console.error(`[business-server] dist/server/entry.mjs not found under ${resourceDir}`);
   process.exit(1);
 }
+
+const entry = path.join(projectRoot, 'dist', 'server', 'entry.mjs');
+const nodeModules = path.join(projectRoot, 'node_modules');
 
 const env = {
   ...process.env,
@@ -27,8 +39,12 @@ const env = {
   CONTROL_PLANE_DESKTOP: process.env.CONTROL_PLANE_DESKTOP ?? '1',
 };
 
+if (fs.existsSync(nodeModules)) {
+  env.NODE_PATH = nodeModules;
+}
+
 const child = spawn(process.execPath, [entry], {
-  cwd: serverDir,
+  cwd: projectRoot,
   env,
   stdio: 'inherit',
 });

@@ -72,8 +72,15 @@ export const POST: APIRoute = async ({ params, request }) => {
     if (entry.storage === 'cli_session') {
       return jsonError('CLI session credentials cannot be stored via API', 400);
     }
-    await storeCredential(envVar, value);
-    return jsonOk({ env_var: envVar, present: true });
+
+    const stored = await storeCredential(envVar, value);
+    return jsonOk({
+      env_var: envVar,
+      present: true,
+      saved_at: stored.saved_at ?? null,
+      updated_at: stored.updated_at ?? null,
+      activated: true,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to store credential';
     return jsonError(message, 500);

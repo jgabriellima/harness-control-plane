@@ -157,16 +157,30 @@ async function writeWorkspaceLayoutReadmes(workspacePath: string): Promise<void>
 }
 
 /**
- * Resolve canonical baseline template (ADR-046). Fails if template is absent.
+ * Resolve canonical baseline template (ADR-046 / ADR-048).
+ *
+ * Priority:
+ * 1) Bundled desktop: `{hostRepo}/harness-baseline/` or `{hostRepo}/resources/harness-baseline/`
+ * 2) Dev host repo: `{hostRepo}/templates/workspace-baseline/`
  */
 function resolveWorkspaceBaselineRoot(): string {
   const hostRepo = resolveHostRepoRoot();
-  const templatePath = join(hostRepo, 'templates', 'workspace-baseline');
-  if (existsSync(join(templatePath, '.cursor', 'runtime-binding.yaml'))) {
-    return templatePath;
+
+  const candidates = [
+    join(hostRepo, 'harness-baseline'),
+    join(hostRepo, 'resources', 'harness-baseline'),
+    join(hostRepo, 'templates', 'workspace-baseline'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, '.cursor', 'runtime-binding.yaml'))) {
+      return candidate;
+    }
   }
+
   throw new Error(
-    `Workspace baseline template missing at ${templatePath} — run: python3 app/.business/bin/business_workspace_template.py export`,
+    `Workspace baseline missing — checked ${candidates.join(', ')}. ` +
+      'Run: python3 app/.business/bin/business_workspace_template.py export',
   );
 }
 

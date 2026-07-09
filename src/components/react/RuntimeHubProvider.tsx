@@ -32,6 +32,12 @@ import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conver
 import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '@/lib/schedule-tips';
 import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import { isTransientHydrateFailure, waitForRuntimeReady, fetchDispatchHealth } from '@/lib/runtime-readiness-client';
+import { RUNTIME_CREDENTIALS_CHANGED_EVENT } from '@/lib/runtime-credentials-events';
+import {
+  clientSdkMessageContext,
+  sdkHealthProbeFailedFallback,
+  sdkHealthUnavailableFallback,
+} from '@/lib/runtime-sdk-messages';
 import {
   extractBrowserNavigateUrl,
   isBrowserToolName,
@@ -517,7 +523,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         const message =
           error instanceof Error
             ? error.message
-            : 'Não foi possível verificar conectividade com o runtime Cursor';
+            : sdkHealthProbeFailedFallback(clientSdkMessageContext());
         updateConversation(conversationId, (state) => ({
           ...state,
           sdkHealth: 'unavailable',
@@ -528,6 +534,20 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     },
     [updateConversation],
   );
+
+  useEffect(() => {
+    const refreshSdkHealth = (): void => {
+      for (const [conversationId, state] of conversations) {
+        if (!state.projectId) {
+          continue;
+        }
+        void ensureSdkHealth(conversationId, state.projectId, { force: true });
+      }
+    };
+
+    window.addEventListener(RUNTIME_CREDENTIALS_CHANGED_EVENT, refreshSdkHealth);
+    return () => window.removeEventListener(RUNTIME_CREDENTIALS_CHANGED_EVENT, refreshSdkHealth);
+  }, [conversations, ensureSdkHealth]);
 
   const hydrateConversation = useCallback(
     async (conversationId: string): Promise<void> => {
@@ -766,7 +786,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       if (!sdkReady) {
         const healthMessage =
           conversations.get(targetId)?.sdkHealthMessage ??
-          'Runtime Cursor indisponível — verifique conectividade antes de enviar mensagens';
+          sdkHealthUnavailableFallback(clientSdkMessageContext());
         updateConversation(targetId, (current) => ({
           ...current,
           error: healthMessage,

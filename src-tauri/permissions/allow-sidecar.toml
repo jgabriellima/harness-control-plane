@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-sidecar"
+description = "Bootstrap polling for sidecar readiness URL"
+commands.allow = ["sidecar_launch_url"]

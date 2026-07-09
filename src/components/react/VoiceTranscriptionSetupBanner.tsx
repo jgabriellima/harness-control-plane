@@ -52,7 +52,7 @@ export default function VoiceTranscriptionSetupBanner({
         />
       </div>
       <p className="mt-1.5 text-[11px] text-amber-800/90">
-        One-time setup runs at install. Voice input unlocks when this completes.
+        Background download — the app stays usable. Voice input unlocks when setup completes.
       </p>
     </div>
   );
