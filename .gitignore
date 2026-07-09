@@ -6,8 +6,12 @@ node_modules/
 .env.local
 .env.*.local
 
-# Build / cache
-dist/
+# Tauri bundle staging (populated by business_bundle.py at build time)
+src-tauri/resources/shell/**
+!src-tauri/resources/shell/.keep
+src-tauri/resources/harness-baseline/**
+!src-tauri/resources/harness-baseline/.keep
+
 .astro/
 **/*.tsbuildinfo
 src-tauri/target/
