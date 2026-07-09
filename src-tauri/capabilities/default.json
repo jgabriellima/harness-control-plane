@@ -1,9 +1,10 @@
 {
   "identifier": "default",
-  "description": "Business Runtime desktop capabilities",
+  "description": "Default desktop shell capabilities",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "allow-secrets",
     {
       "identifier": "shell:allow-execute",
       "allow": [
