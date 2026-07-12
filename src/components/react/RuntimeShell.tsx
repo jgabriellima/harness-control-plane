@@ -6,6 +6,8 @@ import ChatPane from './ChatPane';
 import ChatPaneEmptySlot from './ChatPaneEmptySlot';
 import { ChatArtifactProvider, ChatArtifactSplitShell } from './ChatArtifactProvider';
 import ContextPanel from './ContextPanel';
+import { ContextUsageProvider } from './ContextUsageProvider';
+import { ToolActivityProvider } from './ToolActivityProvider';
 import ExecutionsListView from './ExecutionsListView';
 import ResizableOrchestrationShell from './ResizableOrchestrationShell';
 import ScheduledView from './ScheduledView';
@@ -18,6 +20,7 @@ import SidebarPanel from './SidebarPanel';
 import WorkspaceHeader from './WorkspaceHeader';
 import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
 import DesktopCloseGuard from './DesktopCloseGuard';
+import { ReaderPreferencesProvider } from './ReaderPreferencesProvider';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
 import { conversationIdFromPath, isChatRoute, useShellPathname } from '@/lib/shell-navigation';
 
@@ -50,7 +53,6 @@ function resolveSinglePaneConversationId(
 import type { PresentationAssets } from '@/lib/ui-branding';
 
 interface RuntimeShellProps {
-  projectName: string;
   presentationTitle: string;
   brandAssets?: PresentationAssets;
   initialPathname?: string;
@@ -117,7 +119,6 @@ function ChatWorkspaceGrid({
 }
 
 function RuntimeShellBody({
-  projectName,
   presentationTitle,
   brandAssets,
   initialPathname = '/',
@@ -153,7 +154,7 @@ function RuntimeShellBody({
         }
         main={
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
-            <WorkspaceHeader projectName={projectName} />
+            <WorkspaceHeader />
             <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{mainContent}</main>
           </div>
         }
@@ -164,7 +165,6 @@ function RuntimeShellBody({
 }
 
 export default function RuntimeShell({
-  projectName,
   presentationTitle,
   brandAssets,
   initialPathname,
@@ -172,22 +172,27 @@ export default function RuntimeShell({
   children,
 }: RuntimeShellProps) {
   return (
-    <RuntimeHubProvider>
-      <RuntimeBrowserProvider>
-        <RuntimeComputerUseProvider>
-          <ChatArtifactProvider>
-            <RuntimeShellBody
-              projectName={projectName}
-              presentationTitle={presentationTitle}
-              brandAssets={brandAssets}
-              initialPathname={initialPathname}
-              seedArtifactE2e={seedArtifactE2e}
-            >
-              {children}
-            </RuntimeShellBody>
-          </ChatArtifactProvider>
-        </RuntimeComputerUseProvider>
-      </RuntimeBrowserProvider>
-    </RuntimeHubProvider>
+    <ReaderPreferencesProvider>
+      <RuntimeHubProvider>
+        <RuntimeBrowserProvider>
+          <RuntimeComputerUseProvider>
+            <ContextUsageProvider>
+              <ToolActivityProvider>
+                <ChatArtifactProvider>
+                  <RuntimeShellBody
+                    presentationTitle={presentationTitle}
+                    brandAssets={brandAssets}
+                    initialPathname={initialPathname}
+                    seedArtifactE2e={seedArtifactE2e}
+                  >
+                    {children}
+                  </RuntimeShellBody>
+                </ChatArtifactProvider>
+              </ToolActivityProvider>
+            </ContextUsageProvider>
+          </RuntimeComputerUseProvider>
+        </RuntimeBrowserProvider>
+      </RuntimeHubProvider>
+    </ReaderPreferencesProvider>
   );
 }

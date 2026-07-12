@@ -13,11 +13,14 @@ import ComputerUseSessionBadge from '@/components/react/ComputerUseSessionBadge'
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
 import { useRuntimeComputerUse } from '@/components/react/RuntimeComputerUseProvider';
 import ComposerToolActivity from '@/components/react/ComposerToolActivity';
+import { useSdkObservability } from '@/hooks/useSdkObservability';
+import { useContextUsageReport } from '@/hooks/useContextUsageReport';
 import {
   FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD,
   FileActivityGroup,
 } from '@/components/react/FileActivityGroup';
 import StopRunConfirmDialog from '@/components/react/StopRunConfirmDialog';
+import ContinuableRunBanner from '@/components/react/ContinuableRunBanner';
 import VoiceInputButton from '@/components/react/VoiceInputButton';
 import VoiceTranscriptionSetupBanner from '@/components/react/VoiceTranscriptionSetupBanner';
 import { Button } from '@/components/ui/button';
@@ -28,6 +31,7 @@ import {
 import type { HarnessCommand, ReadinessSlot } from '@/lib/harness-types';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 import { useRuntimeConversation } from '@/hooks/useRuntimeConversation';
+import { useComposerFileDrop } from '@/hooks/useComposerFileDrop';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 import {
@@ -38,12 +42,16 @@ import {
   hideEmptyStateCommand,
   readHiddenEmptyStateCommands,
 } from '@/lib/empty-state-commands';
+import ComposerAttachmentBadge from '@/components/react/ComposerAttachmentBadge';
 import ComposerFileMentionBadge from '@/components/react/ComposerFileMentionBadge';
+import ComposerSlashCommandBadge from '@/components/react/ComposerSlashCommandBadge';
 import {
   addComposerFileMention,
   buildComposerSubmitMessage,
   clearActiveFileMention,
+  clearActiveSlashQuery,
   composerHasSubmittableContent,
+  isActiveSlashQuery,
   parseActiveFileMention,
   rankFileMentionSuggestions,
   removeComposerFileMention,
@@ -153,6 +161,7 @@ export default function ChatPane({
   const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [composerFileMentions, setComposerFileMentions] = useState<FileMentionSuggestion[]>([]);
+  const [composerSlashCommand, setComposerSlashCommand] = useState<string | null>(null);
   const [deepResearch, setDeepResearch] = useState(false);
   const [computerUseMode, setComputerUseMode] = useState<ComputerUseTargetMode | null>(null);
   const [hostComputerUseAvailable, setHostComputerUseAvailable] = useState(false);
@@ -164,6 +173,7 @@ export default function ChatPane({
   const [workspaceMentionFiles, setWorkspaceMentionFiles] = useState<FileMentionSuggestion[]>([]);
   const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [resumeBusy, setResumeBusy] = useState(false);
   const [voiceInputConfig, setVoiceInputConfig] = useState<VoiceInputConfig>(
     DEFAULT_VOICE_INPUT_CONFIG,
   );
@@ -176,6 +186,7 @@ export default function ChatPane({
   const [sdkMessageContext, setSdkMessageContext] = useState<RuntimeSdkMessageContext>(() =>
     clientSdkMessageContext(),
   );
+  const [contextUsageEnabled, setContextUsageEnabled] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
@@ -201,10 +212,13 @@ export default function ChatPane({
 
   const conversationTitle = state.title;
   const projectId = state.projectId;
+  const agentId = state.agentId;
+  const contextUsageRevision = state.contextUsageRevision;
   const conversationUpdatedAt = state.updatedAt;
   const error = state.error;
   const runPhase = state.runPhase;
   const activeRunId = state.activeRunId;
+  const continuableRun = state.continuableRun;
   const lastRequestId = state.lastRequestId;
   const sdkHealth = state.sdkHealth;
   const sdkHealthMessage = state.sdkHealthMessage;
@@ -249,10 +263,48 @@ export default function ChatPane({
     return [...visibleMessages, E2E_ARTIFACT_DEMO_MESSAGE];
   }, [seedArtifactE2e, visibleMessages]);
 
-  const threadFilePaths = useMemo(
-    () => collectThreadFilePaths(displayMessages),
-    [displayMessages],
-  );
+  const sdkObservability = useSdkObservability({
+    agentId,
+    projectId,
+    conversationId: conversationId ?? '',
+    refreshRevision: contextUsageRevision,
+  });
+
+  const contextUsageSnapshot = useContextUsageReport({
+    agentId,
+    projectId,
+    conversationId: conversationId ?? '',
+    title: conversationTitle,
+    messages: visibleMessages,
+    refreshRevision: contextUsageRevision,
+    observability: sdkObservability,
+  });
+
+  const threadFilePaths = useMemo(() => {
+    const fromMessages = collectThreadFilePaths(displayMessages);
+    const mutationPaths = sdkObservability.generatedFiles
+      .filter((file) => file.mutation)
+      .map((file) => file.path);
+
+    const seen = new Set<string>();
+    const merged: string[] = [];
+
+    for (const path of mutationPaths) {
+      if (!seen.has(path)) {
+        seen.add(path);
+        merged.push(path);
+      }
+    }
+
+    for (const path of fromMessages) {
+      if (!seen.has(path)) {
+        seen.add(path);
+        merged.push(path);
+      }
+    }
+
+    return merged;
+  }, [displayMessages, sdkObservability.generatedFiles]);
 
   const showMessageList =
     hasConversationContent ||
@@ -265,16 +317,11 @@ export default function ChatPane({
     : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
 
   const slashSuggestions = useMemo(() => {
-    const trimmed = input.trim();
-    if (!trimmed.startsWith('/')) {
+    if (!isActiveSlashQuery(input)) {
       return [];
     }
 
-    const token = trimmed.split(/\s/)[0] ?? '';
-    if (trimmed.includes(' ') && token.length > 1) {
-      return [];
-    }
-
+    const token = input.trim().split(/\s/)[0] ?? '';
     return commands.filter((item) => item.command.startsWith(token));
   }, [commands, input]);
 
@@ -357,7 +404,10 @@ export default function ChatPane({
   useEffect(() => {
     function onScheduleCompose(event: Event): void {
       const detail = (event as CustomEvent<{ prefix?: string }>).detail;
-      setInput(detail?.prefix ?? '/schedule ');
+      const prefix = detail?.prefix ?? '/schedule ';
+      const command = prefix.trim().split(/\s/)[0] ?? '/schedule';
+      setComposerSlashCommand(command);
+      setInput('');
     }
     window.addEventListener('runtime:schedule-compose', onScheduleCompose);
     return () => window.removeEventListener('runtime:schedule-compose', onScheduleCompose);
@@ -389,29 +439,6 @@ export default function ChatPane({
   }, [openArtifact, projectId]);
 
   useEffect(() => {
-    void fetch('/api/runtime/commands')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as { commands: HarnessCommand[] };
-        setCommands(payload.commands);
-      })
-      .catch(() => undefined);
-
-    void fetch('/api/runtime/readiness')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as ReadinessResponse;
-        setIntegrationSlots(payload.slots ?? []);
-        setSelectedIntegrations(
-          payload.slots.filter((slot) => slot.ready).map((slot) => slot.slotId),
-        );
-      })
-      .catch(() => undefined);
-
     void fetch('/api/ui/composer-config')
       .then(async (response) => {
         if (!response.ok) {
@@ -427,6 +454,7 @@ export default function ChatPane({
           } | null;
           surface?: RuntimeSdkMessageContext['surface'];
           presentationTitle?: string;
+          features?: { context_usage_panel?: boolean };
         };
         setSdkMessageContext(
           clientSdkMessageContext({
@@ -434,6 +462,9 @@ export default function ChatPane({
             presentationTitle: payload.presentationTitle,
           }),
         );
+        if (payload.features?.context_usage_panel !== undefined) {
+          setContextUsageEnabled(payload.features.context_usage_panel);
+        }
         if (payload.voice_input) {
           setVoiceInputConfig(payload.voice_input);
         }
@@ -451,45 +482,78 @@ export default function ChatPane({
       })
       .catch(() => undefined);
 
-    void fetch('/api/settings/computer-use')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as { active?: boolean };
-        setHostComputerUseAvailable(payload.active === true);
-      })
-      .catch(() => undefined);
+    const deferHeavyStartup = (task: () => void): void => {
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(task, { timeout: 8000 });
+        return;
+      }
+      window.setTimeout(task, 1500);
+    };
 
-    void fetch('/api/runtime/computer-use/sandbox/preflight?project_id=default')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as {
-          contract_enabled?: boolean;
-          preflight?: { ok?: boolean; summary?: string | null };
-        };
-        if (payload.contract_enabled === true) {
-          setSandboxComputerUseAvailable(true);
-        }
-        if (payload.preflight?.ok === false) {
-          setSandboxPreflightSummary(payload.preflight.summary ?? 'Sandbox pre-flight failed');
-        } else {
-          setSandboxPreflightSummary(null);
-        }
-      })
-      .catch(() => undefined);
+    deferHeavyStartup(() => {
+      void fetch('/api/runtime/commands')
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const payload = (await response.json()) as { commands: HarnessCommand[] };
+          setCommands(payload.commands);
+        })
+        .catch(() => undefined);
 
-    void fetch('/api/runtime/computer-use/session?conversation_id=__probe__&project_id=default')
-      .then(async (response) => {
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as { contract_enabled?: boolean };
-        setSandboxComputerUseAvailable(payload.contract_enabled === true);
-      })
-      .catch(() => undefined);
+      void fetch('/api/runtime/readiness')
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const payload = (await response.json()) as ReadinessResponse;
+          setIntegrationSlots(payload.slots ?? []);
+          setSelectedIntegrations(
+            payload.slots.filter((slot) => slot.ready).map((slot) => slot.slotId),
+          );
+        })
+        .catch(() => undefined);
+
+      void fetch('/api/settings/computer-use')
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const payload = (await response.json()) as { active?: boolean };
+          setHostComputerUseAvailable(payload.active === true);
+        })
+        .catch(() => undefined);
+
+      void fetch('/api/runtime/computer-use/sandbox/preflight?project_id=default')
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const payload = (await response.json()) as {
+            contract_enabled?: boolean;
+            preflight?: { ok?: boolean; summary?: string | null };
+          };
+          if (payload.contract_enabled === true) {
+            setSandboxComputerUseAvailable(true);
+          }
+          if (payload.preflight?.ok === false) {
+            setSandboxPreflightSummary(payload.preflight.summary ?? 'Sandbox pre-flight failed');
+          } else {
+            setSandboxPreflightSummary(null);
+          }
+        })
+        .catch(() => undefined);
+
+      void fetch('/api/runtime/computer-use/session?conversation_id=__probe__&project_id=default')
+        .then(async (response) => {
+          if (!response.ok) {
+            return;
+          }
+          const payload = (await response.json()) as { contract_enabled?: boolean };
+          setSandboxComputerUseAvailable(payload.contract_enabled === true);
+        })
+        .catch(() => undefined);
+    });
   }, []);
 
   useEffect(() => {
@@ -499,39 +563,51 @@ export default function ChatPane({
     }
 
     let cancelled = false;
-    void fetch(
-      `/api/runtime/computer-use/session?conversation_id=${encodeURIComponent(conversationId)}&project_id=${encodeURIComponent(projectId)}`,
-    )
-      .then(async (response) => {
-        if (!response.ok || cancelled) {
-          return;
-        }
-        const payload = (await response.json()) as {
-          enabled?: boolean;
-          mode?: unknown;
-          capability_available?: boolean;
-          contract_enabled?: boolean;
-          sandbox_preflight?: { ok?: boolean; summary?: string | null };
-        };
-        if (cancelled) {
-          return;
-        }
-        const mode = parseComputerUseTargetMode(payload.mode);
-        setComputerUseMode(payload.enabled === true && mode ? mode : null);
-        if (payload.capability_available === true) {
-          setHostComputerUseAvailable(true);
-        }
-        if (payload.contract_enabled === true) {
-          setSandboxComputerUseAvailable(true);
-        }
-        if (payload.sandbox_preflight?.ok === false) {
-          setSandboxPreflightSummary(payload.sandbox_preflight.summary ?? 'Sandbox pre-flight failed');
-        }
-      })
-      .catch(() => undefined);
+    const loadSession = (): void => {
+      void fetch(
+        `/api/runtime/computer-use/session?conversation_id=${encodeURIComponent(conversationId)}&project_id=${encodeURIComponent(projectId)}`,
+      )
+        .then(async (response) => {
+          if (!response.ok || cancelled) {
+            return;
+          }
+          const payload = (await response.json()) as {
+            enabled?: boolean;
+            mode?: unknown;
+            capability_available?: boolean;
+            contract_enabled?: boolean;
+            sandbox_preflight?: { ok?: boolean; summary?: string | null };
+          };
+          if (cancelled) {
+            return;
+          }
+          const mode = parseComputerUseTargetMode(payload.mode);
+          setComputerUseMode(payload.enabled === true && mode ? mode : null);
+          if (payload.capability_available === true) {
+            setHostComputerUseAvailable(true);
+          }
+          if (payload.contract_enabled === true) {
+            setSandboxComputerUseAvailable(true);
+          }
+          if (payload.sandbox_preflight?.ok === false) {
+            setSandboxPreflightSummary(payload.sandbox_preflight.summary ?? 'Sandbox pre-flight failed');
+          }
+        })
+        .catch(() => undefined);
+    };
 
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(loadSession, { timeout: 6000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timerId = window.setTimeout(loadSession, 1200);
     return () => {
       cancelled = true;
+      window.clearTimeout(timerId);
     };
   }, [conversationId, projectId]);
 
@@ -589,8 +665,13 @@ export default function ChatPane({
   }, [voiceInputConfig.enabled, voiceInputConfig.engine]);
 
   function applySlashSuggestion(command: string): void {
-    setInput(`${command} `);
+    setComposerSlashCommand(command);
+    setInput(clearActiveSlashQuery(input));
     setSelectedSuggestionIndex(0);
+  }
+
+  function removeSlashCommand(): void {
+    setComposerSlashCommand(null);
   }
 
   function applyFileMentionSuggestion(file: FileMentionSuggestion): void {
@@ -669,7 +750,7 @@ export default function ChatPane({
     );
   }
 
-  async function handleUpload(file: File): Promise<void> {
+  const handleUpload = useCallback(async (file: File): Promise<void> => {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -691,6 +772,24 @@ export default function ChatPane({
         content_type: body.content_type,
       },
     ]);
+  }, []);
+
+  const handleDroppedFiles = useCallback(
+    async (files: File[]) => {
+      if (isLoading) {
+        return;
+      }
+      for (const file of files) {
+        await handleUpload(file).catch(() => undefined);
+      }
+    },
+    [handleUpload, isLoading],
+  );
+
+  const fileDrop = useComposerFileDrop(handleDroppedFiles);
+
+  function removeAttachment(path: string): void {
+    setAttachments((current) => current.filter((attachment) => attachment.path !== path));
   }
 
   function selectComputerUseMode(mode: ComputerUseTargetMode | null): void {
@@ -737,8 +836,12 @@ export default function ChatPane({
   }
 
   async function handleSubmit(): Promise<void> {
-    const message = buildComposerSubmitMessage(input, composerFileMentions);
-    if (!composerHasSubmittableContent(input, composerFileMentions) || isLoading || dispatchBlocked) {
+    const message = buildComposerSubmitMessage(input, composerFileMentions, composerSlashCommand);
+    if (
+      !composerHasSubmittableContent(input, composerFileMentions, composerSlashCommand) ||
+      isLoading ||
+      dispatchBlocked
+    ) {
       return;
     }
 
@@ -749,6 +852,7 @@ export default function ChatPane({
 
     setInput('');
     setComposerFileMentions([]);
+    setComposerSlashCommand(null);
     setAttachments([]);
 
     await dispatchMessage({
@@ -827,6 +931,10 @@ export default function ChatPane({
             title={conversationTitle ?? 'Loading session…'}
             updatedAt={conversationUpdatedAt}
             messages={visibleMessages}
+            projectId={projectId}
+            contextUsageEnabled={contextUsageEnabled}
+            contextUsageReport={contextUsageSnapshot.report}
+            contextUsageLoading={contextUsageSnapshot.loading}
             compact={compact}
           />
         ) : null}
@@ -845,13 +953,36 @@ export default function ChatPane({
   }
 
   const chatColumn = (
-    <div className={consoleGridClass} data-testid="chat-pane">
+    <div
+      className={`relative ${consoleGridClass}`}
+      data-testid="chat-pane"
+      data-file-drop-active={fileDrop.isActive ? 'true' : 'false'}
+      onDragEnter={fileDrop.onDragEnter}
+      onDragLeave={fileDrop.onDragLeave}
+      onDragOver={fileDrop.onDragOver}
+      onDrop={fileDrop.onDrop}
+    >
+      {fileDrop.isActive ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-blue-50/80 ring-2 ring-inset ring-blue-400"
+          data-testid="chat-pane-file-drop-overlay"
+          aria-hidden="true"
+        >
+          <p className="rounded-full border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow-sm">
+            Drop files to attach
+          </p>
+        </div>
+      ) : null}
       {showHeader && conversationId ? (
         <ChatPaneHeader
           conversationId={conversationId}
           title={conversationTitle}
           updatedAt={conversationUpdatedAt}
           messages={visibleMessages}
+          projectId={projectId}
+          contextUsageEnabled={contextUsageEnabled}
+          contextUsageReport={contextUsageSnapshot.report}
+          contextUsageLoading={contextUsageSnapshot.loading}
           compact={compact}
           paneIndex={paneIndex}
         />
@@ -914,7 +1045,14 @@ export default function ChatPane({
 
       <div className="shrink-0 px-4 pb-4" data-testid="chat-pane-composer">
         <div className="relative mx-auto max-w-3xl">
-          <ComposerToolActivity messages={displayMessages} streaming={isStreaming} />
+          <ComposerToolActivity
+            messages={displayMessages}
+            streaming={isStreaming}
+            agentId={agentId}
+            projectId={projectId}
+            conversationId={conversationId ?? ''}
+            refreshRevision={contextUsageRevision}
+          />
 
           {threadFilePaths.length > 0 ? (
             <div className="mb-2" data-testid="chat-composer-generated-files">
@@ -991,14 +1129,14 @@ export default function ChatPane({
           ) : null}
 
           {attachments.length > 0 ? (
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-attachment-badges">
               {attachments.map((attachment) => (
-                <span
+                <ComposerAttachmentBadge
                   key={attachment.path}
-                  className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                >
-                  {attachment.name}
-                </span>
+                  name={attachment.name}
+                  disabled={isLoading}
+                  onRemove={() => removeAttachment(attachment.path)}
+                />
               ))}
             </div>
           ) : null}
@@ -1070,11 +1208,18 @@ export default function ChatPane({
             disabled={isLoading}
             className="p-2"
           >
-            {composerFileMentions.length > 0 ? (
+            {composerSlashCommand || composerFileMentions.length > 0 ? (
               <div
                 className="mb-2 flex flex-wrap gap-2 px-1"
-                data-testid="composer-file-mention-badges"
+                data-testid="composer-context-badges"
               >
+                {composerSlashCommand ? (
+                  <ComposerSlashCommandBadge
+                    command={composerSlashCommand}
+                    disabled={isLoading}
+                    onRemove={removeSlashCommand}
+                  />
+                ) : null}
                 {composerFileMentions.map((file) => (
                   <ComposerFileMentionBadge
                     key={file.path}
@@ -1140,7 +1285,7 @@ export default function ChatPane({
                 size="icon"
                 data-testid={showStopMode ? 'chat-stop-run' : 'chat-pane-send'}
                 className={`h-9 w-9 shrink-0 rounded-full ${showStopMode ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                disabled={showStopMode ? false : isLoading || dispatchBlocked || !composerHasSubmittableContent(input, composerFileMentions)}
+                disabled={showStopMode ? false : isLoading || dispatchBlocked || !composerHasSubmittableContent(input, composerFileMentions, composerSlashCommand)}
                 aria-label={showStopMode ? 'Stop run' : isLoading ? 'Streaming' : 'Send message'}
                 onClick={() => {
                   if (showStopMode) {
@@ -1195,6 +1340,32 @@ export default function ChatPane({
               }
             }}
           />
+
+          {continuableRun && runPhase === 'continuable' && !isDraftConversationId(conversationId) ? (
+            <ContinuableRunBanner
+              message={continuableRun.message}
+              resumable={continuableRun.resumable}
+              busy={resumeBusy}
+              onContinue={() => {
+                if (!conversationId) {
+                  return;
+                }
+                setResumeBusy(true);
+                void hub
+                  .resumeContinuableRun(conversationId)
+                  .catch(() => undefined)
+                  .finally(() => {
+                    setResumeBusy(false);
+                  });
+              }}
+              onDismiss={() => {
+                if (!conversationId) {
+                  return;
+                }
+                hub.dismissContinuableRun(conversationId);
+              }}
+            />
+          ) : null}
 
           {error && !isDraftConversationId(conversationId) && runPhase === 'failed' ? (
             <RunDiagnosticsPanel

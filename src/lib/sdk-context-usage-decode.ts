@@ -1,0 +1,407 @@
+export interface SdkUsageTreeNode {
+  id?: string;
+  label?: string;
+  tag?: string;
+  tokens?: number;
+  contentPreview?: string;
+  children?: SdkUsageTreeNode[];
+}
+
+export interface SdkPromptContextUsageSnapshot {
+  usedTokens: number;
+  maxTokens: number;
+  categories: SdkUsageTreeNode[];
+}
+
+function readVarint(buffer: Uint8Array, offset: number): { value: number; next: number } {
+  let value = 0;
+  let shift = 0;
+  let index = offset;
+
+  while (index < buffer.length) {
+    const byte = buffer[index];
+    index += 1;
+    value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) {
+      return { value, next: index };
+    }
+    shift += 7;
+  }
+
+  throw new Error('Unexpected end of buffer while reading varint');
+}
+
+type ProtobufValue = { kind: 'varint'; value: number } | { kind: 'bytes'; value: Uint8Array };
+
+function readField(
+  buffer: Uint8Array,
+  offset: number,
+): { field: number; value: ProtobufValue; next: number } {
+  const tagResult = readVarint(buffer, offset);
+  const tag = tagResult.value;
+  const field = tag >> 3;
+  const wire = tag & 0x07;
+  let index = tagResult.next;
+
+  if (wire === 0) {
+    const varintResult = readVarint(buffer, index);
+    return { field, value: { kind: 'varint', value: varintResult.value }, next: varintResult.next };
+  }
+
+  if (wire === 2) {
+    const lengthResult = readVarint(buffer, index);
+    index = lengthResult.next;
+    const end = index + lengthResult.value;
+    return {
+      field,
+      value: { kind: 'bytes', value: buffer.slice(index, end) },
+      next: end,
+    };
+  }
+
+  throw new Error(`Unsupported protobuf wire type ${wire} for field ${field}`);
+}
+
+function parseUsageNode(buffer: Uint8Array): SdkUsageTreeNode {
+  const node: SdkUsageTreeNode = {};
+  let index = 0;
+
+  while (index < buffer.length) {
+    let parsed;
+    try {
+      parsed = readField(buffer, index);
+    } catch {
+      break;
+    }
+    index = parsed.next;
+
+    if (parsed.value.kind === 'varint' && parsed.field === 6) {
+      node.tokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.value.kind !== 'bytes' || !parsed.value.value.length) {
+      continue;
+    }
+
+    const bytes = parsed.value.value;
+    const text = new TextDecoder().decode(bytes);
+
+    if (parsed.field === 1) {
+      node.tag = text;
+    } else if (parsed.field === 4) {
+      node.label = text;
+    } else if (parsed.field === 5) {
+      node.id = text;
+    }
+  }
+
+  return node;
+}
+
+interface UsageLeafFields {
+  tag?: string;
+  kind?: string;
+  label?: string;
+  id?: string;
+  tokens?: number;
+  contentPreview?: string;
+}
+
+function parseUsageLeafNode(buffer: Uint8Array): UsageLeafFields {
+  const node: UsageLeafFields = {};
+  let index = 0;
+
+  while (index < buffer.length) {
+    let parsed;
+    try {
+      parsed = readField(buffer, index);
+    } catch {
+      break;
+    }
+    index = parsed.next;
+
+    if (parsed.value.kind === 'varint' && parsed.field === 6) {
+      node.tokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.value.kind !== 'bytes' || !parsed.value.value.length) {
+      continue;
+    }
+
+    const text = new TextDecoder().decode(parsed.value.value);
+
+    if (parsed.field === 1) {
+      node.tag = text;
+    } else if (parsed.field === 3) {
+      node.kind = text;
+    } else if (parsed.field === 4) {
+      node.label = text;
+    } else if (parsed.field === 5) {
+      node.id = text;
+    } else if (parsed.field === 12) {
+      node.contentPreview = normalizeUsageLeafContent(text);
+    }
+  }
+
+  return node;
+}
+
+function normalizeUsageLeafContent(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.startsWith('- ')) {
+    const withoutBullet = trimmed.slice(2).trim();
+    const colonIndex = withoutBullet.indexOf(':');
+    if (colonIndex > 0) {
+      return withoutBullet.slice(colonIndex + 1).trim();
+    }
+    return withoutBullet;
+  }
+
+  return trimmed;
+}
+
+export function formatSubagentDisplayName(subagentType: string): string {
+  const normalized = subagentType.trim();
+  if (!normalized) {
+    return 'Subagent';
+  }
+
+  const spaced = normalized.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]/g, ' ');
+
+  return spaced
+    .split(/\s+/)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
+  if (needle.length === 0 || haystack.length < needle.length) {
+    return false;
+  }
+
+  outer: for (let cursor = 0; cursor <= haystack.length - needle.length; cursor += 1) {
+    for (let index = 0; index < needle.length; index += 1) {
+      if (haystack[cursor + index] !== needle[index]) {
+        continue outer;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function extractUsageLeavesByKind(buffer: Uint8Array, kind: string): UsageLeafFields[] {
+  const kindBytes = new TextEncoder().encode(kind);
+  const collector: UsageLeafFields[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < buffer.length) {
+    const idx = containsBytesAt(buffer, kindBytes, searchFrom);
+    if (idx < 0) {
+      break;
+    }
+    searchFrom = idx + 1;
+
+    for (let start = Math.max(0, idx - 48); start < idx; start += 1) {
+      let parsed;
+      try {
+        parsed = readField(buffer, start);
+      } catch {
+        continue;
+      }
+
+      if (parsed.value.kind !== 'bytes' || !containsBytes(parsed.value.value, kindBytes)) {
+        continue;
+      }
+
+      const leaf = parseUsageLeafNode(parsed.value.value);
+      if (leaf.kind === kind && leaf.label && leaf.tag) {
+        collector.push(leaf);
+      }
+    }
+  }
+
+  return dedupeUsageLeaves(collector);
+}
+
+function containsBytesAt(buffer: Uint8Array, needle: Uint8Array, from: number): number {
+  if (needle.length === 0 || buffer.length < needle.length) {
+    return -1;
+  }
+
+  for (let cursor = from; cursor <= buffer.length - needle.length; cursor += 1) {
+    let matches = true;
+    for (let index = 0; index < needle.length; index += 1) {
+      if (buffer[cursor + index] !== needle[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return cursor;
+    }
+  }
+
+  return -1;
+}
+
+function dedupeUsageLeaves(leaves: UsageLeafFields[]): UsageLeafFields[] {
+  const byTag = new Map<string, UsageLeafFields>();
+
+  for (const leaf of leaves) {
+    const tag = leaf.tag?.trim();
+    if (!tag) {
+      continue;
+    }
+
+    const existing = byTag.get(tag);
+    if (!existing || (leaf.tokens ?? 0) > (existing.tokens ?? 0)) {
+      byTag.set(tag, leaf);
+    }
+  }
+
+  return [...byTag.values()].sort((left, right) => (right.tokens ?? 0) - (left.tokens ?? 0));
+}
+
+function attachCategoryChildren(
+  categories: SdkUsageTreeNode[],
+  checkpointBlob: Uint8Array,
+): void {
+  const toolLeaves = extractUsageLeavesByKind(checkpointBlob, 'tool_definition');
+
+  const toolsCategory = categories.find((entry) => entry.id === 'tools');
+  if (toolsCategory && toolLeaves.length > 0) {
+    toolsCategory.children = toolLeaves.map((leaf) => ({
+      id: leaf.tag,
+      label: leaf.label ?? leaf.tag ?? 'tool',
+      tokens: leaf.tokens ?? 0,
+      tag: leaf.tag,
+    }));
+  }
+
+  const ruleLeaves = extractUsageLeavesByKind(checkpointBlob, 'rule');
+
+  const rulesCategory = categories.find((entry) => entry.id === 'rules');
+  if (rulesCategory && ruleLeaves.length > 0) {
+    rulesCategory.children = ruleLeaves.map((leaf) => ({
+      id: leaf.tag,
+      label: leaf.label ?? leaf.tag ?? 'rule',
+      tokens: leaf.tokens ?? 0,
+      tag: leaf.tag,
+    }));
+  }
+
+  const subagentLeaves = extractUsageLeavesByKind(checkpointBlob, 'subagent_type');
+
+  const subagentsCategory = categories.find((entry) => entry.id === 'subagents');
+  if (subagentsCategory && subagentLeaves.length > 0) {
+    subagentsCategory.children = subagentLeaves.map((leaf) => ({
+      id: leaf.tag,
+      label: leaf.label ?? leaf.tag ?? 'subagent',
+      tokens: leaf.tokens ?? 0,
+      tag: leaf.tag,
+      contentPreview: leaf.contentPreview,
+    }));
+  }
+}
+
+function findConversationUsageRoot(buffer: Uint8Array): number {
+  const needle = new TextEncoder().encode('Conversation');
+  const pattern = new Uint8Array([0x12, needle.length, ...needle]);
+
+  for (let cursor = 0; cursor <= buffer.length - pattern.length; cursor += 1) {
+    let matches = true;
+    for (let i = 0; i < pattern.length; i += 1) {
+      if (buffer[cursor + i] !== pattern[i]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+
+export function decodePromptContextUsageSnapshot(
+  checkpointBlob: Uint8Array,
+): SdkPromptContextUsageSnapshot | null {
+  const rootOffset = findConversationUsageRoot(checkpointBlob);
+  if (rootOffset < 0) {
+    return null;
+  }
+
+  let index = rootOffset;
+  let usedTokens = 0;
+  let maxTokens = 0;
+  let childrenBlob: Uint8Array | null = null;
+
+  while (index < checkpointBlob.length) {
+    const parsed = readField(checkpointBlob, index);
+    index = parsed.next;
+
+    if (parsed.field === 2 && parsed.value.kind === 'bytes') {
+      const label = new TextDecoder().decode(parsed.value.value);
+      if (label !== 'Conversation') {
+        break;
+      }
+      continue;
+    }
+
+    if (parsed.field === 3 && parsed.value.kind === 'varint') {
+      usedTokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.field === 4 && parsed.value.kind === 'varint') {
+      maxTokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.field === 4 && parsed.value.kind === 'bytes') {
+      childrenBlob = parsed.value.value;
+      break;
+    }
+  }
+
+  if (!childrenBlob) {
+    return null;
+  }
+
+  const categories: SdkUsageTreeNode[] = [];
+  let childIndex = 0;
+
+  while (childIndex < childrenBlob.length) {
+    let parsed;
+    try {
+      parsed = readField(childrenBlob, childIndex);
+    } catch {
+      break;
+    }
+    childIndex = parsed.next;
+
+    if (parsed.field === 2 && parsed.value.kind === 'bytes') {
+      const node = parseUsageNode(parsed.value.value);
+      if (node.tag?.startsWith('category:')) {
+        categories.push(node);
+      }
+    }
+  }
+
+  attachCategoryChildren(categories, checkpointBlob);
+
+  return {
+    usedTokens,
+    maxTokens,
+    categories,
+  };
+}

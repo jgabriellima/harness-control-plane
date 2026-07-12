@@ -1,87 +1,54 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 
-import { ToolInspectorGroup, type ToolRecord } from '@/components/react/ToolInspector';
-import { normalizeInspectablePayload } from '@/lib/format-inspect';
+import { ToolInspectorGroup } from '@/components/react/ToolInspector';
+import { useSdkObservability, mergeToolCallsWithLiveMessages } from '@/hooks/useSdkObservability';
+import { sdkToolCallToToolRecord } from '@/lib/sdk-tool-call-mapper';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 
-function resolveToolRecord(message: ChatMessage): ToolRecord {
-  const [name = 'tool', status = 'running'] = message.content.split(' · ');
-  let args: unknown;
-  let result: unknown;
-
-  if (message.toolInput) {
-    args = normalizeInspectablePayload(message.toolInput);
-  }
-
-  if (message.toolOutput) {
-    result = normalizeInspectablePayload(message.toolOutput);
-  }
-
-  return {
-    name: name.trim(),
-    status: status.trim(),
-    args,
-    result,
-    recordedAt: message.recordedAt,
-  };
-}
-
-function currentTurnToolMessages(messages: ChatMessage[]): ChatMessage[] {
-  const tools: ChatMessage[] = [];
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      break;
-    }
-    if (message.role === 'tool') {
-      tools.push(message);
-    }
-  }
-
-  return tools;
-}
-
-function isRunningToolMessage(message: ChatMessage, streaming: boolean): boolean {
-  if (streaming || message.streaming) {
-    return true;
-  }
-
-  const status = message.content.split(' · ')[1]?.trim().toLowerCase() ?? '';
-  return status === 'running' || status === 'pending' || status === 'in_progress';
+function isToolStatusRunning(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'pending' || normalized === 'in_progress';
 }
 
 interface ComposerToolActivityProps {
   messages: ChatMessage[];
   streaming: boolean;
+  agentId: string | null;
+  projectId: string;
+  conversationId: string;
+  refreshRevision?: number;
 }
 
-export default function ComposerToolActivity({ messages, streaming }: ComposerToolActivityProps) {
-  const tools = useMemo(() => currentTurnToolMessages(messages), [messages]);
-  const groupTimestamp = tools.find((message) => message.recordedAt)?.recordedAt;
-  const hasRunningTool = tools.some((message) => isRunningToolMessage(message, streaming));
-  const defaultCollapsed = !hasRunningTool;
+export default function ComposerToolActivity({
+  messages,
+  agentId,
+  projectId,
+  conversationId,
+  refreshRevision = 0,
+}: ComposerToolActivityProps) {
+  const observability = useSdkObservability({
+    agentId,
+    projectId,
+    conversationId,
+    refreshRevision,
+  });
+
+  const toolCalls = useMemo(
+    () => mergeToolCallsWithLiveMessages(observability.toolCalls, messages),
+    [messages, observability.toolCalls],
+  );
+
+  const defaultCollapsed = true;
+  const groupTimestamp = toolCalls.find((call) => call.recordedAt)?.recordedAt;
 
   const activeToolId = useMemo(() => {
-    const running = tools.find((message) => isRunningToolMessage(message, streaming));
-    return running?.id ?? tools[0]?.id;
-  }, [streaming, tools]);
+    const running = toolCalls.find((call) => isToolStatusRunning(call.status));
+    return running?.callId ?? toolCalls[0]?.callId;
+  }, [toolCalls]);
 
-  useEffect(() => {
-    if (defaultCollapsed || !activeToolId) {
-      return;
-    }
-
-    const list = document.querySelector(
-      '[data-testid="chat-pane-tool-activity"] [data-testid="tool-activity-list"]',
-    );
-    const row = list?.querySelector(`[data-tool-row-id="${activeToolId}"]`);
-    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [activeToolId, defaultCollapsed, tools.length]);
-
-  if (tools.length === 0) {
+  if (toolCalls.length === 0) {
     return null;
   }
 
@@ -89,10 +56,10 @@ export default function ComposerToolActivity({ messages, streaming }: ComposerTo
     <div className="mb-2" data-testid="chat-pane-tool-activity">
       <ToolInspectorGroup
         groupRecordedAt={groupTimestamp}
-        tools={tools.map((message) => ({
-          id: message.id,
-          tool: resolveToolRecord(message),
-          streaming: isRunningToolMessage(message, streaming),
+        tools={toolCalls.map((call) => ({
+          id: call.callId,
+          streaming: isToolStatusRunning(call.status),
+          tool: sdkToolCallToToolRecord(call),
         }))}
         defaultCollapsed={defaultCollapsed}
         activeToolId={activeToolId}

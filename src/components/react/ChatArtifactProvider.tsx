@@ -4,6 +4,10 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import ChatArtifactPanel from '@/components/react/ChatArtifactPanel';
+import ContextUsageReportPanel from '@/components/react/ContextUsageReportPanel';
+import ToolActivityReportPanel from '@/components/react/ToolActivityReportPanel';
+import { useContextUsage } from '@/components/react/ContextUsageProvider';
+import { useToolActivity } from '@/components/react/ToolActivityProvider';
 import { RuntimeComputerUsePanelSlot, useRuntimeComputerUse } from '@/components/react/RuntimeComputerUseProvider';
 import {
   emptyArtifactSelection,
@@ -205,8 +209,18 @@ function ResizableChatArtifactSplitShell({
 export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifactSplitShellProps) {
   const { selection: artifactSelection, closeArtifact } = useChatArtifact();
   const { selection: computerUseSelection, closePreview } = useRuntimeComputerUse();
+  const { selection: contextUsageSelection, closeContextReport } = useContextUsage();
+  const { selection: toolActivitySelection, closeToolActivityReport } = useToolActivity();
 
-  const previewMode = computerUseSelection ? 'computer-use' : artifactSelection ? 'artifact' : null;
+  const previewMode = computerUseSelection
+    ? 'computer-use'
+    : artifactSelection
+      ? 'artifact'
+      : contextUsageSelection
+        ? 'context-usage'
+        : toolActivitySelection
+          ? 'tool-activity'
+          : null;
 
   if (!enabled) {
     return <>{children}</>;
@@ -227,6 +241,38 @@ export function ChatArtifactSplitShell({ children, enabled = true }: ChatArtifac
           void closePreview();
         }}
         previewPanel={<RuntimeComputerUsePanelSlot />}
+      >
+        {children}
+      </ResizableChatArtifactSplitShell>
+    );
+  }
+
+  if (previewMode === 'context-usage' && contextUsageSelection) {
+    return (
+      <ResizableChatArtifactSplitShell
+        onClose={closeContextReport}
+        previewPanel={
+          <ContextUsageReportPanel
+            selection={contextUsageSelection}
+            onClose={closeContextReport}
+          />
+        }
+      >
+        {children}
+      </ResizableChatArtifactSplitShell>
+    );
+  }
+
+  if (previewMode === 'tool-activity' && toolActivitySelection) {
+    return (
+      <ResizableChatArtifactSplitShell
+        onClose={closeToolActivityReport}
+        previewPanel={
+          <ToolActivityReportPanel
+            selection={toolActivitySelection}
+            onClose={closeToolActivityReport}
+          />
+        }
       >
         {children}
       </ResizableChatArtifactSplitShell>
