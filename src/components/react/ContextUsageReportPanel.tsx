@@ -53,6 +53,20 @@ function formatInstructionScopeLabel(scope: string | undefined): string | null {
   }
 }
 
+function resolveInstructionCopyContent(child: ContextUsageDetailItem): string | null {
+  const preview = child.contentPreview?.trim();
+  if (preview) {
+    return preview;
+  }
+
+  const description = child.description?.trim();
+  if (description) {
+    return description;
+  }
+
+  return null;
+}
+
 function formatLoadContextLabel(loadContext: string | undefined): string | null {
   if (!loadContext) {
     return null;
@@ -81,7 +95,8 @@ function ContextUsageInstructionChildRow({
   source: ContextUsageSource;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = Boolean(child.path || child.description || child.contentPreview || child.sdkTag);
+  const copyContent = resolveInstructionCopyContent(child);
+  const hasDetail = Boolean(child.path || copyContent || child.sdkTag);
   const scopeLabel = formatInstructionScopeLabel(child.scope);
   const loadContextLabel = formatLoadContextLabel(child.loadContext);
   const tokenPrefix =
@@ -145,12 +160,9 @@ function ContextUsageInstructionChildRow({
               Load context: <span className="font-medium text-gray-600">{loadContextLabel}</span>
             </p>
           ) : null}
-          {child.description ? (
-            <p className="text-[11px] leading-relaxed text-gray-600">{child.description}</p>
-          ) : null}
-          {child.contentPreview ? (
+          {copyContent ? (
             <ContextUsageContentPreview
-              content={child.contentPreview}
+              content={copyContent}
               testId={`context-usage-content-preview-${child.path ?? child.name}`}
             />
           ) : null}
@@ -415,7 +427,7 @@ export default function ContextUsageReportPanel({
 
         {!report && !loadError ? (
           <p className="p-4 text-sm text-gray-500">
-            {loading ? 'Loading context from SDK store…' : 'Loading context breakdown…'}
+            {loading ? 'Loading context from runtime store…' : 'Loading context breakdown…'}
           </p>
         ) : null}
 
@@ -477,7 +489,7 @@ export default function ContextUsageReportPanel({
 
             <p className="text-center text-[10px] text-gray-400">
               {report.source === 'sdk_checkpoint'
-                ? `Cursor runtime checkpoint · window ${formatContextTokenCount(report.contextWindowSize)}`
+                ? `Runtime checkpoint · window ${formatContextTokenCount(report.contextWindowSize)}`
                 : `Estimates via ${report.tokenizer} · window ${DEFAULT_CONTEXT_WINDOW_SIZE / 1000}K`}
             </p>
           </div>
