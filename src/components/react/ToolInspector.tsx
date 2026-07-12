@@ -85,7 +85,7 @@ export function ToolRow({
       : null;
   const rowShellClass =
     layout === 'panel'
-      ? 'overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm'
+      ? 'shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm'
       : 'border-b border-gray-100 last:border-b-0';
 
   return (
@@ -118,6 +118,44 @@ export function ToolRow({
         ) : (
           <span className="inline-block h-3 w-3 shrink-0" />
         )}
+        {layout === 'panel' ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+            {formattedAt ? (
+              <time
+                dateTime={tool.recordedAt ?? tool.startedAt}
+                className="shrink-0 tabular-nums text-[10px] text-gray-400"
+                data-testid="tool-row-timestamp"
+                title={formattedAt}
+              >
+                {formattedAt}
+              </time>
+            ) : (
+              <span className="shrink-0 text-[10px] text-gray-300" aria-hidden>
+                —
+              </span>
+            )}
+            <span className="min-w-0 truncate rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
+              {tool.name}
+            </span>
+            {formattedTokens ? (
+              <span
+                className="shrink-0 tabular-nums text-[10px] text-gray-400"
+                data-testid="tool-row-tokens"
+                title="Estimated payload tokens (input + output)"
+              >
+                {formattedTokens} tok
+              </span>
+            ) : null}
+            {formattedDuration ? (
+              <span
+                className="shrink-0 tabular-nums text-[10px] text-gray-400"
+                data-testid="tool-row-duration"
+              >
+                {formattedDuration}
+              </span>
+            ) : null}
+          </div>
+        ) : (
         <div className="grid min-w-0 flex-1 grid-cols-[13rem_minmax(0,1fr)_auto_auto] items-center gap-x-2">
           {formattedAt ? (
             <time
@@ -158,6 +196,7 @@ export function ToolRow({
             <span aria-hidden />
           )}
         </div>
+        )}
         <span
           className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${statusClasses(tool.status)}`}
         >
@@ -197,7 +236,7 @@ export function ToolInspectorList({
 }) {
   const listClassName =
     layout === 'panel'
-      ? ['flex flex-col gap-2 px-3 py-3', className].filter(Boolean).join(' ')
+      ? ['space-y-2 px-3 py-3', className].filter(Boolean).join(' ')
       : className ?? 'overflow-y-auto overscroll-contain';
 
   return (
