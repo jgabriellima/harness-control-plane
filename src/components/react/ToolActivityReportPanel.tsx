@@ -71,14 +71,23 @@ export default function ToolActivityReportPanel({
         </button>
       </header>
 
-      {observability.error ? (
+      {observability.error && toolCalls.length === 0 ? (
         <p className="shrink-0 px-4 py-3 text-sm text-red-600" data-testid="tool-activity-error">
           {observability.error}
         </p>
       ) : null}
 
+      {observability.error && toolCalls.length > 0 ? (
+        <p
+          className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800"
+          data-testid="tool-activity-warning"
+        >
+          {observability.error}
+        </p>
+      ) : null}
+
       {observability.loading && toolCalls.length === 0 ? (
-        <p className="shrink-0 px-4 py-3 text-sm text-gray-500">Loading tool activity from SDK store…</p>
+        <p className="shrink-0 px-4 py-3 text-sm text-gray-500">Loading tool activity from runtime store…</p>
       ) : null}
 
       {toolCalls.length === 0 && !observability.loading && !observability.error ? (
@@ -91,9 +100,10 @@ export default function ToolActivityReportPanel({
             tools={toolEntries}
             activeToolId={hasRunning ? activeCallId : undefined}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            layout="panel"
           />
           <footer className="shrink-0 border-t border-gray-100 px-4 py-2 text-center text-[10px] text-gray-400">
-            Cursor SDK agent store · {invocationLabel}
+            Runtime agent store · {invocationLabel}
           </footer>
         </div>
       ) : null}

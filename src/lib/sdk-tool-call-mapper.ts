@@ -1,5 +1,6 @@
 import type { SdkToolCallRecord } from '@/lib/sdk-agent-observability-types';
 import type { ToolRecord } from '@/components/react/ToolInspector';
+import { estimateToolCallTokens } from '@/lib/estimate-tool-call-tokens';
 
 export function sdkToolCallToToolRecord(call: SdkToolCallRecord): ToolRecord {
   return {
@@ -10,5 +11,6 @@ export function sdkToolCallToToolRecord(call: SdkToolCallRecord): ToolRecord {
     startedAt: call.startedAt,
     recordedAt: call.recordedAt,
     durationMs: call.durationMs,
+    tokenEstimate: estimateToolCallTokens(call.args, call.result),
   };
 }

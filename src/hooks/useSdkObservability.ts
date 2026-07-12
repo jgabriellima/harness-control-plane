@@ -77,18 +77,24 @@ export function useSdkObservability(input: {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Failed to load SDK observability');
+          throw new Error(payload.error ?? `Observability request failed (${response.status})`);
         }
 
         if (!cancelled) {
           setToolCalls(payload.toolCalls ?? []);
           setGeneratedFiles(payload.generatedFiles ?? []);
           setContextUsage(payload.contextUsage ?? null);
+          setError(null);
           setRevision((current) => current + 1);
         }
       } catch (loadError) {
         if (!cancelled) {
-          const message = loadError instanceof Error ? loadError.message : 'Failed to load SDK observability';
+          const rawMessage =
+            loadError instanceof Error ? loadError.message : 'Failed to load runtime observability';
+          const message =
+            rawMessage === 'Load failed' || rawMessage === 'Failed to fetch'
+              ? 'Runtime observability unreachable — showing live tool stream only'
+              : rawMessage;
           setError(message);
         }
       } finally {

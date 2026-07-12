@@ -22,7 +22,22 @@ export const GET: APIRoute = async ({ request, url }) => {
     });
 
     if (!observability) {
-      return jsonError('No SDK observability data for agent', 404);
+      const corpus = await collectInstructionCorpus(workspaceRoot);
+      const overhead = estimateRuntimeOverhead(corpus);
+      return jsonOk({
+        source: 'sdk_agent_store',
+        agentId,
+        conversationId: conversationId ?? null,
+        updatedAt: new Date().toISOString(),
+        runs: [],
+        toolCalls: [],
+        generatedFiles: [],
+        contextUsage: {
+          corpus,
+          overhead,
+          sdkUsage: null,
+        },
+      });
     }
 
     const corpus = await collectInstructionCorpus(workspaceRoot);

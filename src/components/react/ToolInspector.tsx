@@ -4,16 +4,23 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import JsonInspectPre from '@/components/react/JsonInspectPre';
+import { formatContextTokenCount } from '@/lib/context-usage';
 import { formatInspectable } from '@/lib/format-inspect';
 import { formatRecordedAt } from '@/lib/format-recorded-at';
+import { formatToolDuration } from '@/lib/format-tool-duration';
 
 export interface ToolRecord {
   name: string;
   status: string;
   args?: unknown;
   result?: unknown;
+  startedAt?: string;
   recordedAt?: string;
+  durationMs?: number;
+  tokenEstimate?: number;
 }
+
+export type ToolInspectorLayout = 'grouped' | 'panel';
 
 function statusClasses(status: string): string {
   const normalized = status.toLowerCase();
@@ -46,16 +53,18 @@ function InspectBlock({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-function ToolRow({
+export function ToolRow({
   tool,
   streaming,
   toolId,
   active,
+  layout = 'grouped',
 }: {
   tool: ToolRecord;
   streaming?: boolean;
   toolId: string;
   active?: boolean;
+  layout?: ToolInspectorLayout;
 }) {
   const [expanded, setExpanded] = useState(active === true);
   const hasDetail =
@@ -68,17 +77,30 @@ function ToolRow({
       setExpanded(true);
     }
   }, [active]);
-  const formattedAt = formatRecordedAt(tool.recordedAt);
+  const formattedAt = formatRecordedAt(tool.recordedAt ?? tool.startedAt);
+  const formattedDuration = formatToolDuration(tool.durationMs);
+  const formattedTokens =
+    tool.tokenEstimate !== undefined && tool.tokenEstimate > 0
+      ? formatContextTokenCount(tool.tokenEstimate)
+      : null;
+  const rowShellClass =
+    layout === 'panel'
+      ? 'overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm'
+      : 'border-b border-gray-100 last:border-b-0';
 
   return (
     <li
-      className="border-b border-gray-100 last:border-b-0"
+      className={rowShellClass}
       data-tool-row-id={toolId}
       data-testid={`tool-row-${toolId}`}
     >
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50/80"
+        className={
+          layout === 'panel'
+            ? 'flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50/80'
+            : 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-50/80'
+        }
         onClick={() => {
           if (hasDetail) {
             setExpanded((current) => !current);
@@ -96,21 +118,45 @@ function ToolRow({
         ) : (
           <span className="inline-block h-3 w-3 shrink-0" />
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
-              {tool.name}
+        <div className="grid min-w-0 flex-1 grid-cols-[13rem_minmax(0,1fr)_auto_auto] items-center gap-x-2">
+          {formattedAt ? (
+            <time
+              dateTime={tool.recordedAt ?? tool.startedAt}
+              className="shrink-0 truncate tabular-nums text-[10px] text-gray-400"
+              data-testid="tool-row-timestamp"
+              title={formattedAt}
+            >
+              {formattedAt}
+            </time>
+          ) : (
+            <span className="shrink-0 text-[10px] text-gray-300" aria-hidden>
+              —
             </span>
-            {formattedAt ? (
-              <time
-                dateTime={tool.recordedAt}
-                className="truncate text-[10px] text-gray-400"
-                data-testid="tool-row-timestamp"
-              >
-                {formattedAt}
-              </time>
-            ) : null}
-          </div>
+          )}
+          <span className="min-w-0 truncate rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
+            {tool.name}
+          </span>
+          {formattedTokens ? (
+            <span
+              className="shrink-0 tabular-nums text-[10px] text-gray-400"
+              data-testid="tool-row-tokens"
+              title="Estimated payload tokens (input + output)"
+            >
+              {formattedTokens} tok
+            </span>
+          ) : (
+            <span aria-hidden />
+          )}
+          {formattedDuration ? (
+            <span
+              className="shrink-0 tabular-nums text-[10px] text-gray-400"
+              data-testid="tool-row-duration"
+            >
+              {formattedDuration}
+            </span>
+          ) : (
+            <span aria-hidden />
+          )}
         </div>
         <span
           className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${statusClasses(tool.status)}`}
@@ -120,7 +166,13 @@ function ToolRow({
         </span>
       </button>
       {expanded && hasDetail ? (
-        <div className="space-y-2 border-t border-gray-100 bg-white px-3 py-2">
+        <div
+          className={
+            layout === 'panel'
+              ? 'space-y-2 border-t border-gray-100 bg-gray-50/40 px-3 py-2'
+              : 'space-y-2 border-t border-gray-100 bg-white px-3 py-2'
+          }
+        >
           <InspectBlock label="Input" value={tool.args} />
           <InspectBlock label="Output" value={tool.result} />
           {streaming && tool.result === undefined && tool.args === undefined ? (
@@ -129,6 +181,38 @@ function ToolRow({
         </div>
       ) : null}
     </li>
+  );
+}
+
+export function ToolInspectorList({
+  tools,
+  activeToolId,
+  className,
+  layout = 'grouped',
+}: {
+  tools: Array<{ id: string; tool: ToolRecord; streaming?: boolean }>;
+  activeToolId?: string;
+  className?: string;
+  layout?: ToolInspectorLayout;
+}) {
+  const listClassName =
+    layout === 'panel'
+      ? ['flex flex-col gap-2 px-3 py-3', className].filter(Boolean).join(' ')
+      : className ?? 'overflow-y-auto overscroll-contain';
+
+  return (
+    <ul className={listClassName} data-testid="tool-activity-list">
+      {tools.map((entry) => (
+        <ToolRow
+          key={entry.id}
+          toolId={entry.id}
+          tool={entry.tool}
+          streaming={entry.streaming}
+          active={entry.id === activeToolId}
+          layout={layout}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -183,20 +267,11 @@ export function ToolInspectorGroup({
         </span>
       </button>
       {!collapsed ? (
-        <ul
-          className="max-h-56 overflow-y-auto overscroll-contain"
-          data-testid="tool-activity-list"
-        >
-          {tools.map((entry) => (
-            <ToolRow
-              key={entry.id}
-              toolId={entry.id}
-              tool={entry.tool}
-              streaming={entry.streaming}
-              active={entry.id === activeToolId}
-            />
-          ))}
-        </ul>
+        <ToolInspectorList
+          tools={tools}
+          activeToolId={activeToolId}
+          className="max-h-80 overflow-y-auto overscroll-contain"
+        />
       ) : null}
     </div>
   );
