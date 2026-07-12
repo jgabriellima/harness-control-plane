@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpCircle, LogOut, Settings, Sparkles, User } from 'lucide-react';
+import { HelpCircle, LogOut, Settings } from 'lucide-react';
 
 import { navigateShell } from '@/lib/shell-navigation';
 
@@ -182,22 +182,6 @@ export default function SidebarProfileMenu({
               <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
               <p className="truncate text-xs text-gray-500">{subtitle}</p>
             </div>
-            <MenuItem
-              icon={<Sparkles className="h-4 w-4" />}
-              label="Personalization"
-              onClick={() => {
-                setOpen(false);
-                navigateShell('/settings');
-              }}
-            />
-            <MenuItem
-              icon={<User className="h-4 w-4" />}
-              label="Profile"
-              onClick={() => {
-                setOpen(false);
-                navigateShell('/settings');
-              }}
-            />
             <MenuItem
               icon={<Settings className="h-4 w-4" />}
               label="Settings"
