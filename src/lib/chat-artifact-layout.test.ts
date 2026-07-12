@@ -19,8 +19,8 @@ describe('sanitizeChatArtifactLayout', () => {
       [CHAT_ARTIFACT_PANEL_IDS.chat]: 10,
       [CHAT_ARTIFACT_PANEL_IDS.artifact]: 90,
     });
-    assert.ok(layout[CHAT_ARTIFACT_PANEL_IDS.chat] >= 28);
-    assert.ok(layout[CHAT_ARTIFACT_PANEL_IDS.artifact] >= 32);
+    assert.ok(layout[CHAT_ARTIFACT_PANEL_IDS.chat] >= 18);
+    assert.ok(layout[CHAT_ARTIFACT_PANEL_IDS.artifact] >= 24);
   });
 
   it('normalizes totals to 100', () => {

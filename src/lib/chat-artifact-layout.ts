@@ -8,13 +8,14 @@ export const CHAT_ARTIFACT_PANEL_IDS = {
 } as const;
 
 export const CHAT_ARTIFACT_LAYOUT_DEFAULTS = {
-  chat: 45,
-  artifact: 55,
+  chat: 38,
+  artifact: 62,
 } as const;
 
+/** Percentage floors — keep chat narrow enough to prioritize observability panels. */
 export const CHAT_ARTIFACT_LAYOUT_MIN = {
-  chat: 28,
-  artifact: 32,
+  chat: 18,
+  artifact: 24,
 } as const;
 
 export function sanitizeChatArtifactLayout(
@@ -50,5 +51,5 @@ function clampSize(value: number, fallback: number, minimum: number): number {
   if (!Number.isFinite(value)) {
     return fallback;
   }
-  return Math.min(72, Math.max(minimum, value));
+  return Math.min(82, Math.max(minimum, value));
 }

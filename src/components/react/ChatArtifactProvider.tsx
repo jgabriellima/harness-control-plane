@@ -179,7 +179,7 @@ function ResizableChatArtifactSplitShell({
       >
         <Panel
           id={CHAT_ARTIFACT_PANEL_IDS.chat}
-          minSize={CHAT_ARTIFACT_LAYOUT_MIN.chat}
+          minSize={`${CHAT_ARTIFACT_LAYOUT_MIN.chat}%`}
           defaultSize={
             resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.chat] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.chat
           }
@@ -193,7 +193,7 @@ function ResizableChatArtifactSplitShell({
         />
         <Panel
           id={CHAT_ARTIFACT_PANEL_IDS.artifact}
-          minSize={CHAT_ARTIFACT_LAYOUT_MIN.artifact}
+          minSize={`${CHAT_ARTIFACT_LAYOUT_MIN.artifact}%`}
           defaultSize={
             resolvedLayout[CHAT_ARTIFACT_PANEL_IDS.artifact] ?? CHAT_ARTIFACT_LAYOUT_DEFAULTS.artifact
           }
