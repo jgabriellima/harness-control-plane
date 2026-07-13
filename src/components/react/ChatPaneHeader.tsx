@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { BarChart3, Maximize2, Pin, PinOff, Wrench, X } from 'lucide-react';
 
 import ContextUsageBar from '@/components/react/ContextUsageBar';
-import EventDistributionChart from '@/components/react/EventDistributionChart';
 import { useContextUsage } from '@/components/react/ContextUsageProvider';
 import { useToolActivity } from '@/components/react/ToolActivityProvider';
-import { computeConversationMetrics, formatExecutionTime } from '@/lib/conversation-metrics';
 import type { ContextUsageReport } from '@/lib/context-usage-types';
 import { resolveConversationTimestamp } from '@/lib/format-session-time';
 import { isDraftConversationId } from '@/lib/draft-conversation';
@@ -48,7 +46,7 @@ export default function ChatPaneHeader({
   conversationId,
   title,
   updatedAt,
-  messages,
+  messages: _messages,
   projectId = 'default',
   contextUsageEnabled = true,
   contextUsageReport = null,
@@ -61,7 +59,6 @@ export default function ChatPaneHeader({
   const toolActivity = useToolActivity();
   const [pinned, setPinned] = useState(() => isConversationPinned(conversationId));
 
-  const metrics = useMemo(() => computeConversationMetrics(messages), [messages]);
   const agentId = hub.getConversationState(conversationId)?.agentId ?? null;
   const sessionDate = formatHeaderDate(conversationId, updatedAt);
   const displayTitle = title ?? (isDraftConversationId(conversationId) ? 'New session' : 'Session');
@@ -121,17 +118,11 @@ export default function ChatPaneHeader({
           ) : null}
         </div>
 
-        <div
-          className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-500"
-          data-testid="chat-pane-header-metrics"
-        >
-          <span title="Total execution time">
-            <span className="text-gray-400">Time</span>{' '}
-            <span className="font-medium text-gray-600">
-              {formatExecutionTime(metrics.executionTimeMs)}
-            </span>
-          </span>
-          {contextUsageEnabled ? (
+        {contextUsageEnabled ? (
+          <div
+            className="mt-1 flex min-w-0 w-full items-center text-[10px] text-gray-500"
+            data-testid="chat-pane-header-metrics"
+          >
             <ContextUsageBar
               report={contextUsageReport}
               loading={contextUsageLoading}
@@ -139,12 +130,8 @@ export default function ChatPaneHeader({
               active={contextReportOpen}
               onOpen={handleOpenContextUsage}
             />
-          ) : null}
-          <span className="inline-flex items-center gap-1" title="Message role distribution">
-            <EventDistributionChart slices={metrics.eventSlices} size={compact ? 14 : 16} />
-            <span className="text-gray-400">{metrics.totalEvents || '—'}</span>
-          </span>
-        </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5">

@@ -53,7 +53,7 @@ export default function ContextUsageBar({
   if (loading && !report) {
     return (
       <div
-        className="inline-flex min-w-[7rem] flex-col gap-0.5"
+        className="flex min-w-0 w-full flex-col gap-0.5"
         data-testid="context-usage-bar-loading"
         aria-hidden
       >
@@ -76,7 +76,7 @@ export default function ContextUsageBar({
   return (
     <button
       type="button"
-      className={`group inline-flex min-w-0 max-w-[12rem] flex-col gap-0.5 text-left transition-opacity hover:opacity-90 ${
+      className={`group flex min-w-0 w-full flex-col gap-0.5 text-left transition-opacity hover:opacity-90 ${
         active ? 'opacity-100' : ''
       }`}
       onClick={onOpen}
