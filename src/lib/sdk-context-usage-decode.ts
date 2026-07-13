@@ -198,6 +198,8 @@ function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
   return false;
 }
 
+const USAGE_LEAF_FIELD_LOOKBACK = 256;
+
 function extractUsageLeavesByKind(buffer: Uint8Array, kind: string): UsageLeafFields[] {
   const kindBytes = new TextEncoder().encode(kind);
   const collector: UsageLeafFields[] = [];
@@ -210,7 +212,7 @@ function extractUsageLeavesByKind(buffer: Uint8Array, kind: string): UsageLeafFi
     }
     searchFrom = idx + 1;
 
-    for (let start = Math.max(0, idx - 48); start < idx; start += 1) {
+    for (let start = Math.max(0, idx - USAGE_LEAF_FIELD_LOOKBACK); start <= idx; start += 1) {
       let parsed;
       try {
         parsed = readField(buffer, start);
@@ -311,72 +313,110 @@ function attachCategoryChildren(
       contentPreview: leaf.contentPreview,
     }));
   }
+
+  attachMcpCategoryChildren(categories, checkpointBlob);
 }
 
-function findConversationUsageRoot(buffer: Uint8Array): number {
-  const needle = new TextEncoder().encode('Conversation');
-  const pattern = new Uint8Array([0x12, needle.length, ...needle]);
+const MCP_SERVER_LEAF_KIND = 'mcp_meta_tool_server';
 
-  for (let cursor = 0; cursor <= buffer.length - pattern.length; cursor += 1) {
-    let matches = true;
-    for (let i = 0; i < pattern.length; i += 1) {
-      if (buffer[cursor + i] !== pattern[i]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) {
-      return cursor;
-    }
-  }
-  return -1;
-}
-
-export function decodePromptContextUsageSnapshot(
+function attachMcpCategoryChildren(
+  categories: SdkUsageTreeNode[],
   checkpointBlob: Uint8Array,
-): SdkPromptContextUsageSnapshot | null {
-  const rootOffset = findConversationUsageRoot(checkpointBlob);
-  if (rootOffset < 0) {
-    return null;
+): void {
+  const mcpCategory = categories.find((entry) => entry.id === 'mcp');
+  if (!mcpCategory) {
+    return;
   }
 
-  let index = rootOffset;
-  let usedTokens = 0;
-  let maxTokens = 0;
-  let childrenBlob: Uint8Array | null = null;
+  const serverLeaves = dedupeUsageLeaves(
+    extractUsageLeavesByKind(checkpointBlob, MCP_SERVER_LEAF_KIND),
+  );
+  const blockLeaves = extractUsageLeavesByKind(checkpointBlob, 'mcp_block');
 
-  while (index < checkpointBlob.length) {
-    const parsed = readField(checkpointBlob, index);
-    index = parsed.next;
+  const children: SdkUsageTreeNode[] = serverLeaves.map((leaf) => ({
+    id: leaf.tag,
+    label: leaf.label ?? leaf.tag ?? 'MCP server',
+    tokens: leaf.tokens ?? 0,
+    tag: leaf.tag,
+    contentPreview: leaf.contentPreview,
+  }));
 
-    if (parsed.field === 2 && parsed.value.kind === 'bytes') {
-      const label = new TextDecoder().decode(parsed.value.value);
-      if (label !== 'Conversation') {
-        break;
-      }
-      continue;
-    }
+  for (const leaf of blockLeaves) {
+    children.push({
+      id: leaf.tag,
+      label: 'Dynamic tool schemas',
+      tokens: leaf.tokens ?? 0,
+      tag: leaf.tag,
+      contentPreview: leaf.contentPreview,
+    });
+  }
 
-    if (parsed.field === 3 && parsed.value.kind === 'varint') {
-      usedTokens = parsed.value.value;
-      continue;
-    }
+  if (children.length > 0) {
+    mcpCategory.children = children;
+  }
+}
 
-    if (parsed.field === 4 && parsed.value.kind === 'varint') {
-      maxTokens = parsed.value.value;
-      continue;
-    }
+function looksLikePromptContextUsageTree(buffer: Uint8Array): boolean {
+  if (buffer.length < 8) {
+    return false;
+  }
 
-    if (parsed.field === 4 && parsed.value.kind === 'bytes') {
-      childrenBlob = parsed.value.value;
+  let index = 0;
+  let sawUsedTokens = false;
+  let sawMaxTokens = false;
+
+  while (index < buffer.length) {
+    let parsed;
+    try {
+      parsed = readField(buffer, index);
+    } catch {
       break;
     }
+    index = parsed.next;
+
+    if (parsed.field === 1 && parsed.value.kind === 'varint' && parsed.value.value > 0) {
+      sawUsedTokens = true;
+      continue;
+    }
+
+    if (
+      parsed.field === 2 &&
+      parsed.value.kind === 'varint' &&
+      parsed.value.value >= 100_000
+    ) {
+      sawMaxTokens = true;
+      continue;
+    }
+
+    if (parsed.field === 4 && parsed.value.kind === 'bytes' && parsed.value.value.length > 0) {
+      return sawUsedTokens && sawMaxTokens;
+    }
   }
 
-  if (!childrenBlob) {
-    return null;
+  return false;
+}
+
+function findPromptContextUsageTreeBuffer(checkpointBlob: Uint8Array): Uint8Array | null {
+  let index = 0;
+
+  while (index < checkpointBlob.length) {
+    let parsed;
+    try {
+      parsed = readField(checkpointBlob, index);
+    } catch {
+      break;
+    }
+    index = parsed.next;
+
+    if (parsed.field === 5 && parsed.value.kind === 'bytes' && looksLikePromptContextUsageTree(parsed.value.value)) {
+      return parsed.value.value;
+    }
   }
 
+  return null;
+}
+
+function parseCategoryNodes(childrenBlob: Uint8Array): SdkUsageTreeNode[] {
   const categories: SdkUsageTreeNode[] = [];
   let childIndex = 0;
 
@@ -397,6 +437,52 @@ export function decodePromptContextUsageSnapshot(
     }
   }
 
+  return categories;
+}
+
+export function decodePromptContextUsageSnapshot(
+  checkpointBlob: Uint8Array,
+): SdkPromptContextUsageSnapshot | null {
+  const treeBuffer = findPromptContextUsageTreeBuffer(checkpointBlob);
+  if (!treeBuffer) {
+    return null;
+  }
+
+  let index = 0;
+  let usedTokens = 0;
+  let maxTokens = 0;
+  let categoriesBlob: Uint8Array | null = null;
+
+  while (index < treeBuffer.length) {
+    let parsed;
+    try {
+      parsed = readField(treeBuffer, index);
+    } catch {
+      break;
+    }
+    index = parsed.next;
+
+    if (parsed.field === 1 && parsed.value.kind === 'varint') {
+      usedTokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.field === 2 && parsed.value.kind === 'varint') {
+      maxTokens = parsed.value.value;
+      continue;
+    }
+
+    if (parsed.field === 4 && parsed.value.kind === 'bytes') {
+      categoriesBlob = parsed.value.value;
+      break;
+    }
+  }
+
+  if (!categoriesBlob) {
+    return null;
+  }
+
+  const categories = parseCategoryNodes(categoriesBlob);
   attachCategoryChildren(categories, checkpointBlob);
 
   return {

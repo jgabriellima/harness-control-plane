@@ -50,6 +50,7 @@ const overhead: RuntimeOverheadEstimate = {
   subagentDefinitionTokens: 300,
   toolCount: 20,
   mcpServerCount: 5,
+  mcpServerNames: [],
   subagentCount: 1,
 };
 

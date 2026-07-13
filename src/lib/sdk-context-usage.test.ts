@@ -27,9 +27,53 @@ describe('sdk-context-usage-decode', () => {
     const decoded = decodePromptContextUsageSnapshot(blob);
     assert.ok(decoded);
     assert.ok(decoded.usedTokens > 0);
-    assert.ok(decoded.maxTokens > 0);
+    assert.ok(decoded.maxTokens >= 200_000);
     assert.ok(decoded.categories.some((entry) => entry.id === 'system_prompt'));
     assert.ok(decoded.categories.some((entry) => entry.id === 'tools'));
+  });
+
+  it('decodes totals from live sdk checkpoint when available', async () => {
+    const { createHash } = await import('node:crypto');
+    const { execFileSync } = await import('node:child_process');
+    const { getDefaultSdkStateRoot } = await import('@cursor/sdk');
+
+    const cwd = process.env.CONTEXT_USAGE_TEST_CWD?.trim();
+    if (!cwd) {
+      return;
+    }
+
+    const stateRoot = getDefaultSdkStateRoot(cwd);
+    let agentId = '';
+    try {
+      agentId = execFileSync('sqlite3', [`${stateRoot}/index.db`, 'SELECT agent_id FROM agents ORDER BY rowid DESC LIMIT 1;'], {
+        encoding: 'utf8',
+      }).trim();
+    } catch {
+      return;
+    }
+
+    if (!agentId) {
+      return;
+    }
+
+    const digest = createHash('sha256').update(agentId, 'utf8').digest('hex');
+    const refJson = execFileSync(
+      'sqlite3',
+      [`${stateRoot}/index.db`, `SELECT latest_checkpoint_ref_json FROM agents WHERE agent_id='${agentId}';`],
+      { encoding: 'utf8' },
+    ).trim();
+    const blobId = JSON.parse(refJson).blobId as string;
+    const hex = execFileSync(
+      'sqlite3',
+      [`${stateRoot}/agents/agent-${digest}/store.db`, `SELECT hex(data) FROM blobs WHERE id='${blobId}';`],
+      { encoding: 'utf8' },
+    ).trim();
+    const blob = new Uint8Array(Buffer.from(hex, 'hex'));
+
+    const decoded = decodePromptContextUsageSnapshot(blob);
+    assert.ok(decoded);
+    assert.equal(decoded.maxTokens, 200_000);
+    assert.ok(decoded.usedTokens >= decoded.categories.reduce((sum, entry) => sum + (entry.tokens ?? 0), 0) * 0.5);
   });
 });
 
@@ -244,5 +288,50 @@ describe('buildContextUsageReportFromSdk', () => {
     assert.ok(rules.children?.every((child) => Boolean(child.path)));
     assert.ok(rules.children?.some((child) => child.contentPreview));
     assert.equal(rules.children?.[0]?.tokenSource, 'sdk_matched');
+  });
+
+  it('renders MCP server children from sdk checkpoint categories', () => {
+    const report = buildContextUsageReportFromSdk({
+      conversationId: 'conv-1',
+      title: 'Test',
+      agentId: 'agent-test',
+      corpus,
+      sdkUsage: {
+        usedTokens: 10_000,
+        maxTokens: 200_000,
+        categories: [
+          {
+            id: 'mcp',
+            label: 'MCP & dynamic tools',
+            tokens: 1237,
+            children: [
+              {
+                id: 'mcp0',
+                label: 'composio-trs_GPFm',
+                tokens: 580,
+              },
+              {
+                id: 'mcp1',
+                label: 'user-railway',
+                tokens: 657,
+              },
+            ],
+          },
+        ],
+        agentId: 'agent-test',
+        checkpointBlobId: 'blob-1',
+        updatedAt: '2026-07-12T00:00:00.000Z',
+      },
+    });
+
+    const mcp = report.slices.find((slice) => slice.category === 'mcp_tools');
+    assert.ok(mcp);
+    assert.equal(mcp.children?.length, 2);
+    assert.equal(mcp.detail, '2 servers');
+    assert.equal(mcp.children?.[0]?.name, 'Composio (trs_GPFm)');
+    assert.equal(mcp.children?.[0]?.scope, 'runtime://mcp_servers');
+    assert.equal(mcp.children?.[0]?.path, 'mcp://composio-trs_GPFm');
+    assert.equal(mcp.children?.[1]?.name, 'Railway');
+    assert.equal(mcp.children?.[1]?.path, 'mcp://user-railway');
   });
 });

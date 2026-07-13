@@ -6,6 +6,7 @@ import {
   looksLikeInternalErrorMessage,
   toUserFacingActivityErrorMessage,
   toUserFacingArtifactErrorMessage,
+  toUserFacingContextUsageErrorMessage,
   toUserFacingErrorMessage,
 } from './user-facing-error.ts';
 
@@ -70,6 +71,18 @@ describe('toUserFacingActivityErrorMessage', () => {
     );
 
     assert.equal(message, 'Unable to load activity right now. Try again in a moment.');
+  });
+});
+
+describe('toUserFacingContextUsageErrorMessage', () => {
+  it('replaces internal sqlite output with context usage fallback', () => {
+    const message = toUserFacingContextUsageErrorMessage(
+      new Error(
+        "Command failed: sqlite3 /Users/dev/.cursor/projects/foo/index.db SELECT run_id FROM runs;",
+      ),
+    );
+
+    assert.equal(message, 'Unable to load context usage right now. Try again in a moment.');
   });
 });
 

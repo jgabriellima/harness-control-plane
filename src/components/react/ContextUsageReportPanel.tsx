@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 
 import ContextUsageContentPreview from '@/components/react/ContextUsageContentPreview';
@@ -22,6 +22,10 @@ import type {
 import type { SdkToolCallRecord } from '@/lib/sdk-agent-observability-types';
 import { sdkToolCallToToolRecord } from '@/lib/sdk-tool-call-mapper';
 import { toolNamesMatch } from '@/lib/tool-name-match';
+import {
+  logInternalContextUsageError,
+  toUserFacingContextUsageErrorMessage,
+} from '@/lib/user-facing-error';
 
 interface ContextUsageReportPanelProps {
   selection: ContextUsageSelection;
@@ -48,6 +52,8 @@ function formatInstructionScopeLabel(scope: string | undefined): string | null {
       return 'System';
     case 'runtime://subagents':
       return 'Subagent';
+    case 'runtime://mcp_servers':
+      return 'MCP';
     default:
       return scope.replace(/^\.cursor\//, '').replace(/^runtime:\/\//, '');
   }
@@ -258,9 +264,13 @@ function ContextUsageExplorerRow({
     slice.category === 'rules' ||
     slice.category === 'skills' ||
     slice.category === 'subagent_definitions' ||
-    slice.category === 'system_prompt';
+    slice.category === 'system_prompt' ||
+    slice.category === 'mcp_tools';
   const rowLabel =
-    childCount > 0 && (slice.category === 'tool_definitions' || expandableInstructionCategory)
+    childCount > 0 &&
+    (slice.category === 'tool_definitions' ||
+      slice.category === 'mcp_tools' ||
+      expandableInstructionCategory)
       ? `${slice.label} (${childCount})`
       : slice.label;
 
@@ -305,7 +315,9 @@ function ContextUsageExplorerRow({
                 ? 'context-usage-tool-children'
                 : slice.category === 'rules'
                   ? 'context-usage-rule-children'
-                  : undefined
+                  : slice.category === 'mcp_tools'
+                    ? 'context-usage-mcp-children'
+                    : undefined
             }
           >
             {slice.children?.map((child) =>
@@ -361,7 +373,7 @@ export default function ContextUsageReportPanel({
     refreshRevision: contextUsageRevision,
   });
 
-  const { report, loading, error: loadError } = useContextUsageReport({
+  const { report, loading, error: rawLoadError } = useContextUsageReport({
     agentId: selection.agentId,
     projectId: selection.projectId,
     conversationId: selection.conversationId,
@@ -370,6 +382,16 @@ export default function ContextUsageReportPanel({
     refreshRevision: contextUsageRevision,
     observability,
   });
+
+  const loadError = rawLoadError
+    ? toUserFacingContextUsageErrorMessage(rawLoadError)
+    : null;
+
+  useEffect(() => {
+    if (rawLoadError) {
+      logInternalContextUsageError('report', rawLoadError);
+    }
+  }, [rawLoadError]);
 
   const toolCalls = useMemo(
     () =>

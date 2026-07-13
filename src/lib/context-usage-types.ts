@@ -46,6 +46,7 @@ export interface InstructionCorpusSnapshot {
   tokenizer: string;
   entries: InstructionCorpusEntry[];
   scopeTotals: Record<string, number>;
+  mcpServerNames?: string[];
   updatedAt: string;
 }
 
@@ -56,6 +57,7 @@ export interface RuntimeOverheadEstimate {
   subagentDefinitionTokens: number;
   toolCount: number;
   mcpServerCount: number;
+  mcpServerNames: string[];
   subagentCount: number;
 }
 

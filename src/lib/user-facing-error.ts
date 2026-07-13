@@ -22,6 +22,8 @@ const INTERNAL_ERROR_PATTERNS: RegExp[] = [
   /\bEACCES\b/,
   /\bENOTFOUND\b/,
   /\bat\s+[^\s]+\s+\(/,
+  /\bphase:\s*\S+/i,
+  /\brequest_id:\s*\S+/i,
 ];
 
 export function looksLikeInternalErrorMessage(message: string): boolean {
@@ -55,6 +57,12 @@ export function toUserFacingArtifactErrorMessage(
 
 const ACTIVITY_UNAVAILABLE = 'Unable to load activity right now. Try again in a moment.';
 const ACTIVITY_PARTIAL = 'Some activity details may be incomplete.';
+const CONTEXT_USAGE_UNAVAILABLE = 'Unable to load context usage right now. Try again in a moment.';
+const RUNTIME_DISPATCH_UNAVAILABLE = "We couldn't start this run. Try again in a moment.";
+const RUNTIME_STREAM_FAILED =
+  'Something went wrong while generating the response. Try again in a moment.';
+const RUNTIME_RUN_INCOMPLETE =
+  'The assistant run ended before producing a response. Try again in a moment.';
 
 export function toUserFacingActivityErrorMessage(error: unknown): string {
   return toUserFacingErrorMessage(error, ACTIVITY_UNAVAILABLE);
@@ -80,6 +88,49 @@ export function logInternalActivityError(scope: string, error: unknown): void {
   }
 
   console.error(`[activity:${scope}]`, error);
+}
+
+export function toUserFacingContextUsageErrorMessage(error: unknown): string {
+  return toUserFacingErrorMessage(error, CONTEXT_USAGE_UNAVAILABLE);
+}
+
+export function logInternalContextUsageError(scope: string, error: unknown): void {
+  const raw = extractErrorMessage(error).trim();
+  if (raw.length === 0) {
+    return;
+  }
+
+  console.error(`[context-usage:${scope}]`, error);
+}
+
+export function toUserFacingRuntimeDispatchErrorMessage(error: unknown): string {
+  return toUserFacingErrorMessage(error, RUNTIME_DISPATCH_UNAVAILABLE);
+}
+
+export function toUserFacingRuntimeStreamErrorMessage(error: unknown): string {
+  return toUserFacingErrorMessage(error, RUNTIME_STREAM_FAILED);
+}
+
+export function runtimeRunIncompleteMessage(): string {
+  return RUNTIME_RUN_INCOMPLETE;
+}
+
+export function logInternalRuntimeError(
+  scope: string,
+  error: unknown,
+  fields?: Record<string, unknown>,
+): void {
+  const raw = extractErrorMessage(error).trim();
+  if (raw.length === 0 && !fields) {
+    return;
+  }
+
+  if (fields) {
+    console.error(`[runtime:${scope}]`, error, fields);
+    return;
+  }
+
+  console.error(`[runtime:${scope}]`, error);
 }
 
 export function toUserFacingErrorMessage(error: unknown, fallback: string): string {

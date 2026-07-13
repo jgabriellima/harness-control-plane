@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { readFile, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
@@ -130,6 +131,40 @@ function resolveRepositoryLabel(workspaceRoot: string): string {
   return leaf;
 }
 
+function readMcpConfigServerNames(configPath: string): string[] {
+  if (!existsSync(configPath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    if (!parsed.mcpServers || typeof parsed.mcpServers !== 'object') {
+      return [];
+    }
+
+    return Object.keys(parsed.mcpServers).sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
+export function resolveConfiguredMcpServerNames(workspaceRoot: string): string[] {
+  const discovered = new Set<string>();
+
+  for (const configPath of [
+    join(workspaceRoot, '.cursor', 'mcp.json'),
+    join(homedir(), '.cursor', 'mcp.json'),
+  ]) {
+    for (const serverName of readMcpConfigServerNames(configPath)) {
+      discovered.add(serverName);
+    }
+  }
+
+  return [...discovered];
+}
+
 export async function collectInstructionCorpus(
   workspaceRoot: string,
 ): Promise<InstructionCorpusSnapshot> {
@@ -151,6 +186,7 @@ export async function collectInstructionCorpus(
     tokenizer: 'heuristic:char/4',
     entries,
     scopeTotals,
+    mcpServerNames: resolveConfiguredMcpServerNames(workspaceRoot),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -162,6 +198,7 @@ export function estimateRuntimeOverhead(corpus: InstructionCorpusSnapshot): {
   subagentDefinitionTokens: number;
   toolCount: number;
   mcpServerCount: number;
+  mcpServerNames: string[];
   subagentCount: number;
 } {
   const agentEntries = corpus.entries.filter((entry) => entry.scope === '.cursor/agents');
@@ -169,7 +206,8 @@ export function estimateRuntimeOverhead(corpus: InstructionCorpusSnapshot): {
   const subagentCount = agentEntries.length;
 
   const toolCount = 20;
-  const mcpServerCount = 5;
+  const mcpServerNames = corpus.mcpServerNames ?? [];
+  const mcpServerCount = mcpServerNames.length > 0 ? mcpServerNames.length : 5;
   const tokensPerTool = 420;
   const tokensPerMcpServer = 520;
 
@@ -180,6 +218,7 @@ export function estimateRuntimeOverhead(corpus: InstructionCorpusSnapshot): {
     subagentDefinitionTokens: subagentDefinitionTokens > 0 ? subagentDefinitionTokens : 1500,
     toolCount,
     mcpServerCount,
+    mcpServerNames,
     subagentCount: subagentCount > 0 ? subagentCount : 12,
   };
 }

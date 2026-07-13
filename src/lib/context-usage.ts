@@ -1,5 +1,10 @@
 import type { ChatMessage } from './runtime-hub-types';
 import { formatSubagentDisplayName } from './sdk-context-usage-decode';
+import {
+  DEFAULT_CONTEXT_WINDOW_SIZE,
+  normalizeDecodedContextWindowSize,
+  resolveContextWindowSizeForModel,
+} from './context-usage-config';
 import type {
   ContextUsageCategory,
   ContextUsageDetailItem,
@@ -11,7 +16,7 @@ import type {
   SdkContextUsagePayload,
 } from './context-usage-types';
 
-export const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000;
+export { DEFAULT_CONTEXT_WINDOW_SIZE } from './context-usage-config';
 
 export const CONTEXT_USAGE_COLORS: Record<string, string> = {
   system_prompt: '#9ca3af',
@@ -250,7 +255,7 @@ export function buildContextUsageReport(input: {
   contextWindowSize?: number;
   agentId?: string | null;
 }): ContextUsageReport {
-  const contextWindowSize = input.contextWindowSize ?? DEFAULT_CONTEXT_WINDOW_SIZE;
+  const contextWindowSize = input.contextWindowSize ?? resolveContextWindowSizeForModel();
 
   const conversationTokens = input.messages
     .filter((message) => message.id !== 'welcome')
@@ -300,6 +305,7 @@ export function buildContextUsageReport(input: {
       tokens: input.overhead.mcpToolTokens,
       color: CONTEXT_USAGE_COLORS.mcp_tools,
       detail: `${input.overhead.mcpServerCount} servers`,
+      children: buildEstimatedMcpChildren(input.overhead),
     },
     {
       category: 'subagent_definitions',
@@ -373,6 +379,63 @@ function normalizeRuntimeSystemPromptLabel(label: string): string {
   return normalized;
 }
 
+export function formatMcpServerDisplayName(serverKey: string): string {
+  const normalized = serverKey.trim();
+  if (!normalized) {
+    return 'MCP server';
+  }
+
+  if (normalized.startsWith('user-')) {
+    const slug = normalized.slice('user-'.length);
+    return slug
+      .split('-')
+      .filter((segment) => segment.length > 0)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ');
+  }
+
+  if (normalized.startsWith('composio-')) {
+    const suffix = normalized.slice('composio-'.length);
+    return suffix.length > 0 ? `Composio (${suffix})` : 'Composio';
+  }
+
+  if (normalized.startsWith('cursor-ide-')) {
+    const slug = normalized.slice('cursor-ide-'.length);
+    return `Cursor ${slug
+      .split('-')
+      .filter((segment) => segment.length > 0)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ')}`;
+  }
+
+  return normalized
+    .split(/[-_]/)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function buildEstimatedMcpChildren(overhead: RuntimeOverheadEstimate): ContextUsageDetailItem[] | undefined {
+  if (overhead.mcpServerNames.length === 0) {
+    return undefined;
+  }
+
+  const tokensPerServer =
+    overhead.mcpServerCount > 0
+      ? Math.max(1, Math.round(overhead.mcpToolTokens / overhead.mcpServerCount))
+      : 520;
+
+  return overhead.mcpServerNames.map((serverName) => ({
+    name: formatMcpServerDisplayName(serverName),
+    tokens: tokensPerServer,
+    path: `mcp://${serverName}`,
+    scope: 'runtime://mcp_servers',
+    loadContext: 'runtime_injected',
+    tokenSource: 'corpus_estimate',
+    description: 'MCP server schema injected into the agent context window.',
+  }));
+}
+
 function sdkChildToDetailItem(
   category: ContextUsageCategory,
   child: {
@@ -418,6 +481,24 @@ function sdkChildToDetailItem(
     };
   }
 
+  if (category === 'mcp_tools') {
+    const serverKey = child.label ?? child.id ?? 'mcp-server';
+    const isDynamicBlock = serverKey === 'Dynamic tool schemas' || serverKey.startsWith('<mcp_');
+    return {
+      name: isDynamicBlock ? 'Dynamic tool schemas' : formatMcpServerDisplayName(serverKey),
+      tokens: child.tokens,
+      sdkTag: child.id,
+      tokenSource: 'sdk',
+      loadContext: 'runtime_injected',
+      scope: 'runtime://mcp_servers',
+      path: isDynamicBlock ? 'runtime://mcp-dynamic-tools' : `mcp://${serverKey}`,
+      contentPreview: child.contentPreview,
+      description: isDynamicBlock
+        ? 'Shared MCP meta-tool definitions (GetMcpTools, CallMcpTool) injected into the context window.'
+        : 'Connected MCP server whose tool schemas are injected into the context window.',
+    };
+  }
+
   return {
     name: child.label ?? child.id ?? 'item',
     tokens: child.tokens,
@@ -450,6 +531,7 @@ function resolveCategoryChildren(
   const runtimeDetailCategories: ContextUsageCategory[] = [
     'system_prompt',
     'subagent_definitions',
+    'mcp_tools',
   ];
   const enrichableCategories: ContextUsageCategory[] = ['rules', 'skills'];
 
@@ -480,8 +562,10 @@ export function buildContextUsageReportFromSdk(input: {
 }): ContextUsageReport {
   const flattened = input.sdkUsage.categories;
 
-  const contextWindowSize =
-    input.sdkUsage.maxTokens > 0 ? input.sdkUsage.maxTokens : DEFAULT_CONTEXT_WINDOW_SIZE;
+  const contextWindowSize = normalizeDecodedContextWindowSize({
+    maxTokens: input.sdkUsage.maxTokens,
+    usedTokens: input.sdkUsage.usedTokens,
+  });
   const usedTokens = input.sdkUsage.usedTokens > 0 ? input.sdkUsage.usedTokens : 0;
 
   const sliceAccumulator = new Map<ContextUsageSlice['category'], ContextUsageSlice>();
@@ -525,9 +609,11 @@ export function buildContextUsageReportFromSdk(input: {
       detail:
         mappedCategory === 'tool_definitions' && childItems && childItems.length > 0
           ? `${childItems.length} tools`
-          : childItems && childItems.length > 0
-            ? `${childItems.length} items`
-            : undefined,
+          : mappedCategory === 'mcp_tools' && childItems && childItems.length > 0
+            ? `${childItems.length} servers`
+            : childItems && childItems.length > 0
+              ? `${childItems.length} items`
+              : undefined,
       children: childItems,
     });
   }
