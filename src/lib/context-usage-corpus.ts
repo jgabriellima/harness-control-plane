@@ -51,10 +51,21 @@ function extractInstructionMetadata(text: string): {
 
   const headingMatch = body.match(/^#\s+(.+)$/m);
   const title = headingMatch?.[1]?.trim();
-  const normalized = body.replace(/\s+/g, ' ').trim();
+
+  let previewBody = body;
+  if (headingMatch) {
+    previewBody = body.slice(headingMatch.index! + headingMatch[0].length).trimStart();
+  }
+
+  const normalizedLines = previewBody
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t]+/g, ' ').trimEnd());
+  const joined = normalizedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  const PREVIEW_MAX_CHARS = 2000;
   const contentPreview =
-    normalized.length > 0
-      ? `${normalized.slice(0, 420)}${normalized.length > 420 ? '…' : ''}`
+    joined.length > 0
+      ? `${joined.slice(0, PREVIEW_MAX_CHARS)}${joined.length > PREVIEW_MAX_CHARS ? '…' : ''}`
       : undefined;
 
   return {

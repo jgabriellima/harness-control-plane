@@ -160,11 +160,11 @@ function ContextUsageInstructionChildRow({
         </span>
       </button>
       {expanded && hasDetail ? (
-        <div className="mb-2 ml-5 space-y-2 rounded-md border border-gray-200 bg-white px-3 py-2">
+        <div className="mb-3 ml-5 space-y-1.5">
           {loadContextLabel ? (
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">
-              Load context: <span className="font-medium text-gray-600">{loadContextLabel}</span>
-            </p>
+            <span className="inline-flex items-center rounded-md bg-gray-100/90 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+              {loadContextLabel}
+            </span>
           ) : null}
           {copyContent ? (
             <ContextUsageContentPreview

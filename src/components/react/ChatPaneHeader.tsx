@@ -4,7 +4,9 @@ import React, { useState } from 'react';
 import { BarChart3, Maximize2, Pin, PinOff, Wrench, X } from 'lucide-react';
 
 import ContextUsageBar from '@/components/react/ContextUsageBar';
+import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import { useContextUsage } from '@/components/react/ContextUsageProvider';
+import { useRuntimeComputerUse } from '@/components/react/RuntimeComputerUseProvider';
 import { useToolActivity } from '@/components/react/ToolActivityProvider';
 import type { ContextUsageReport } from '@/lib/context-usage-types';
 import { resolveConversationTimestamp } from '@/lib/format-session-time';
@@ -57,6 +59,8 @@ export default function ChatPaneHeader({
   const hub = useRuntimeHub();
   const contextUsage = useContextUsage();
   const toolActivity = useToolActivity();
+  const { closeArtifact } = useChatArtifact();
+  const { closePreview: closeComputerUsePreview } = useRuntimeComputerUse();
   const [pinned, setPinned] = useState(() => isConversationPinned(conversationId));
 
   const agentId = hub.getConversationState(conversationId)?.agentId ?? null;
@@ -79,11 +83,15 @@ export default function ChatPaneHeader({
 
   function handleOpenContextUsage(): void {
     toolActivity.closeToolActivityReport();
+    closeArtifact();
+    void closeComputerUsePreview();
     contextUsage.openContextReport(conversationId, projectId, title, agentId);
   }
 
   function handleOpenToolActivity(): void {
     contextUsage.closeContextReport();
+    closeArtifact();
+    void closeComputerUsePreview();
     toolActivity.openToolActivityReport(conversationId, projectId, title, agentId);
   }
 

@@ -1,11 +1,20 @@
 'use client';
 
 import { Check } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Markdown } from '@/components/ui/markdown';
+import { textLooksLikeMarkdown } from '@/lib/markdown-gfm';
 import { cn } from '@/lib/utils';
 
 const COPY_FEEDBACK_MS = 2000;
+
+const COMPACT_MARKDOWN_VARS = {
+  '--chat-font-size': '13px',
+  '--chat-line-height': '1.55',
+  '--chat-paragraph-spacing': '0.45rem',
+  '--chat-list-spacing': '0.45rem',
+} as React.CSSProperties;
 
 interface ContextUsageContentPreviewProps {
   content: string;
@@ -18,6 +27,7 @@ export default function ContextUsageContentPreview({
 }: ContextUsageContentPreviewProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
   const resetTimeoutRef = useRef<number | null>(null);
+  const renderAsMarkdown = useMemo(() => textLooksLikeMarkdown(content), [content]);
 
   useEffect(() => {
     return () => {
@@ -48,38 +58,55 @@ export default function ContextUsageContentPreview({
   const copied = copyState === 'copied';
 
   return (
-    <div className="relative" data-testid={testId}>
-      <button
-        type="button"
-        aria-label={copied ? 'Copied to clipboard' : 'Copy content'}
-        data-testid="context-usage-content-copy"
-        data-copy-state={copyState}
-        className={cn(
-          'absolute right-2 top-2 z-10 inline-flex min-w-[3.75rem] items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors',
-          copied
-            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
-            : 'bg-white/90 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-50 hover:text-gray-800',
-        )}
-        onClick={() => {
-          void handleCopy();
-        }}
-      >
-        {copied ? (
-          <>
-            <Check className="h-3 w-3 shrink-0" aria-hidden />
-            Copied
-          </>
-        ) : (
-          'Copy'
-        )}
-      </button>
-      <textarea
-        readOnly
-        value={content}
-        aria-label="Instruction content preview"
-        data-testid="context-usage-content-preview-textarea"
-        className="min-h-32 w-full resize-y overflow-auto whitespace-pre-wrap break-words rounded-md border border-gray-100 bg-gray-50 px-2.5 pb-2 pl-2.5 pr-16 pt-8 font-mono text-[11px] leading-relaxed text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-200"
-      />
+    <div
+      className="overflow-hidden rounded-md border border-gray-200 bg-white"
+      data-testid={testId}
+    >
+      <div className="flex items-center justify-end border-b border-gray-100 px-2 py-1">
+        <button
+          type="button"
+          aria-label={copied ? 'Copied to clipboard' : 'Copy content'}
+          data-testid="context-usage-content-copy"
+          data-copy-state={copyState}
+          className={cn(
+            'inline-flex min-w-[3.75rem] items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+            copied
+              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
+              : 'bg-gray-50 text-gray-600 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 hover:text-gray-800',
+          )}
+          onClick={() => {
+            void handleCopy();
+          }}
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 shrink-0" aria-hidden />
+              Copied
+            </>
+          ) : (
+            'Copy'
+          )}
+        </button>
+      </div>
+
+      {renderAsMarkdown ? (
+        <div
+          className="context-usage-markdown px-3 py-2.5 [&_.chat-markdown_h1]:mb-2 [&_.chat-markdown_h1]:mt-0 [&_.chat-markdown_h1]:text-sm [&_.chat-markdown_h2]:mb-1.5 [&_.chat-markdown_h2]:mt-3 [&_.chat-markdown_h2]:text-[13px] [&_.chat-markdown_h3]:mb-1 [&_.chat-markdown_h3]:mt-2 [&_.chat-markdown_h3]:text-[13px] [&_.chat-markdown_table]:text-[12px]"
+          style={COMPACT_MARKDOWN_VARS}
+          data-testid="context-usage-content-preview-markdown"
+          aria-label="Instruction content preview"
+        >
+          <Markdown>{content}</Markdown>
+        </div>
+      ) : (
+        <pre
+          aria-label="Instruction content preview"
+          data-testid="context-usage-content-preview-text"
+          className="max-w-none whitespace-pre-wrap break-words px-3 py-2.5 font-sans text-[13px] leading-relaxed text-gray-700"
+        >
+          {content}
+        </pre>
+      )}
     </div>
   );
 }
