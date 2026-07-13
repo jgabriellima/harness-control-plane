@@ -4,7 +4,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
+import MermaidDiagram from '@/components/react/MermaidDiagram';
 import { isLikelyFilePath } from '@/lib/file-reference';
+import { normalizeMarkdownForGfm } from '@/lib/markdown-gfm';
 import { isChatBrowserLink } from '@/lib/runtime-browser-types';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +24,7 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
   onFileClickRef.current = onFileClick;
   const onLinkClickRef = useRef(onLinkClick);
   onLinkClickRef.current = onLinkClick;
+  const normalizedChildren = useMemo(() => normalizeMarkdownForGfm(children), [children]);
 
   const components = useMemo(
     () => ({
@@ -44,16 +47,31 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
         </h4>
       ),
       p: ({ children: paragraphChildren }: ElementProps) => (
-        <p className="mb-2.5 text-sm leading-relaxed text-gray-800 last:mb-0">{paragraphChildren}</p>
+        <p
+          className="text-[length:var(--chat-font-size)] leading-[var(--chat-line-height)] text-gray-800 last:mb-0"
+          style={{ marginBottom: 'var(--chat-paragraph-spacing)' }}
+        >
+          {paragraphChildren}
+        </p>
       ),
       ul: ({ children: listChildren }: ElementProps) => (
-        <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-gray-800">{listChildren}</ul>
+        <ul
+          className="list-disc pl-5 text-[length:var(--chat-font-size)] leading-[var(--chat-line-height)] text-gray-800"
+          style={{ marginBottom: 'var(--chat-list-spacing)' }}
+        >
+          {listChildren}
+        </ul>
       ),
       ol: ({ children: listChildren }: ElementProps) => (
-        <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-gray-800">{listChildren}</ol>
+        <ol
+          className="list-decimal pl-5 text-[length:var(--chat-font-size)] leading-[var(--chat-line-height)] text-gray-800"
+          style={{ marginBottom: 'var(--chat-list-spacing)' }}
+        >
+          {listChildren}
+        </ol>
       ),
       li: ({ children: itemChildren }: ElementProps) => (
-        <li className="leading-relaxed marker:text-gray-400">{itemChildren}</li>
+        <li className="leading-[var(--chat-line-height)] marker:text-gray-400">{itemChildren}</li>
       ),
       strong: ({ children: strongChildren }: ElementProps) => (
         <strong className="font-semibold text-gray-900">{strongChildren}</strong>
@@ -94,6 +112,11 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
       }: ElementProps & { className?: string }) => {
         const text = String(codeChildren ?? '').replace(/\n$/, '');
         const isBlockCode = Boolean(codeClassName?.startsWith('language-'));
+        const language = codeClassName?.replace(/^language-/, '') ?? '';
+
+        if (isBlockCode && language === 'mermaid') {
+          return <MermaidDiagram source={text} />;
+        }
 
         if (!isBlockCode && isLikelyFilePath(text)) {
           return (
@@ -176,9 +199,14 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
   );
 
   return (
-    <div className={cn('chat-markdown break-words text-sm leading-relaxed', className)}>
+    <div
+      className={cn(
+        'chat-markdown break-words text-[length:var(--chat-font-size)] leading-[var(--chat-line-height)]',
+        className,
+      )}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
-        {children}
+        {normalizedChildren}
       </ReactMarkdown>
     </div>
   );

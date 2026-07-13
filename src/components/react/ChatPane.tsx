@@ -131,6 +131,63 @@ const E2E_ARTIFACT_DEMO_MESSAGE: ChatMessage = {
     'Relatório gerado em `e2e/fixtures/chat-artifact-target.md` — clique para abrir o painel.',
 };
 
+const E2E_PRESENTATION_DEMO_MESSAGE: ChatMessage = {
+  id: 'e2e-presentation-demo',
+  role: 'assistant',
+  content: [
+    'Operating model summary.',
+    '',
+    '| Tier | Who | Pattern |',
+    '|------|-----|---------|',
+    '| L1 | Champions | 10-20% time |',
+    '',
+    '```mermaid',
+    'flowchart TB',
+    '  Leadership --> Platform',
+    '  Platform --> Squads',
+    '```',
+  ].join('\n'),
+  parts: [
+    {
+      type: 'text',
+      text: [
+        'Operating model summary.',
+        '',
+        '| Tier | Who | Pattern |',
+        '|------|-----|---------|',
+        '| L1 | Champions | 10-20% time |',
+        '',
+        '```mermaid',
+        'flowchart TB',
+        '  Leadership --> Platform',
+        '  Platform --> Squads',
+        '```',
+      ].join('\n'),
+    },
+    {
+      type: 'openui',
+      id: 'e2e-presentation-surface',
+      format: 'openui-lang',
+      schemaVersion: '0.2.8',
+      source: [
+        'Role assignments',
+        '',
+        '| Role | Owner |',
+        '|------|-------|',
+        '| AI Lead | Patrícia |',
+      ].join('\n'),
+      status: 'completed',
+    },
+  ],
+};
+
+function readPresentationE2eSeed(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get('presentation-e2e') === '1';
+}
+
 export default function ChatPane({
   conversationId,
   compact = false,
@@ -250,18 +307,29 @@ export default function ChatPane({
     [commands, hiddenCommands],
   );
 
+  const [presentationE2eSeed] = useState(readPresentationE2eSeed);
+
   const displayMessages = useMemo(() => {
-    if (!seedArtifactE2e) {
-      return visibleMessages;
+    let messages = visibleMessages;
+
+    if (seedArtifactE2e) {
+      const hasDemo = messages.some((message) => message.id === E2E_ARTIFACT_DEMO_MESSAGE.id);
+      if (!hasDemo) {
+        messages = [...messages, E2E_ARTIFACT_DEMO_MESSAGE];
+      }
     }
 
-    const hasDemo = visibleMessages.some((message) => message.id === E2E_ARTIFACT_DEMO_MESSAGE.id);
-    if (hasDemo) {
-      return visibleMessages;
+    if (presentationE2eSeed) {
+      const hasPresentationDemo = messages.some(
+        (message) => message.id === E2E_PRESENTATION_DEMO_MESSAGE.id,
+      );
+      if (!hasPresentationDemo) {
+        messages = [...messages, E2E_PRESENTATION_DEMO_MESSAGE];
+      }
     }
 
-    return [...visibleMessages, E2E_ARTIFACT_DEMO_MESSAGE];
-  }, [seedArtifactE2e, visibleMessages]);
+    return messages;
+  }, [presentationE2eSeed, seedArtifactE2e, visibleMessages]);
 
   const sdkObservability = useSdkObservability({
     agentId,
@@ -309,7 +377,8 @@ export default function ChatPane({
   const showMessageList =
     hasConversationContent ||
     isStreaming ||
-    (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant'));
+    (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant')) ||
+    (presentationE2eSeed && displayMessages.some((message) => message.role === 'assistant'));
 
   const showHeader = Boolean(conversationId) && !isScheduleVariant;
   const consoleGridClass = showHeader
