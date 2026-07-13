@@ -15,6 +15,11 @@ import {
 import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
+import {
+  logInternalRuntimeError,
+  runtimeRunIncompleteMessage,
+  toUserFacingRuntimeStreamErrorMessage,
+} from './user-facing-error';
 
 export function createConversationState(conversationId: string): ConversationRuntimeState {
   return {
@@ -264,10 +269,15 @@ export function applyHubEvent(
     const status =
       typeof event.payload.status === 'string' ? event.payload.status.trim().toLowerCase() : '';
     if (status === 'error' || status === 'failed' || status === 'expired') {
-      const message =
+      const rawMessage =
         typeof event.payload.message === 'string' && event.payload.message.trim().length > 0
           ? event.payload.message
-          : 'A execução do assistente falhou antes de produzir uma resposta.';
+          : runtimeRunIncompleteMessage();
+      logInternalRuntimeError('run_complete.failed', rawMessage, {
+        run_id: event.run_id,
+        status,
+      });
+      const message = toUserFacingRuntimeStreamErrorMessage(rawMessage);
       return {
         ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
         error: message,
@@ -288,8 +298,10 @@ export function applyHubEvent(
   }
 
   if (event.type === 'error') {
-    const message =
+    const rawMessage =
       typeof event.payload.message === 'string' ? event.payload.message : 'Runtime stream failed';
+    logInternalRuntimeError('stream.error', rawMessage, { run_id: event.run_id });
+    const message = toUserFacingRuntimeStreamErrorMessage(rawMessage);
     return {
       ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
       error: message,

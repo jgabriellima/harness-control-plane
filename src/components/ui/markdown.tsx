@@ -1,11 +1,13 @@
-import { memo, useMemo, useRef, type ComponentPropsWithoutRef } from 'react';
+import { memo, useMemo, useRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
+import ChatHtmlPreview from '@/components/react/ChatHtmlPreview';
 import MermaidDiagram from '@/components/react/MermaidDiagram';
 import { isLikelyFilePath } from '@/lib/file-reference';
+import { looksLikeHtmlDocument } from '@/lib/html-document';
 import { normalizeMarkdownForGfm } from '@/lib/markdown-gfm';
 import { isChatBrowserLink } from '@/lib/runtime-browser-types';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,18 @@ export type MarkdownProps = {
 };
 
 type ElementProps = ComponentPropsWithoutRef<'div'>;
+
+const RICH_EMBED_TEST_IDS = new Set(['mermaid-diagram', 'chat-html-preview']);
+
+function isRichEmbedPreChild(children: ReactNode): boolean {
+  const child = React.Children.toArray(children)[0];
+  if (!React.isValidElement(child)) {
+    return false;
+  }
+
+  const testId = (child.props as { 'data-testid'?: string })['data-testid'];
+  return typeof testId === 'string' && RICH_EMBED_TEST_IDS.has(testId);
+}
 
 function MarkdownComponent({ children, className, onFileClick, onLinkClick }: MarkdownProps) {
   const onFileClickRef = useRef(onFileClick);
@@ -101,11 +115,17 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
       td: ({ children: cellChildren }: ElementProps) => (
         <td className="px-3 py-2 align-top text-gray-800">{cellChildren}</td>
       ),
-      pre: ({ children: preChildren }: ElementProps) => (
-        <pre className="mb-3 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
-          {preChildren}
-        </pre>
-      ),
+      pre: ({ children: preChildren }: ElementProps) => {
+        if (isRichEmbedPreChild(preChildren)) {
+          return <>{preChildren}</>;
+        }
+
+        return (
+          <pre className="mb-3 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 shadow-sm">
+            {preChildren}
+          </pre>
+        );
+      },
       code: ({
         className: codeClassName,
         children: codeChildren,
@@ -116,6 +136,13 @@ function MarkdownComponent({ children, className, onFileClick, onLinkClick }: Ma
 
         if (isBlockCode && language === 'mermaid') {
           return <MermaidDiagram source={text} />;
+        }
+
+        if (
+          isBlockCode &&
+          (language === 'html' || language === 'htm' || (language === '' && looksLikeHtmlDocument(text)))
+        ) {
+          return <ChatHtmlPreview source={text} />;
         }
 
         if (!isBlockCode && isLikelyFilePath(text)) {

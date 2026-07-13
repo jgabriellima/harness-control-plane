@@ -8,6 +8,8 @@ import {
   toUserFacingArtifactErrorMessage,
   toUserFacingContextUsageErrorMessage,
   toUserFacingErrorMessage,
+  toUserFacingRuntimeDispatchErrorMessage,
+  toUserFacingRuntimeStreamErrorMessage,
 } from './user-facing-error.ts';
 
 describe('looksLikeInternalErrorMessage', () => {
@@ -93,5 +95,25 @@ describe('activityPanelWarningMessage', () => {
     );
 
     assert.equal(message, 'Some activity details may be incomplete.');
+  });
+});
+
+describe('toUserFacingRuntimeDispatchErrorMessage', () => {
+  it('replaces dispatch errors with phase and request_id metadata', () => {
+    const message = toUserFacingRuntimeDispatchErrorMessage(
+      'Runtime dispatch failed\nphase: chat.sdk.dispatch\nrequest_id: req-123',
+    );
+
+    assert.equal(message, "We couldn't start this run. Try again in a moment.");
+  });
+});
+
+describe('toUserFacingRuntimeStreamErrorMessage', () => {
+  it('replaces internal stream failures with friendly copy', () => {
+    const message = toUserFacingRuntimeStreamErrorMessage(
+      new Error('Command failed: sqlite3 /Users/dev/index.db SELECT 1;'),
+    );
+
+    assert.equal(message, 'Something went wrong while generating the response. Try again in a moment.');
   });
 });

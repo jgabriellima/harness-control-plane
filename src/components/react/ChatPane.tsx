@@ -182,6 +182,29 @@ const E2E_PRESENTATION_DEMO_MESSAGE: ChatMessage = {
   ],
 };
 
+const E2E_HTML_PREVIEW_DEMO_HTML = [
+  '<!DOCTYPE html>',
+  '<html lang="en">',
+  '<head><meta charset="UTF-8"><title>Board deck</title>',
+  '<style>body{font-family:system-ui;background:#0f1419;color:#e8edf4;margin:0;padding:2rem}',
+  '.slide{max-width:720px;margin:0 auto}</style></head>',
+  '<body><div class="slide"><h1>AI Team Assessment</h1><p>Preview renders inline in chat.</p></div></body>',
+  '</html>',
+].join('');
+
+const E2E_HTML_PREVIEW_DEMO_MESSAGE: ChatMessage = {
+  id: 'e2e-html-preview-demo',
+  role: 'assistant',
+  content: ['Save this presentation:', '', '```html', E2E_HTML_PREVIEW_DEMO_HTML, '```'].join('\n'),
+};
+
+function readHtmlPreviewE2eSeed(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get('html-preview-e2e') === '1';
+}
+
 function readPresentationE2eSeed(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -320,10 +343,14 @@ export default function ChatPane({
   );
 
   const [presentationE2eSeed, setPresentationE2eSeed] = useState(false);
+  const [htmlPreviewE2eSeed, setHtmlPreviewE2eSeed] = useState(false);
 
   useEffect(() => {
     if (readPresentationE2eSeed()) {
       setPresentationE2eSeed(true);
+    }
+    if (readHtmlPreviewE2eSeed()) {
+      setHtmlPreviewE2eSeed(true);
     }
   }, []);
 
@@ -346,8 +373,17 @@ export default function ChatPane({
       }
     }
 
+    if (htmlPreviewE2eSeed) {
+      const hasHtmlPreviewDemo = messages.some(
+        (message) => message.id === E2E_HTML_PREVIEW_DEMO_MESSAGE.id,
+      );
+      if (!hasHtmlPreviewDemo) {
+        messages = [...messages, E2E_HTML_PREVIEW_DEMO_MESSAGE];
+      }
+    }
+
     return messages;
-  }, [presentationE2eSeed, seedArtifactE2e, visibleMessages]);
+  }, [htmlPreviewE2eSeed, presentationE2eSeed, seedArtifactE2e, visibleMessages]);
 
   const sdkObservability = useSdkObservability({
     agentId,
@@ -377,7 +413,8 @@ export default function ChatPane({
     hasConversationContent ||
     isStreaming ||
     (seedArtifactE2e && displayMessages.some((message) => message.role === 'assistant')) ||
-    (presentationE2eSeed && displayMessages.some((message) => message.role === 'assistant'));
+    (presentationE2eSeed && displayMessages.some((message) => message.role === 'assistant')) ||
+    (htmlPreviewE2eSeed && displayMessages.some((message) => message.role === 'assistant'));
 
   const showHeader = Boolean(conversationId) && !isScheduleVariant;
   const consoleGridClass = showHeader

@@ -20,14 +20,24 @@ import {
 import {
   applyActiveRunToConversationState,
   attachActiveRunStream,
+  applyContinuableRunState,
   applyInterruptedConversationState,
-  fetchActiveRunsIndex,
+  applyRecoveredCompletedConversationState,
+  fetchRunSessionSnapshot,
   findActiveRunForConversation,
+  findContinuableRunForConversation,
   purgeStaleActiveRun,
   resolveTurnTrackingForActiveRun,
   type ActiveRunRegistryEntry,
+  type ContinuableRunRegistryEntry,
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
+import { seedUserMessageFromTitle, cachePendingUserMessage, clearPendingUserMessage } from '@/lib/conversation-message-seed';
+import {
+  buildDispatchContextBadges,
+  formatUserMessageForDisplay,
+  mergeUserContextBadges,
+} from '@/lib/user-message-display';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
 import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '@/lib/schedule-tips';
 import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
@@ -38,12 +48,17 @@ import {
   sdkHealthProbeFailedFallback,
   sdkHealthUnavailableFallback,
 } from '@/lib/runtime-sdk-messages';
+import { isRunAuthFailureText } from '@/lib/runtime-run-failure';
 import {
   extractBrowserNavigateUrl,
   isBrowserToolName,
   resolveBrowserPanelTarget,
 } from '@/lib/runtime-browser-types';
 import { isCuaToolName } from '@/lib/runtime-computer-use-types';
+import {
+  logInternalRuntimeError,
+  toUserFacingRuntimeDispatchErrorMessage,
+} from '@/lib/user-facing-error';
 import type {
   ConversationRuntimeState,
   DispatchMessagePayload,
@@ -53,8 +68,6 @@ import type {
   WorkspaceLayoutMode,
 } from '@/lib/runtime-hub-types';
 import { conversationIdFromPath, navigateShell, useShellPathname } from '@/lib/shell-navigation';
-import { WELCOME_MESSAGE } from '@/lib/runtime-hub-types';
-
 const RuntimeHubContext = createContext<RuntimeHubContextValue | null>(null);
 
 interface TurnTracking {
@@ -145,6 +158,40 @@ function dispatchComputerUsePreviewSessionSideEffect(event: RuntimeHubWireEvent)
   );
 }
 
+function sessionPayloadFromHubEvent(
+  event: RuntimeHubWireEvent,
+): {
+  sessionId: string;
+  url: string;
+  renderMode?: 'screencast' | 'iframe';
+  controlMode?: 'user' | 'agent';
+  viewportWidth?: number;
+  viewportHeight?: number;
+  interactive?: boolean;
+} | null {
+  const sessionId = typeof event.payload.sessionId === 'string' ? event.payload.sessionId : '';
+  const url = typeof event.payload.url === 'string' ? event.payload.url : '';
+  if (!sessionId || !url) {
+    return null;
+  }
+
+  const controlMode = event.payload.controlMode === 'user' ? 'user' : 'agent';
+  const viewportWidth =
+    typeof event.payload.viewportWidth === 'number' ? event.payload.viewportWidth : 1280;
+  const viewportHeight =
+    typeof event.payload.viewportHeight === 'number' ? event.payload.viewportHeight : 720;
+
+  return {
+    sessionId,
+    url,
+    renderMode: 'screencast',
+    controlMode,
+    viewportWidth,
+    viewportHeight,
+    interactive: event.payload.interactive === true,
+  };
+}
+
 function dispatchBrowserSessionSideEffect(event: RuntimeHubWireEvent): void {
   if (typeof window === 'undefined' || event.type !== 'browser.session.ready') {
     return;
@@ -154,16 +201,54 @@ function dispatchBrowserSessionSideEffect(event: RuntimeHubWireEvent): void {
     return;
   }
 
+  const session = sessionPayloadFromHubEvent(event);
+  window.dispatchEvent(
+    new CustomEvent('runtime:sync-browser', {
+      detail: {
+        conversationId: event.conversation_id,
+        session,
+      },
+    }),
+  );
+}
+
+function dispatchBrowserUrlChangedSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'browser.url.changed') {
+    return;
+  }
+
+  const sessionId = typeof event.payload.sessionId === 'string' ? event.payload.sessionId : '';
   const url = typeof event.payload.url === 'string' ? event.payload.url : '';
-  if (!url) {
+  if (!sessionId || !url) {
     return;
   }
 
   window.dispatchEvent(
-    new CustomEvent('runtime:open-browser', {
+    new CustomEvent('runtime:browser-url-changed', {
       detail: {
-        url,
         conversationId: event.conversation_id,
+        sessionId,
+        url,
+      },
+    }),
+  );
+}
+
+function dispatchBrowserSessionClosedSideEffect(event: RuntimeHubWireEvent): void {
+  if (typeof window === 'undefined' || event.type !== 'browser.session.closed') {
+    return;
+  }
+
+  const sessionId = typeof event.payload.sessionId === 'string' ? event.payload.sessionId : '';
+  if (!sessionId) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('runtime:browser-session-closed', {
+      detail: {
+        conversationId: event.conversation_id,
+        sessionId,
       },
     }),
   );
@@ -325,6 +410,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       dispatchBrowserToolSideEffect(event);
       dispatchBrowserSessionSideEffect(event);
+      dispatchBrowserUrlChangedSideEffect(event);
+      dispatchBrowserSessionClosedSideEffect(event);
       dispatchComputerUseToolSideEffect(event);
       dispatchComputerUsePreviewSessionSideEffect(event);
 
@@ -370,6 +457,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       });
 
       if (terminalEvent) {
+        clearPendingUserMessage(conversationId);
         turnTrackingRef.current.delete(conversationId);
         setTimeout(() => {
           updateConversation(conversationId, (state) => {
@@ -382,9 +470,28 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             };
           });
         }, 0);
+
+        if (event.type === 'error') {
+          const message =
+            typeof event.payload.message === 'string' ? event.payload.message : '';
+          if (isRunAuthFailureText(message)) {
+            const projectId = conversations.get(conversationId)?.projectId;
+            if (projectId) {
+              void fetchDispatchHealth(projectId, { force: true })
+                .then((health) => {
+                  updateConversation(conversationId, (state) => ({
+                    ...state,
+                    sdkHealth: health.ready ? 'ready' : 'unavailable',
+                    sdkHealthMessage: health.message,
+                  }));
+                })
+                .catch(() => undefined);
+            }
+          }
+        }
       }
     },
-    [updateConversation],
+    [conversations, updateConversation],
   );
 
   const handleHubEvent = useCallback(
@@ -424,25 +531,27 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     setPaneConversationIdsState(normalizedPanes.slice(0, paneCountForMode(mode)));
   }, [pathname]);
 
-  const reconnectActiveRun = useCallback(
+  const reconnectExecutingRun = useCallback(
     async (entry: ActiveRunRegistryEntry): Promise<boolean> => {
-      const existingState = conversationsRef.current.get(entry.conversationId);
-      if (existingState?.runPhase === 'streaming' && existingState.activeRunId === entry.runId) {
+      const attachResult = await attachActiveRunStream(entry.runId);
+      if (attachResult.outcome === 'completed') {
+        updateConversation(entry.conversationId, applyRecoveredCompletedConversationState);
+        turnTrackingRef.current.delete(entry.conversationId);
         return true;
       }
 
-      const attachResult = await attachActiveRunStream(entry.runId);
-      if (attachResult === 'stale') {
+      if (attachResult.outcome === 'stale') {
         updateConversation(entry.conversationId, (state) =>
           applyInterruptedConversationState(
             state,
-            'Run was interrupted — local runtime session is no longer available',
+            attachResult.message ??
+              'Run was interrupted — local runtime session is no longer available',
           ),
         );
         return false;
       }
 
-      if (attachResult === 'failed') {
+      if (attachResult.outcome === 'failed') {
         await purgeStaleActiveRun(entry.runId);
         updateConversation(entry.conversationId, (state) =>
           applyInterruptedConversationState(state, 'Could not reattach to active run'),
@@ -461,12 +570,80 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [updateConversation],
   );
 
+  const applySessionBoundarySnapshot = useCallback(
+    (continuable: ContinuableRunRegistryEntry[]): void => {
+      for (const entry of continuable) {
+        updateConversation(entry.conversationId, (state) => applyContinuableRunState(state, entry));
+      }
+    },
+    [updateConversation],
+  );
+
+  const dismissContinuableRun = useCallback(
+    (conversationId: string): void => {
+      updateConversation(conversationId, (state) => ({
+        ...state,
+        runPhase: 'idle',
+        activeRunId: null,
+        continuableRun: null,
+        error: null,
+      }));
+    },
+    [updateConversation],
+  );
+
+  const recoverOrphanedActiveRun = useCallback(
+    async (conversationId: string, runId: string): Promise<boolean> => {
+      const attachResult = await attachActiveRunStream(runId);
+      if (attachResult.outcome === 'completed') {
+        updateConversation(conversationId, applyRecoveredCompletedConversationState);
+        turnTrackingRef.current.delete(conversationId);
+        return true;
+      }
+
+      if (attachResult.outcome === 'attached') {
+        const entry: ActiveRunRegistryEntry = {
+          runId,
+          conversationId,
+          agentId: conversationsRef.current.get(conversationId)?.agentId ?? '',
+        };
+        updateConversation(conversationId, (state) => {
+          const tracking = resolveTurnTrackingForActiveRun(state, runId);
+          turnTrackingRef.current.set(conversationId, tracking);
+          return applyActiveRunToConversationState(state, entry);
+        });
+        return true;
+      }
+
+      if (attachResult.outcome === 'stale') {
+        updateConversation(conversationId, (state) =>
+          applyInterruptedConversationState(
+            state,
+            attachResult.message ??
+              'Run was interrupted — local runtime session is no longer available',
+          ),
+        );
+        return false;
+      }
+
+      if (attachResult.outcome === 'failed') {
+        await purgeStaleActiveRun(runId);
+        updateConversation(conversationId, applyRecoveredCompletedConversationState);
+        return false;
+      }
+
+      return false;
+    },
+    [updateConversation],
+  );
+
   useEffect(() => {
     void (async () => {
-      const activeRuns = await fetchActiveRunsIndex();
-      await Promise.all(activeRuns.map((entry) => reconnectActiveRun(entry)));
+      const snapshot = await fetchRunSessionSnapshot();
+      applySessionBoundarySnapshot(snapshot.continuable);
+      await Promise.all(snapshot.executing.map((entry) => reconnectExecutingRun(entry)));
     })().catch(() => undefined);
-  }, [reconnectActiveRun]);
+  }, [applySessionBoundarySnapshot, reconnectExecutingRun]);
 
   const syncActiveRunForConversation = useCallback(
     async (conversationId: string): Promise<boolean> => {
@@ -480,15 +657,26 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
       syncCooldownRef.current.set(conversationId, Date.now());
 
-      const activeRuns = await fetchActiveRunsIndex();
-      const entry = findActiveRunForConversation(activeRuns, conversationId);
-      if (!entry) {
+      const snapshot = await fetchRunSessionSnapshot();
+      const continuable = findContinuableRunForConversation(snapshot.continuable, conversationId);
+      if (continuable) {
+        updateConversation(conversationId, (state) => applyContinuableRunState(state, continuable));
         return false;
       }
 
-      return reconnectActiveRun(entry);
+      const entry = findActiveRunForConversation(snapshot.executing, conversationId);
+      if (entry) {
+        return reconnectExecutingRun(entry);
+      }
+
+      const state = conversationsRef.current.get(conversationId);
+      if (state?.runPhase === 'streaming' && state.activeRunId) {
+        return recoverOrphanedActiveRun(conversationId, state.activeRunId);
+      }
+
+      return false;
     },
-    [reconnectActiveRun],
+    [recoverOrphanedActiveRun, reconnectExecutingRun, updateConversation],
   );
 
   useEffect(() => {
@@ -620,7 +808,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             );
           }
 
-          const payload = (await response.json()) as {
+          let payload = (await response.json()) as {
             id: string;
             title: string;
             projectId: string;
@@ -628,6 +816,18 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             updatedAt: string;
             messages: import('@/lib/conversation-store').StoredChatMessage[];
           };
+
+          if (payload.messages.length === 0 && payload.agentId) {
+            await new Promise((resolve) => {
+              window.setTimeout(resolve, 500);
+            });
+            const retryResponse = await fetch(
+              `/api/conversations/${encodeURIComponent(conversationId)}`,
+            );
+            if (retryResponse.ok) {
+              payload = (await retryResponse.json()) as typeof payload;
+            }
+          }
 
           hydratedIdsRef.current.add(conversationId);
 
@@ -640,7 +840,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
               projectId: payload.projectId,
               agentId: payload.agentId,
               updatedAt: payload.updatedAt,
-              messages: restored.length > 0 ? [WELCOME_MESSAGE, ...restored] : [WELCOME_MESSAGE],
+              messages: seedUserMessageFromTitle(restored, payload.title, conversationId),
               hydrated: true,
               error: null,
             };
@@ -776,6 +976,15 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
+      if (state.runPhase === 'continuable') {
+        updateConversation(targetId, (current) => ({
+          ...current,
+          runPhase: 'idle',
+          activeRunId: null,
+          continuableRun: null,
+        }));
+      }
+
       const sdkReady =
         state.sdkHealth === 'ready'
           ? true
@@ -820,6 +1029,28 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       const thinkingMessageId = `thinking-${turnStamp}`;
       const assistantMessageId = `assistant-${turnStamp}`;
 
+      const trimmedMessage = payload.message.trimStart();
+      const presentationLabel = trimmedMessage.startsWith('/openui')
+        ? 'Rich UI'
+        : trimmedMessage.startsWith('/text')
+          ? 'Plain text'
+          : undefined;
+
+      const formattedUserMessage = formatUserMessageForDisplay(payload.message);
+      const userContextBadges = mergeUserContextBadges(
+        formattedUserMessage.badges,
+        buildDispatchContextBadges({
+        message: payload.message,
+        mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
+        computerUseEnabled: payload.computerUseEnabled === true,
+        computerUseMode: payload.computerUseMode,
+        integrationSlots: payload.integrationSlots ?? [],
+        attachments: payload.attachments ?? [],
+        scheduleInterview: payload.scheduleInterview === true,
+        presentationLabel,
+        }),
+      );
+
       turnTrackingRef.current.set(targetId, {
         assistantMessageId,
         thinkingMessageId,
@@ -837,7 +1068,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           {
             id: userMessageId,
             role: 'user',
-            content: payload.message,
+            content: formattedUserMessage.body,
+            contextBadges: userContextBadges.length > 0 ? userContextBadges : undefined,
             recordedAt: new Date().toISOString(),
           },
           {
@@ -849,6 +1081,12 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           },
         ],
       }));
+
+      cachePendingUserMessage(
+        targetId,
+        formattedUserMessage.body,
+        userContextBadges.length > 0 ? userContextBadges : undefined,
+      );
 
       try {
         const response = await fetch('/api/chat', {
@@ -864,7 +1102,9 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
             agent_id: state.agentId,
             computer_use_enabled: payload.computerUseEnabled === true,
             computer_use_mode: payload.computerUseMode,
-            metadata: payload.scheduleInterview ? { schedule_interview: true } : undefined,
+            metadata: {
+              ...(payload.scheduleInterview ? { schedule_interview: true } : {}),
+            },
           }),
         });
 
@@ -878,17 +1118,12 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         };
 
         if (!response.ok) {
-          const parts = [body.error ?? 'Runtime dispatch failed'];
-          if (body.phase) {
-            parts.push(`phase: ${body.phase}`);
-          }
-          if (body.request_id) {
-            parts.push(`request_id: ${body.request_id}`);
-          }
-          if (body.detail) {
-            parts.push(body.detail);
-          }
-          throw new Error(parts.join('\n'));
+          logInternalRuntimeError('dispatch', new Error(body.error ?? 'Runtime dispatch failed'), {
+            phase: body.phase,
+            request_id: body.request_id,
+            detail: body.detail,
+          });
+          throw new Error(toUserFacingRuntimeDispatchErrorMessage(body.error ?? 'Runtime dispatch failed'));
         }
 
         updateConversation(targetId, (current) => ({
@@ -900,7 +1135,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         }));
       } catch (error) {
         turnTrackingRef.current.delete(targetId);
-        const message = error instanceof Error ? error.message : 'Failed to dispatch chat';
+        logInternalRuntimeError('dispatch.catch', error);
+        const message = toUserFacingRuntimeDispatchErrorMessage(error);
         updateConversation(targetId, (current) => ({
           ...current,
           activeRunId: null,
@@ -916,6 +1152,39 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
     },
     [conversations, ensurePersistedConversation, ensureSdkHealth, updateConversation],
+  );
+
+  const resumeContinuableRun = useCallback(
+    async (conversationId: string): Promise<boolean> => {
+      const state = conversationsRef.current.get(conversationId);
+      const continuable = state?.continuableRun;
+      if (!continuable?.resumable || !state) {
+        return false;
+      }
+
+      try {
+        await purgeStaleActiveRun(continuable.runId);
+      } catch {
+        // Best-effort — new dispatch must not be blocked by stale registry index.
+      }
+
+      updateConversation(conversationId, (current) => ({
+        ...current,
+        runPhase: 'idle',
+        activeRunId: null,
+        continuableRun: null,
+        error: null,
+        agentId: continuable.agentId || current.agentId,
+      }));
+
+      await dispatchMessage(conversationId, {
+        message: continuable.resumePrompt,
+        projectId: state.projectId,
+      });
+
+      return true;
+    },
+    [dispatchMessage, updateConversation],
   );
 
   const cancelActiveRun = useCallback(
@@ -1059,6 +1328,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       getConversationState,
       dispatchMessage,
       cancelActiveRun,
+      resumeContinuableRun,
+      dismissContinuableRun,
       hydrateConversation,
       ensureSdkHealth,
     }),
@@ -1077,6 +1348,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       getConversationState,
       dispatchMessage,
       cancelActiveRun,
+      resumeContinuableRun,
+      dismissContinuableRun,
       hydrateConversation,
       ensureSdkHealth,
     ],
