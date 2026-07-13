@@ -7,13 +7,8 @@ import { panelLayoutStore, usePanelCollapsed } from '../../lib/panel-layout-stor
 
 import type { WorkspaceLayoutMode } from '@/lib/runtime-hub-types';
 import { useActiveProject } from '@/hooks/useActiveProject';
-import { useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useRuntimeHub } from './RuntimeHubProvider';
 import WorkspaceHeaderMenu from './WorkspaceHeaderMenu';
-
-interface WorkspaceHeaderProps {
-  projectName: string;
-}
 
 const LAYOUT_MODES: Array<{
   mode: WorkspaceLayoutMode;
@@ -31,33 +26,14 @@ function layoutIconButtonClass(active: boolean): string {
     : 'bg-white text-gray-500 ring-gray-200 hover:bg-gray-50 hover:text-gray-700';
 }
 
-export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
+export default function WorkspaceHeader() {
   const hub = useRuntimeHub();
   const collapsed = usePanelCollapsed();
-  const sidebarExpanded = useSidebarExpanded();
   const activeProject = useActiveProject();
   const showProjectTitle = hub.layoutMode === 'single';
-  const showActiveProjectInHeader = !sidebarExpanded && Boolean(activeProject?.name);
 
   function setMode(mode: WorkspaceLayoutMode): void {
     hub.setLayoutMode(mode);
-    const foreground =
-      hub.foregroundConversationId ??
-      (() => {
-        const match = window.location.pathname.match(/^\/conversation\/([^/]+)/);
-        return match?.[1] ? decodeURIComponent(match[1]) : null;
-      })();
-
-    if (mode === 'single') {
-      return;
-    }
-
-    const count = mode === 'grid-4' ? 4 : 2;
-    const panes = hub.paneConversationIds.slice(0, count);
-    while (panes.length < count) {
-      panes.push(foreground ?? '');
-    }
-    hub.setPaneConversationIds(panes);
   }
 
   return (
@@ -66,20 +42,23 @@ export default function WorkspaceHeader({ projectName }: WorkspaceHeaderProps) {
       data-testid="workspace-header"
     >
       <div className="flex min-w-0 items-center gap-3">
-        {showProjectTitle ? (
-          <h1 className="truncate text-sm font-medium text-gray-700" data-testid="workspace-header-title">
-            {showActiveProjectInHeader ? (
-              <>
-                <span>{projectName}</span>
-                <span className="mx-1.5 font-normal text-gray-400" aria-hidden="true">
-                  /
-                </span>
-                <span data-testid="workspace-active-project">{activeProject?.name}</span>
-              </>
-            ) : (
-              projectName
-            )}
-          </h1>
+        {showProjectTitle && activeProject?.name ? (
+          <nav
+            className="flex min-w-0 items-center gap-1.5 text-sm"
+            aria-label="Active project"
+            data-testid="workspace-header-title"
+          >
+            <span className="shrink-0 font-medium text-gray-500">Project</span>
+            <span className="shrink-0 text-gray-300" aria-hidden="true">
+              /
+            </span>
+            <span
+              className="truncate font-medium text-gray-800"
+              data-testid="workspace-active-project"
+            >
+              {activeProject.name}
+            </span>
+          </nav>
         ) : null}
         {hub.activeRunCount > 0 ? (
           <span

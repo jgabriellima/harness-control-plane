@@ -68,6 +68,7 @@ import type {
   WorkspaceLayoutMode,
 } from '@/lib/runtime-hub-types';
 import { conversationIdFromPath, navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import { buildPanesForLayoutTransition } from '@/lib/workspace-layout-transition';
 const RuntimeHubContext = createContext<RuntimeHubContextValue | null>(null);
 
 interface TurnTracking {
@@ -386,7 +387,11 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
   const hydratedIdsRef = useRef<Set<string>>(new Set());
   const syncCooldownRef = useRef<Map<string, number>>(new Map());
   const conversationsRef = useRef(conversations);
+  const layoutModeRef = useRef<WorkspaceLayoutMode>('single');
+  const foregroundConversationIdRef = useRef<string | null>(foregroundConversationId);
   conversationsRef.current = conversations;
+  layoutModeRef.current = layoutMode;
+  foregroundConversationIdRef.current = foregroundConversationId;
   const SYNC_COOLDOWN_MS = 10_000;
 
   const updateConversation = useCallback(
@@ -1237,14 +1242,22 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
   );
 
   const setLayoutMode = useCallback((mode: WorkspaceLayoutMode) => {
-    setLayoutModeState(mode);
-    setPaneConversationIdsState((current) => {
-      const next = normalizePaneIds(current, mode);
-      persistLayout(mode, next);
-      syncUrlLayout(mode, next);
-      return next;
+    const previousMode = layoutModeRef.current;
+    setPaneConversationIdsState((currentPanes) => {
+      const nextPanes = buildPanesForLayoutTransition(
+        mode,
+        previousMode,
+        currentPanes,
+        pathname,
+        foregroundConversationIdRef.current,
+      );
+      persistLayout(mode, nextPanes);
+      syncUrlLayout(mode, nextPanes);
+      return nextPanes;
     });
-  }, []);
+    setLayoutModeState(mode);
+    layoutModeRef.current = mode;
+  }, [pathname]);
 
   const setPaneConversationIds = useCallback((ids: string[]) => {
     const normalized = normalizePaneIds(ids, layoutMode);
