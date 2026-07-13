@@ -22,6 +22,7 @@ export interface UiCommandPayload {
   url?: string;
   conversationId?: string;
   title?: string;
+  agentId?: string;
 }
 
 export interface HcpUiBridge {
@@ -31,7 +32,12 @@ export interface HcpUiBridge {
   closeBrowser: () => void;
   openContextReport: (conversationId: string, projectId?: string, title?: string | null) => void;
   closeContextReport: () => void;
-  openToolActivityReport: (conversationId: string, projectId?: string, title?: string | null) => void;
+  openToolActivityReport: (
+    conversationId: string,
+    projectId?: string,
+    title?: string | null,
+    agentId?: string | null,
+  ) => void;
   closeToolActivityReport: () => void;
   version: number;
 }
@@ -114,6 +120,7 @@ function applyUiCommand(command: UiCommandPayload): void {
       command.conversationId,
       command.projectId,
       command.title ?? null,
+      command.agentId ?? null,
     );
     return;
   }
@@ -177,13 +184,19 @@ function syncWindowBridge(): void {
       registeredHandlers.closeContextReport?.();
       dispatchUiCommand({ action: 'context.close' });
     },
-    openToolActivityReport: (conversationId, projectId, title) => {
-      registeredHandlers.openToolActivityReport?.(conversationId, projectId, title ?? null);
+    openToolActivityReport: (conversationId, projectId, title, agentId) => {
+      registeredHandlers.openToolActivityReport?.(
+        conversationId,
+        projectId,
+        title ?? null,
+        agentId ?? null,
+      );
       dispatchUiCommand({
         action: 'tool-activity.open',
         conversationId,
         projectId,
         title: title ?? undefined,
+        agentId: agentId ?? undefined,
       });
     },
     closeToolActivityReport: () => {
