@@ -307,7 +307,13 @@ export default function ChatPane({
     [commands, hiddenCommands],
   );
 
-  const [presentationE2eSeed] = useState(readPresentationE2eSeed);
+  const [presentationE2eSeed, setPresentationE2eSeed] = useState(false);
+
+  useEffect(() => {
+    if (readPresentationE2eSeed()) {
+      setPresentationE2eSeed(true);
+    }
+  }, []);
 
   const displayMessages = useMemo(() => {
     let messages = visibleMessages;
