@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { readFile } from 'node:fs/promises';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
+import { toUserFacingArtifactErrorMessage } from '../../../lib/user-facing-error';
+import { errorFields, runtimeLogger } from '../../../lib/runtime-logger';
 import { readWorkspaceFile, resolveWorkspaceFileLocation } from '../../../lib/workspace-files';
 import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 
@@ -20,7 +22,12 @@ export const GET: APIRoute = async ({ url, request }) => {
       const resolved = await resolveWorkspaceFileLocation(requestedPath, workspaceRoot);
 
       if (!resolved) {
-        return jsonError('File not found', 404);
+        runtimeLogger.warn('workspace_file.not_found', {
+          requested_path: requestedPath,
+          project_id: projectId,
+          raw: true,
+        });
+        return jsonError(toUserFacingArtifactErrorMessage('File not found'), 404);
       }
 
       if (resolved.size > 10_000_000) {
@@ -43,12 +50,23 @@ export const GET: APIRoute = async ({ url, request }) => {
     const file = await readWorkspaceFile(requestedPath, workspaceRoot);
 
     if (!file) {
-      return jsonError('File not found', 404);
+      runtimeLogger.warn('workspace_file.not_found', {
+        requested_path: requestedPath,
+        project_id: projectId,
+      });
+      return jsonError(toUserFacingArtifactErrorMessage('File not found'), 404);
     }
 
     return jsonOk(file);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to read workspace file';
-    return jsonError(message, 500);
+    runtimeLogger.error('workspace_file.read_failed', {
+      requested_path: requestedPath,
+      project_id: url.searchParams.get('project_id')?.trim() || undefined,
+      ...errorFields(error),
+    });
+    return jsonError(
+      toUserFacingArtifactErrorMessage(error, "This file couldn't be opened right now."),
+      500,
+    );
   }
 };

@@ -228,7 +228,11 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
           ) : null}
 
           {!selection.loading && selection.error ? (
-            <p className={`text-sm text-red-600 ${isImmersivePreview ? 'p-4' : ''}`} role="alert">
+            <p
+              className={`text-sm text-gray-600 ${isImmersivePreview ? 'p-4' : ''}`}
+              role="status"
+              data-testid="chat-artifact-error"
+            >
               {selection.error}
             </p>
           ) : null}

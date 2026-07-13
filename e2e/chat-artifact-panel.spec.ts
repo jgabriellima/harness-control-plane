@@ -30,6 +30,8 @@ test.describe('Chat artifact split panel', () => {
       '/api/workspace/file?path=e2e%2Ffixtures%2Fdoes-not-exist.md',
     );
     expect(response.status()).toBe(404);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toBe("This file couldn't be opened. It may have been moved or removed.");
   });
 
   test('assistant message renders clickable file reference', async ({ page }) => {

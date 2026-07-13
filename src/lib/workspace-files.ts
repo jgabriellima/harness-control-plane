@@ -58,6 +58,8 @@ export function expandWorkspacePathCandidates(
       candidates.push(`${harnessPrefix}/${normalized}`);
     }
     candidates.push(
+      `.outputs/${normalized}`,
+      `.uploads/${normalized}`,
       `.cursor/${normalized}`,
       `.sdlc/${normalized}`,
       `app/${normalized}`,
@@ -99,6 +101,53 @@ async function findFileByBasename(dir: string, targetBasename: string): Promise<
   }
 
   return null;
+}
+
+interface BasenameMatch {
+  safePath: string;
+  displayPath: string;
+  modifiedAtMs: number;
+}
+
+async function findMostRecentFileByBasename(
+  targetBasename: string,
+  searchDirs: string[],
+  allowedRoots: string[],
+): Promise<BasenameMatch | null> {
+  let best: BasenameMatch | null = null;
+
+  for (const searchDir of searchDirs) {
+    const absolutePath = await findFileByBasename(searchDir, targetBasename);
+    if (!absolutePath) {
+      continue;
+    }
+
+    let safePath: string;
+    try {
+      safePath = assertWithinRoots(absolutePath, allowedRoots);
+    } catch {
+      continue;
+    }
+
+    let fileStat;
+    try {
+      fileStat = await stat(safePath);
+    } catch {
+      continue;
+    }
+
+    if (!fileStat.isFile()) {
+      continue;
+    }
+
+    const displayPath = relativePathFromRoots(safePath, allowedRoots, targetBasename);
+    const modifiedAtMs = fileStat.mtimeMs;
+    if (!best || modifiedAtMs > best.modifiedAtMs) {
+      best = { safePath, displayPath, modifiedAtMs };
+    }
+  }
+
+  return best;
 }
 
 /**
@@ -258,6 +307,55 @@ export async function resolveWorkspaceFileLocation(
       mime: inferMimeFromPath(displayPath),
       size: fileStat.size,
     };
+  }
+
+  if (!normalizedPath.includes('/')) {
+    const searchDirs = [
+      join(projectRoot, '.outputs'),
+      join(projectRoot, '.uploads'),
+      join(binding.harnessRoot, 'workflows', 'output'),
+    ];
+
+    const runsDir = join(binding.harnessRoot, 'playbooks', 'runs');
+    if (await fileExists(runsDir)) {
+      let runEntries;
+      try {
+        runEntries = await readdir(runsDir, { withFileTypes: true });
+      } catch {
+        runEntries = [];
+      }
+
+      const runIds = runEntries
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith('playbook-'))
+        .map((entry) => entry.name)
+        .sort()
+        .reverse();
+
+      for (const runId of runIds) {
+        searchDirs.push(join(runsDir, runId, 'artifacts'));
+      }
+    }
+
+    const basenameMatch = await findMostRecentFileByBasename(
+      normalizedPath,
+      searchDirs,
+      allowedRoots,
+    );
+
+    if (basenameMatch) {
+      const fileStat = await stat(basenameMatch.safePath);
+      let displayPath = basenameMatch.displayPath;
+      if (displayPath.startsWith('app/')) {
+        displayPath = displayPath.slice(4);
+      }
+
+      return {
+        safePath: basenameMatch.safePath,
+        displayPath,
+        mime: inferMimeFromPath(displayPath),
+        size: fileStat.size,
+      };
+    }
   }
 
   return null;

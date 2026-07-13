@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  activityPanelWarningMessage,
   looksLikeInternalErrorMessage,
+  toUserFacingActivityErrorMessage,
+  toUserFacingArtifactErrorMessage,
   toUserFacingErrorMessage,
 } from './user-facing-error.ts';
 
@@ -43,6 +46,11 @@ describe('toUserFacingErrorMessage', () => {
     assert.equal(message, 'Unable to load context usage right now.');
   });
 
+  it('maps file-not-found API errors to friendly artifact copy', () => {
+    const message = toUserFacingArtifactErrorMessage('File not found');
+    assert.equal(message, "This file couldn't be opened. It may have been moved or removed.");
+  });
+
   it('preserves already-safe API messages', () => {
     const message = toUserFacingErrorMessage(
       new Error('agent_id is required'),
@@ -50,5 +58,27 @@ describe('toUserFacingErrorMessage', () => {
     );
 
     assert.equal(message, 'agent_id is required');
+  });
+});
+
+describe('toUserFacingActivityErrorMessage', () => {
+  it('replaces internal sqlite output with activity fallback', () => {
+    const message = toUserFacingActivityErrorMessage(
+      new Error(
+        "Command failed: sqlite3 /Users/dev/.cursor/projects/foo/index.db SELECT run_id FROM runs;",
+      ),
+    );
+
+    assert.equal(message, 'Unable to load activity right now. Try again in a moment.');
+  });
+});
+
+describe('activityPanelWarningMessage', () => {
+  it('returns generic partial warning for internal errors', () => {
+    const message = activityPanelWarningMessage(
+      new Error('Command failed: sqlite3 /Users/dev/index.db SELECT 1;'),
+    );
+
+    assert.equal(message, 'Some activity details may be incomplete.');
   });
 });

@@ -60,6 +60,7 @@ import {
 import { isDraftConversationId } from '@/lib/draft-conversation';
 import { parseComputerUseTargetMode, type ComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
 import { computerUseTargetModeLabel } from '@/lib/runtime-computer-use-types';
+import { dedupeArtifactPaths } from '@/lib/file-reference';
 import { collectThreadFilePaths } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
@@ -283,6 +284,17 @@ export default function ChatPane({
   const showStopMode = isStreaming && Boolean(activeRunId) && Boolean(conversationId);
   const dispatchBlocked = sdkHealth === 'unavailable' || sdkHealth === 'checking';
 
+  const loadIntegrationReadiness = useCallback(async (): Promise<void> => {
+    const response = await fetch('/api/runtime/readiness');
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as ReadinessResponse;
+    const slots = payload.slots ?? [];
+    setIntegrationSlots(slots);
+    setSelectedIntegrations(slots.filter((slot) => slot.ready).map((slot) => slot.slotId));
+  }, []);
+
   const voiceInput = useVoiceInput({
     config: voiceInputConfig,
     value: input,
@@ -356,28 +368,9 @@ export default function ChatPane({
 
   const threadFilePaths = useMemo(() => {
     const fromMessages = collectThreadFilePaths(displayMessages);
-    const mutationPaths = sdkObservability.generatedFiles
-      .filter((file) => file.mutation)
-      .map((file) => file.path);
+    const fromObservability = sdkObservability.generatedFiles.map((file) => file.path);
 
-    const seen = new Set<string>();
-    const merged: string[] = [];
-
-    for (const path of mutationPaths) {
-      if (!seen.has(path)) {
-        seen.add(path);
-        merged.push(path);
-      }
-    }
-
-    for (const path of fromMessages) {
-      if (!seen.has(path)) {
-        seen.add(path);
-        merged.push(path);
-      }
-    }
-
-    return merged;
+    return dedupeArtifactPaths([...fromObservability, ...fromMessages], { preserveOrder: true });
   }, [displayMessages, sdkObservability.generatedFiles]);
 
   const showMessageList =
@@ -576,18 +569,7 @@ export default function ChatPane({
         })
         .catch(() => undefined);
 
-      void fetch('/api/runtime/readiness')
-        .then(async (response) => {
-          if (!response.ok) {
-            return;
-          }
-          const payload = (await response.json()) as ReadinessResponse;
-          setIntegrationSlots(payload.slots ?? []);
-          setSelectedIntegrations(
-            payload.slots.filter((slot) => slot.ready).map((slot) => slot.slotId),
-          );
-        })
-        .catch(() => undefined);
+      void loadIntegrationReadiness().catch(() => undefined);
 
       void fetch('/api/settings/computer-use')
         .then(async (response) => {
@@ -629,7 +611,24 @@ export default function ChatPane({
         })
         .catch(() => undefined);
     });
-  }, []);
+  }, [loadIntegrationReadiness]);
+
+  useEffect(() => {
+    function handleFocus(): void {
+      void loadIntegrationReadiness();
+    }
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadIntegrationReadiness]);
+
+  useEffect(() => {
+    if (!showIntegrations) {
+      return;
+    }
+    void loadIntegrationReadiness();
+  }, [loadIntegrationReadiness, showIntegrations]);
 
   useEffect(() => {
     if (!conversationId || isDraftConversationId(conversationId)) {

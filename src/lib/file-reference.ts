@@ -274,6 +274,16 @@ export function normalizeArtifactPath(raw: string): string {
     return trimmed.slice(businessIdx);
   }
 
+  const outputsIdx = trimmed.indexOf('.outputs/');
+  if (outputsIdx >= 0) {
+    return trimmed.slice(outputsIdx);
+  }
+
+  const uploadsIdx = trimmed.indexOf('.uploads/');
+  if (uploadsIdx >= 0) {
+    return trimmed.slice(uploadsIdx);
+  }
+
   const sdlcIdx = trimmed.indexOf('.sdlc/');
   if (sdlcIdx >= 0) {
     return trimmed.slice(sdlcIdx);

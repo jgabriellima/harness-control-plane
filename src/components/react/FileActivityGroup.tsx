@@ -39,7 +39,7 @@ export function FileActivityGroup({
         ) : (
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
-        <span>Generated files</span>
+        <span>Files</span>
         <span className="ml-auto rounded-full bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
           {paths.length}
         </span>

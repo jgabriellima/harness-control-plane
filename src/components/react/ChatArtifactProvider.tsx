@@ -21,7 +21,9 @@ import {
   sanitizeChatArtifactLayout,
 } from '@/lib/chat-artifact-layout';
 import { buildWorkspaceFileRawUrl, normalizeArtifactPath } from '@/lib/file-reference';
+import { runtimeLogger, errorFields } from '@/lib/runtime-logger';
 import { installHcpUiBridge } from '@/lib/runtime-ui-bridge';
+import { toUserFacingArtifactErrorMessage } from '@/lib/user-facing-error';
 
 interface ChatArtifactContextValue {
   openArtifact: (filePath: string, projectId?: string) => Promise<void>;
@@ -56,12 +58,18 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
       };
 
       if (!response.ok) {
+        runtimeLogger.warn('chat_artifact.load_failed', {
+          path: normalizedPath,
+          project_id: trimmedProjectId,
+          status: response.status,
+          error: payload.error,
+        });
         setSelection({
           path: normalizedPath,
           content: null,
           mime: 'text/plain',
           loading: false,
-          error: payload.error ?? 'Failed to load file',
+          error: toUserFacingArtifactErrorMessage(payload.error),
           encoding: 'utf8',
           previewUrl: null,
           size: 0,
@@ -84,13 +92,17 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
         previewUrl: buildWorkspaceFileRawUrl(resolvedPath, trimmedProjectId),
       });
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : 'Failed to load file';
+      runtimeLogger.warn('chat_artifact.load_error', {
+        path: normalizedPath,
+        project_id: trimmedProjectId,
+        ...errorFields(loadError),
+      });
       setSelection({
         path: normalizedPath,
         content: null,
         mime: 'text/plain',
         loading: false,
-        error: message,
+        error: toUserFacingArtifactErrorMessage(loadError),
         encoding: 'utf8',
         previewUrl: null,
         size: 0,
