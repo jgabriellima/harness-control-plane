@@ -1,23 +1,58 @@
+import type { AssistantMessagePart } from './message-parts';
+import type { UserContextBadge } from './user-message-display';
+
 export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'thinking' | 'tool';
 
 export interface ChatMessage {
   id: string;
   role: ChatMessageRole;
   content: string;
+  contextBadges?: UserContextBadge[];
+  parts?: AssistantMessagePart[];
   streaming?: boolean;
   durationMs?: number;
   recordedAt?: string;
   toolInput?: string;
   toolOutput?: string;
+  /** Stable id grouping edited versions of the same user turn. */
+  branchAnchorId?: string;
+  /** Active version index within branchAnchorId (0-based). */
+  branchVersionIndex?: number;
+  /** Total versions available for branch navigation UI. */
+  branchVersionCount?: number;
 }
 
-export type RunPhase = 'idle' | 'streaming' | 'completed' | 'failed' | 'interrupted';
+export interface MessageBranchVersion {
+  versionId: string;
+  userMessage: ChatMessage;
+  downstream: ChatMessage[];
+  createdAt: string;
+}
+
+export interface MessageBranchGroup {
+  anchorId: string;
+  activeVersionIndex: number;
+  versions: MessageBranchVersion[];
+}
+
+export type MessageBranchStore = Record<string, MessageBranchGroup>;
+
+export type RunPhase = 'idle' | 'streaming' | 'completed' | 'failed' | 'interrupted' | 'continuable';
 
 export type RunActivityPhase = 'idle' | 'dispatching' | 'thinking' | 'tool' | 'responding';
 
 export type WorkspaceLayoutMode = 'single' | 'split-2' | 'grid-4';
 
 export type SdkHealthStatus = 'unknown' | 'checking' | 'ready' | 'unavailable';
+
+export interface ContinuableRunState {
+  runId: string;
+  agentId: string;
+  message: string;
+  resumePrompt: string;
+  resumable: boolean;
+  reason: 'session_boundary';
+}
 
 export interface ConversationRuntimeState {
   conversationId: string;
@@ -31,10 +66,13 @@ export interface ConversationRuntimeState {
   runActivity: RunActivityPhase;
   toolActivity: string[];
   error: string | null;
+  continuableRun: ContinuableRunState | null;
   lastRequestId?: string | null;
   sdkHealth: SdkHealthStatus;
   sdkHealthMessage: string | null;
+  contextUsageRevision: number;
   hydrated: boolean;
+  messageBranches: MessageBranchStore;
 }
 
 export interface RuntimeHubWireEvent {
@@ -50,6 +88,7 @@ export interface DispatchMessagePayload {
   message: string;
   projectId: string;
   mode?: 'default' | 'deep_research';
+  responseMode?: 'text' | 'openui';
   integrationSlots?: string[];
   attachments?: Array<{ name: string; path?: string; content_type?: string }>;
   /** Per-conversation opt-in for desktop control tools (default false). */
@@ -75,16 +114,22 @@ export interface RuntimeHubContextValue {
   getConversationPhase: (conversationId: string) => RunPhase;
   getConversationState: (conversationId: string) => ConversationRuntimeState | undefined;
   dispatchMessage: (conversationId: string | null, payload: DispatchMessagePayload) => Promise<void>;
+  editUserMessage: (
+    conversationId: string | null,
+    messageId: string,
+    payload: DispatchMessagePayload,
+  ) => Promise<void>;
+  switchMessageBranchVersion: (
+    conversationId: string,
+    anchorId: string,
+    direction: 'prev' | 'next',
+  ) => void;
   cancelActiveRun: (conversationId: string) => Promise<void>;
+  resumeContinuableRun: (conversationId: string) => Promise<boolean>;
+  dismissContinuableRun: (conversationId: string) => void;
   hydrateConversation: (conversationId: string) => Promise<void>;
   ensureSdkHealth: (conversationId: string, projectId: string, options?: { force?: boolean }) => Promise<boolean>;
 }
-
-export const WELCOME_MESSAGE: ChatMessage = {
-  id: 'welcome',
-  role: 'system',
-  content: 'Ask the runtime anything. Slash commands are loaded from the harness on each request.',
-};
 
 export const LAYOUT_STORAGE_KEY = 'runtime-hub-layout-mode';
 export const PANES_STORAGE_KEY = 'runtime-hub-pane-ids';

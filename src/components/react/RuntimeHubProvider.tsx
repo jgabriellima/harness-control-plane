@@ -32,6 +32,14 @@ import {
   type ContinuableRunRegistryEntry,
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
+import {
+  annotateUserMessagesWithBranches,
+  loadBranchStore,
+  persistBranchStore,
+  prepareEditBranch,
+  switchBranchVersion,
+  tagNewUserMessage,
+} from '@/lib/conversation-message-branches';
 import { seedUserMessageFromTitle, cachePendingUserMessage, clearPendingUserMessage, isLiveConversationState, resolveHydratedMessages } from '@/lib/conversation-message-seed';
 import {
   buildDispatchContextBadges,
@@ -863,6 +871,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           updateConversation(conversationId, (state) => {
             const restored =
               payload.messages.length > 0 ? mapHydratedMessages(payload.messages) : [];
+            const branchStore = loadBranchStore(conversationId);
             return {
               ...state,
               title: payload.title,
@@ -870,6 +879,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
               agentId: payload.agentId,
               updatedAt: payload.updatedAt,
               messages: resolveHydratedMessages(state, restored, payload.title, conversationId),
+              messageBranches: branchStore,
               hydrated: true,
               error: null,
             };
@@ -1074,6 +1084,230 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         thinkingMessageId,
       });
 
+      updateConversation(targetId, (current) => {
+        const nextBranches = current.messageBranches;
+        persistBranchStore(targetId, nextBranches);
+        return {
+          ...current,
+          error: null,
+          runPhase: 'streaming',
+          runActivity: 'dispatching',
+          toolActivity: [],
+          activeRunId: null,
+          messages: [
+            ...current.messages,
+            tagNewUserMessage({
+              id: userMessageId,
+              role: 'user',
+              content: formattedUserMessage.body,
+              contextBadges: userContextBadges.length > 0 ? userContextBadges : undefined,
+              recordedAt: new Date().toISOString(),
+            }),
+            {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: '',
+              streaming: true,
+              recordedAt: new Date().toISOString(),
+            },
+          ],
+        };
+      });
+
+      cachePendingUserMessage(
+        targetId,
+        formattedUserMessage.body,
+        userContextBadges.length > 0 ? userContextBadges : undefined,
+      );
+
+      try {
+        const postChat = async (allowAuthRetry: boolean): Promise<Response> => {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project_id: payload.projectId,
+              conversation_id: persistedConversationId,
+              message: payload.message,
+              mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
+              integration_slots: payload.integrationSlots ?? [],
+              attachments: payload.attachments ?? [],
+              agent_id: allowAuthRetry ? null : state.agentId,
+              computer_use_enabled: payload.computerUseEnabled === true,
+              computer_use_mode: payload.computerUseMode,
+              metadata: {
+                ...(payload.scheduleInterview ? { schedule_interview: true } : {}),
+              },
+            }),
+          });
+
+          if (response.status === 503 && allowAuthRetry) {
+            await fetch(
+              `/api/runtime/reconcile-auth?project_id=${encodeURIComponent(payload.projectId)}`,
+              { method: 'POST' },
+            );
+            return postChat(false);
+          }
+
+          return response;
+        };
+
+        const response = await postChat(true);
+
+        const body = (await response.json()) as {
+          run_id: string;
+          agent_id: string;
+          request_id?: string;
+          error?: string;
+          phase?: string;
+          detail?: string;
+        };
+
+        if (!response.ok) {
+          logInternalRuntimeError('dispatch', new Error(body.error ?? 'Runtime dispatch failed'), {
+            phase: body.phase,
+            request_id: body.request_id,
+            detail: body.detail,
+          });
+          throw new Error(toUserFacingRuntimeDispatchErrorMessage(body.error ?? 'Runtime dispatch failed'));
+        }
+
+        updateConversation(targetId, (current) => ({
+          ...current,
+          activeRunId: body.run_id,
+          agentId: body.agent_id,
+          projectId: payload.projectId,
+          lastRequestId: body.request_id ?? null,
+        }));
+      } catch (error) {
+        turnTrackingRef.current.delete(targetId);
+        logInternalRuntimeError('dispatch.catch', error);
+        const message = toUserFacingRuntimeDispatchErrorMessage(error);
+        updateConversation(targetId, (current) => ({
+          ...current,
+          activeRunId: null,
+          runPhase: 'failed',
+          runActivity: 'idle',
+          error: message,
+          messages: current.messages.map((entry) =>
+            entry.id === assistantMessageId
+              ? { ...entry, content: message, streaming: false, role: 'system' }
+              : entry,
+          ),
+        }));
+      }
+    },
+    [conversations, ensurePersistedConversation, ensureSdkHealth, updateConversation],
+  );
+
+  const editUserMessage = useCallback(
+    async (
+      conversationId: string | null,
+      messageId: string,
+      payload: DispatchMessagePayload,
+    ): Promise<void> => {
+      let targetId = conversationId ?? DRAFT_CONVERSATION_ID;
+      let persistedConversationId = conversationId;
+
+      try {
+        const ensured = await ensurePersistedConversation(conversationId, payload.projectId);
+        targetId = ensured.conversationId;
+        persistedConversationId = ensured.conversationId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create conversation';
+        updateConversation(targetId, (current) => ({
+          ...current,
+          error: message,
+        }));
+        return;
+      }
+
+      const state = conversations.get(targetId) ?? createConversationState(targetId);
+
+      if (state.runPhase === 'streaming') {
+        return;
+      }
+
+      const branchResult = prepareEditBranch(
+        state.messageBranches,
+        state.messages,
+        messageId,
+        payload.message,
+      );
+      if (!branchResult) {
+        return;
+      }
+
+      if (state.sdkHealth !== 'ready') {
+        void ensureSdkHealth(targetId, payload.projectId, {
+          force: state.sdkHealth === 'unavailable',
+        });
+      }
+
+      const commandsResponse = await fetch(
+        `/api/runtime/commands?project_id=${encodeURIComponent(payload.projectId)}`,
+      );
+      if (!commandsResponse.ok) {
+        throw new Error('Failed to load harness commands');
+      }
+      const commandsPayload = (await commandsResponse.json()) as {
+        commands: Array<{ command: string }>;
+      };
+      const knownCommands = commandsPayload.commands.map((item) => item.command);
+
+      if (isUnknownSlashCommand(payload.message, knownCommands)) {
+        updateConversation(targetId, (current) => ({
+          ...current,
+          error: 'Unknown slash command.',
+        }));
+        return;
+      }
+
+      const turnStamp = Date.now();
+      const thinkingMessageId = `thinking-${turnStamp}`;
+      const assistantMessageId = `assistant-${turnStamp}`;
+
+      const trimmedMessage = payload.message.trimStart();
+      const presentationLabel = trimmedMessage.startsWith('/openui')
+        ? 'Rich UI'
+        : trimmedMessage.startsWith('/text')
+          ? 'Plain text'
+          : undefined;
+
+      const formattedUserMessage = formatUserMessageForDisplay(payload.message);
+      const userContextBadges = mergeUserContextBadges(
+        formattedUserMessage.badges,
+        buildDispatchContextBadges({
+          message: payload.message,
+          mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
+          computerUseEnabled: payload.computerUseEnabled === true,
+          computerUseMode: payload.computerUseMode,
+          integrationSlots: payload.integrationSlots ?? [],
+          attachments: payload.attachments ?? [],
+          scheduleInterview: payload.scheduleInterview === true,
+          presentationLabel,
+        }),
+      );
+
+      turnTrackingRef.current.set(targetId, {
+        assistantMessageId,
+        thinkingMessageId,
+      });
+
+      const editedUserIndex = branchResult.messages.length - 1;
+      const messagesWithAssistant = [
+        ...branchResult.messages,
+        {
+          id: assistantMessageId,
+          role: 'assistant' as const,
+          content: '',
+          streaming: true,
+          recordedAt: new Date().toISOString(),
+        },
+      ];
+
+      persistBranchStore(targetId, branchResult.store);
+
       updateConversation(targetId, (current) => ({
         ...current,
         error: null,
@@ -1081,23 +1315,17 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         runActivity: 'dispatching',
         toolActivity: [],
         activeRunId: null,
-        messages: [
-          ...current.messages,
-          {
-            id: userMessageId,
-            role: 'user',
-            content: formattedUserMessage.body,
-            contextBadges: userContextBadges.length > 0 ? userContextBadges : undefined,
-            recordedAt: new Date().toISOString(),
-          },
-          {
-            id: assistantMessageId,
-            role: 'assistant',
-            content: '',
-            streaming: true,
-            recordedAt: new Date().toISOString(),
-          },
-        ],
+        messageBranches: branchResult.store,
+        messages: messagesWithAssistant.map((message, index) => {
+          if (index === editedUserIndex && message.role === 'user') {
+            return tagNewUserMessage({
+              ...message,
+              content: formattedUserMessage.body,
+              contextBadges: userContextBadges.length > 0 ? userContextBadges : undefined,
+            });
+          }
+          return message;
+        }),
       }));
 
       cachePendingUserMessage(
@@ -1184,6 +1412,28 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
     },
     [conversations, ensurePersistedConversation, ensureSdkHealth, updateConversation],
+  );
+
+  const switchMessageBranchVersion = useCallback(
+    (conversationId: string, anchorId: string, direction: 'prev' | 'next'): void => {
+      const state = conversations.get(conversationId);
+      if (!state || state.runPhase === 'streaming') {
+        return;
+      }
+
+      const result = switchBranchVersion(state.messageBranches, state.messages, anchorId, direction);
+      if (!result) {
+        return;
+      }
+
+      persistBranchStore(conversationId, result.store);
+      updateConversation(conversationId, (current) => ({
+        ...current,
+        messageBranches: result.store,
+        messages: annotateUserMessagesWithBranches(result.messages, result.store),
+      }));
+    },
+    [conversations, updateConversation],
   );
 
   const resumeContinuableRun = useCallback(
@@ -1351,7 +1601,14 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
   const getConversationState = useCallback(
     (conversationId: string): ConversationRuntimeState | undefined => {
-      return conversations.get(conversationId);
+      const state = conversations.get(conversationId);
+      if (!state) {
+        return undefined;
+      }
+      return {
+        ...state,
+        messages: annotateUserMessagesWithBranches(state.messages, state.messageBranches),
+      };
     },
     [conversations],
   );
@@ -1372,6 +1629,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       getConversationPhase,
       getConversationState,
       dispatchMessage,
+      editUserMessage,
+      switchMessageBranchVersion,
       cancelActiveRun,
       resumeContinuableRun,
       dismissContinuableRun,
@@ -1392,6 +1651,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       getConversationPhase,
       getConversationState,
       dispatchMessage,
+      editUserMessage,
+      switchMessageBranchVersion,
       cancelActiveRun,
       resumeContinuableRun,
       dismissContinuableRun,

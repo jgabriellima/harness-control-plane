@@ -40,6 +40,7 @@ export function createConversationState(conversationId: string): ConversationRun
     sdkHealthMessage: null,
     contextUsageRevision: 0,
     hydrated: false,
+    messageBranches: {},
   };
 }
 
@@ -302,9 +303,11 @@ export function applyHubEvent(
       typeof event.payload.message === 'string' ? event.payload.message : 'Runtime stream failed';
     logInternalRuntimeError('stream.error', rawMessage, { run_id: event.run_id });
     const message = toUserFacingRuntimeStreamErrorMessage(rawMessage);
+    const clearAgent = event.payload.clear_agent === true;
     return {
       ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
       error: message,
+      ...(clearAgent ? { agentId: null } : {}),
       messages: state.messages.map((entry) =>
         entry.id === assistantMessageId
           ? {

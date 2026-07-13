@@ -254,6 +254,7 @@ export default function ChatPane({
   const [workspaceMentionFiles, setWorkspaceMentionFiles] = useState<FileMentionSuggestion[]>([]);
   const [hiddenCommands, setHiddenCommands] = useState<Set<string>>(() => new Set());
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [resumeBusy, setResumeBusy] = useState(false);
   const [voiceInputConfig, setVoiceInputConfig] = useState<VoiceInputConfig>(
     DEFAULT_VOICE_INPUT_CONFIG,
@@ -268,13 +269,14 @@ export default function ChatPane({
     clientSdkMessageContext(),
   );
   const [contextUsageEnabled, setContextUsageEnabled] = useState(true);
+  const [composerToolActivityEnabled, setComposerToolActivityEnabled] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(
     () =>
       Boolean(conversationId) &&
       !isDraftConversationId(conversationId) &&
       !(hub.getConversationState(conversationId ?? '')?.hydrated ?? false),
   );
-  const { openArtifact, selection: selectedArtifact } = useChatArtifact();
+  const { openArtifact, selection: selectedArtifact, setThreadMessages } = useChatArtifact();
   const { openBrowser, navigateBrowser, selection: browserSelection } = useRuntimeBrowser();
   const { openPreview: openComputerUsePreview, restartPreview, selection: computerUseSelection } = useRuntimeComputerUse();
 
@@ -308,15 +310,25 @@ export default function ChatPane({
   const dispatchBlocked = sdkHealth === 'unavailable' || sdkHealth === 'checking';
 
   const loadIntegrationReadiness = useCallback(async (): Promise<void> => {
-    const response = await fetch('/api/runtime/readiness');
+    const response = await fetch(
+      `/api/runtime/readiness?project_id=${encodeURIComponent(projectId)}`,
+    );
     if (!response.ok) {
       return;
     }
     const payload = (await response.json()) as ReadinessResponse;
     const slots = payload.slots ?? [];
     setIntegrationSlots(slots);
-    setSelectedIntegrations(slots.filter((slot) => slot.ready).map((slot) => slot.slotId));
-  }, []);
+    setSelectedIntegrations((current) => {
+      if (current.length > 0) {
+        return current;
+      }
+      const connected = slots
+        .filter((slot) => slot.oauthConnected)
+        .map((slot) => slot.slotId);
+      return connected;
+    });
+  }, [projectId]);
 
   const voiceInput = useVoiceInput({
     config: voiceInputConfig,
@@ -408,6 +420,10 @@ export default function ChatPane({
 
     return dedupeArtifactPaths([...fromObservability, ...fromMessages], { preserveOrder: true });
   }, [displayMessages, sdkObservability.generatedFiles]);
+
+  useEffect(() => {
+    setThreadMessages(displayMessages);
+  }, [displayMessages, setThreadMessages]);
 
   const showMessageList =
     hasConversationContent ||
@@ -559,7 +575,7 @@ export default function ChatPane({
           } | null;
           surface?: RuntimeSdkMessageContext['surface'];
           presentationTitle?: string;
-          features?: { context_usage_panel?: boolean };
+          features?: { context_usage_panel?: boolean; composer_tool_activity?: boolean };
         };
         setSdkMessageContext(
           clientSdkMessageContext({
@@ -569,6 +585,9 @@ export default function ChatPane({
         );
         if (payload.features?.context_usage_panel !== undefined) {
           setContextUsageEnabled(payload.features.context_usage_panel);
+        }
+        if (payload.features?.composer_tool_activity !== undefined) {
+          setComposerToolActivityEnabled(payload.features.composer_tool_activity);
         }
         if (payload.voice_input) {
           setVoiceInputConfig(payload.voice_input);
@@ -961,22 +980,54 @@ export default function ChatPane({
       path: file.path,
     }));
 
+    const editingId = editingMessageId;
     setInput('');
     setComposerFileMentions([]);
     setComposerSlashCommand(null);
     setAttachments([]);
+    setEditingMessageId(null);
 
-    await dispatchMessage({
+    const dispatchPayload = {
       message,
       projectId,
-      mode: deepResearch ? 'deep_research' : 'default',
+      mode: deepResearch ? ('deep_research' as const) : ('default' as const),
       integrationSlots: selectedIntegrations,
       attachments: [...attachments, ...mentionAttachments],
       computerUseEnabled: computerUseMode !== null,
       computerUseMode: computerUseMode ?? undefined,
       scheduleInterview: isScheduleVariant,
-    });
+    };
+
+    if (editingId) {
+      await hub.editUserMessage(conversationId, editingId, dispatchPayload);
+      return;
+    }
+
+    await dispatchMessage(dispatchPayload);
   }
+
+  const handleEditMessage = useCallback((messageId: string, content: string) => {
+    if (isLoading) {
+      return;
+    }
+    setEditingMessageId(messageId);
+    setInput(content);
+    setComposerFileMentions([]);
+    setComposerSlashCommand(null);
+    setAttachments([]);
+  }, [isLoading]);
+
+  const handleSwitchBranchVersion = useCallback((anchorId: string, direction: 'prev' | 'next') => {
+    if (!conversationId || isLoading) {
+      return;
+    }
+    hub.switchMessageBranchVersion(conversationId, anchorId, direction);
+  }, [conversationId, hub, isLoading]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setInput('');
+  }, []);
 
   useEffect(() => {
     if (!isScheduleVariant || isLoading || !onScheduleRegistered) {
@@ -1148,6 +1199,9 @@ export default function ChatPane({
                 void openArtifact(filePath, projectId);
               }}
               onLinkClick={handleBrowserLinkClick}
+              onEditMessage={handleEditMessage}
+              onSwitchBranchVersion={handleSwitchBranchVersion}
+              branchNavigationDisabled={isStreaming}
             />
             <div ref={messagesEndRef} className="h-px shrink-0" />
           </>
@@ -1156,16 +1210,18 @@ export default function ChatPane({
 
       <div className="shrink-0 px-4 pb-4" data-testid="chat-pane-composer">
         <div className="relative mx-auto max-w-3xl">
-          <ComposerToolActivity
-            messages={displayMessages}
-            streaming={isStreaming}
-            agentId={agentId}
-            projectId={projectId}
-            conversationId={conversationId ?? ''}
-            refreshRevision={contextUsageRevision}
-            toolActivity={state.toolActivity}
-            runPhase={state.runPhase}
-          />
+          {composerToolActivityEnabled ? (
+            <ComposerToolActivity
+              messages={displayMessages}
+              streaming={isStreaming}
+              agentId={agentId}
+              projectId={projectId}
+              conversationId={conversationId ?? ''}
+              refreshRevision={contextUsageRevision}
+              toolActivity={state.toolActivity}
+              runPhase={state.runPhase}
+            />
+          ) : null}
 
           {threadFilePaths.length > 0 ? (
             <div className="mb-2" data-testid="chat-composer-generated-files">
@@ -1270,7 +1326,9 @@ export default function ChatPane({
                       className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${
                         selectedIntegrations.includes(slot.slotId)
                           ? 'bg-gray-100 text-gray-800 ring-gray-200'
-                          : 'bg-white text-gray-600 ring-gray-200'
+                          : slot.oauthConnected
+                            ? 'bg-amber-50 text-amber-800 ring-amber-200'
+                            : 'bg-white text-gray-600 ring-gray-200'
                       }`}
                       onClick={() => toggleIntegration(slot.slotId)}
                     >
@@ -1309,6 +1367,22 @@ export default function ChatPane({
               progress={voiceTranscriptionProgress}
               message={voiceTranscriptionMessage}
             />
+          ) : null}
+
+          {editingMessageId ? (
+            <div
+              className="mb-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              data-testid="chat-edit-mode-banner"
+            >
+              <span>Editing message — send to create a new branch</span>
+              <button
+                type="button"
+                className="font-medium text-amber-800 underline-offset-2 hover:underline"
+                onClick={handleCancelEdit}
+              >
+                Cancel
+              </button>
+            </div>
           ) : null}
 
           <PromptInput
