@@ -3,12 +3,13 @@
 import React from 'react';
 
 import ChatPane from './ChatPane';
-import ChatPaneEmptySlot from './ChatPaneEmptySlot';
+import ChatPaneSlot from './ChatPaneSlot';
 import { ChatArtifactProvider, ChatArtifactSplitShell } from './ChatArtifactProvider';
 import ContextPanel from './ContextPanel';
 import { ContextUsageProvider } from './ContextUsageProvider';
 import { ToolActivityProvider } from './ToolActivityProvider';
 import ExecutionsListView from './ExecutionsListView';
+import LibraryView from './LibraryView';
 import ResizableOrchestrationShell from './ResizableOrchestrationShell';
 import ScheduledView from './ScheduledView';
 import SettingsView from './SettingsView';
@@ -22,7 +23,12 @@ import { RuntimeHubProvider, useRuntimeHub } from './RuntimeHubProvider';
 import DesktopCloseGuard from './DesktopCloseGuard';
 import { ReaderPreferencesProvider } from './ReaderPreferencesProvider';
 import { DRAFT_CONVERSATION_ID, isDraftConversationId } from '@/lib/draft-conversation';
-import { conversationIdFromPath, isChatRoute, useShellPathname } from '@/lib/shell-navigation';
+import {
+  conversationIdFromPath,
+  isChatRoute,
+  isLibraryRoute,
+  useShellPathname,
+} from '@/lib/shell-navigation';
 
 function resolveSinglePaneConversationId(
   pathname: string,
@@ -97,14 +103,13 @@ function ChatWorkspaceGrid({
       <div className={gridClass} data-testid="chat-workspace-grid">
         {cells.map((paneConversationId, index) => (
           <div key={`pane-${index}`} className="min-h-0 bg-white">
-            {paneConversationId ? (
-              <ChatPane conversationId={paneConversationId} compact paneIndex={index} />
-            ) : (
-              <ChatPaneEmptySlot
-                paneIndex={index}
-                paneLabel={mode === 'split-2' ? (index === 0 ? 'Left pane' : 'Right pane') : `Pane ${index + 1}`}
-              />
-            )}
+            <ChatPaneSlot
+              paneIndex={index}
+              paneConversationId={paneConversationId}
+              paneLabel={
+                mode === 'split-2' ? (index === 0 ? 'Left pane' : 'Right pane') : `Pane ${index + 1}`
+              }
+            />
           </div>
         ))}
       </div>
@@ -141,6 +146,13 @@ function RuntimeShellBody({
     }
     if (pathname === '/settings' || pathname.startsWith('/settings/')) {
       return <SettingsView />;
+    }
+    if (isLibraryRoute(pathname)) {
+      return (
+        <ChatArtifactSplitShell>
+          <LibraryView />
+        </ChatArtifactSplitShell>
+      );
     }
     return children;
   })();

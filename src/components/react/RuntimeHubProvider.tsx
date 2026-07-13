@@ -32,7 +32,7 @@ import {
   type ContinuableRunRegistryEntry,
 } from '@/lib/active-run-sync';
 import { mapHydratedMessages } from '@/lib/chat-message-mapper';
-import { seedUserMessageFromTitle, cachePendingUserMessage, clearPendingUserMessage } from '@/lib/conversation-message-seed';
+import { seedUserMessageFromTitle, cachePendingUserMessage, clearPendingUserMessage, isLiveConversationState, resolveHydratedMessages } from '@/lib/conversation-message-seed';
 import {
   buildDispatchContextBadges,
   formatUserMessageForDisplay,
@@ -474,15 +474,22 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         if (event.type === 'error') {
           const message =
             typeof event.payload.message === 'string' ? event.payload.message : '';
-          if (isRunAuthFailureText(message)) {
+          const clearAgent = event.payload.clear_agent === true;
+          const authRelated = clearAgent || isRunAuthFailureText(message);
+          if (authRelated) {
             const projectId = conversations.get(conversationId)?.projectId;
             if (projectId) {
-              void fetchDispatchHealth(projectId, { force: true })
-                .then((health) => {
+              void fetch(
+                `/api/runtime/reconcile-auth?project_id=${encodeURIComponent(projectId)}`,
+                { method: 'POST' },
+              )
+                .then((response) => response.json())
+                .then((body: { health?: { ready?: boolean; message?: string | null } }) => {
                   updateConversation(conversationId, (state) => ({
                     ...state,
-                    sdkHealth: health.ready ? 'ready' : 'unavailable',
-                    sdkHealthMessage: health.message,
+                    agentId: clearAgent ? null : state.agentId,
+                    sdkHealth: body.health?.ready ? 'ready' : 'unavailable',
+                    sdkHealthMessage: body.health?.message ?? state.sdkHealthMessage,
                   }));
                 })
                 .catch(() => undefined);
@@ -753,6 +760,23 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
 
       const alreadyHydrated = hydratedIdsRef.current.has(conversationId);
+      const existingState = conversationsRef.current.get(conversationId);
+
+      if (
+        !alreadyHydrated &&
+        existingState &&
+        isLiveConversationState(existingState) &&
+        existingState.messages.length > 0
+      ) {
+        hydratedIdsRef.current.add(conversationId);
+        updateConversation(conversationId, (state) => ({
+          ...state,
+          hydrated: true,
+          error: null,
+        }));
+        await syncActiveRunForConversation(conversationId);
+        return;
+      }
 
       if (!alreadyHydrated) {
         try {
@@ -840,7 +864,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
               projectId: payload.projectId,
               agentId: payload.agentId,
               updatedAt: payload.updatedAt,
-              messages: seedUserMessageFromTitle(restored, payload.title, conversationId),
+              messages: resolveHydratedMessages(state, restored, payload.title, conversationId),
               hydrated: true,
               error: null,
             };
@@ -895,6 +919,8 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       }
 
       const persistedId = payload.conversation.id;
+
+      hydratedIdsRef.current.add(persistedId);
 
       setConversations((current) => {
         const next = new Map(current);
@@ -985,24 +1011,11 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
         }));
       }
 
-      const sdkReady =
-        state.sdkHealth === 'ready'
-          ? true
-          : await ensureSdkHealth(targetId, payload.projectId, {
-              force: state.sdkHealth === 'unavailable',
-            });
-
-      if (!sdkReady) {
-        const healthMessage =
-          conversations.get(targetId)?.sdkHealthMessage ??
-          sdkHealthUnavailableFallback(clientSdkMessageContext());
-        updateConversation(targetId, (current) => ({
-          ...current,
-          error: healthMessage,
-          runPhase: 'failed',
-          runActivity: 'idle',
-        }));
-        return;
+      // Server owns availability gate (assertRuntimeAvailable) — client probe is advisory only.
+      if (state.sdkHealth !== 'ready') {
+        void ensureSdkHealth(targetId, payload.projectId, {
+          force: state.sdkHealth === 'unavailable',
+        });
       }
 
       const commandsResponse = await fetch(
@@ -1089,24 +1102,38 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       );
 
       try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: payload.projectId,
-            conversation_id: persistedConversationId,
-            message: payload.message,
-            mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
-            integration_slots: payload.integrationSlots ?? [],
-            attachments: payload.attachments ?? [],
-            agent_id: state.agentId,
-            computer_use_enabled: payload.computerUseEnabled === true,
-            computer_use_mode: payload.computerUseMode,
-            metadata: {
-              ...(payload.scheduleInterview ? { schedule_interview: true } : {}),
-            },
-          }),
-        });
+        const postChat = async (allowAuthRetry: boolean): Promise<Response> => {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project_id: payload.projectId,
+              conversation_id: persistedConversationId,
+              message: payload.message,
+              mode: payload.mode === 'deep_research' ? 'deep_research' : 'default',
+              integration_slots: payload.integrationSlots ?? [],
+              attachments: payload.attachments ?? [],
+              agent_id: allowAuthRetry ? null : state.agentId,
+              computer_use_enabled: payload.computerUseEnabled === true,
+              computer_use_mode: payload.computerUseMode,
+              metadata: {
+                ...(payload.scheduleInterview ? { schedule_interview: true } : {}),
+              },
+            }),
+          });
+
+          if (response.status === 503 && allowAuthRetry) {
+            await fetch(
+              `/api/runtime/reconcile-auth?project_id=${encodeURIComponent(payload.projectId)}`,
+              { method: 'POST' },
+            );
+            return postChat(false);
+          }
+
+          return response;
+        };
+
+        const response = await postChat(true);
 
         const body = (await response.json()) as {
           run_id: string;
@@ -1230,6 +1257,11 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     (paneIndex: number, conversationId: string) => {
       setPaneConversationIdsState((current) => {
         const normalized = normalizePaneIds(current, layoutMode);
+        for (let index = 0; index < normalized.length; index += 1) {
+          if (index !== paneIndex && normalized[index] === conversationId) {
+            normalized[index] = '';
+          }
+        }
         normalized[paneIndex] = conversationId;
         persistLayout(layoutMode, normalized);
         syncUrlLayout(layoutMode, normalized);

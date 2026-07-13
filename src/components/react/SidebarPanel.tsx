@@ -32,6 +32,7 @@ import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-sto
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 import { readPinnedConversationIds } from '@/lib/pinned-conversations';
+import { setConversationDragData } from '@/lib/conversation-pane-drag';
 
 interface ProjectItem {
   id: string;
@@ -439,6 +440,7 @@ function ConversationSidebarLink({
 }) {
   const hub = useRuntimeHub();
   const isStreaming = useConversationStreamingPhase(conversation.id);
+  const isDraggable = hub.layoutMode !== 'single';
 
   function handleClick(event: React.MouseEvent<HTMLAnchorElement>): void {
     event.preventDefault();
@@ -461,16 +463,31 @@ function ConversationSidebarLink({
     hub.navigateToConversation(conversation.id);
   }
 
+  function handleDragStart(event: React.DragEvent<HTMLAnchorElement>): void {
+    if (!isDraggable) {
+      event.preventDefault();
+      return;
+    }
+
+    setConversationDragData(event.dataTransfer, conversation.id);
+  }
+
   return (
     <a
       href={conversationHref(conversation.id)}
+      draggable={isDraggable}
+      onDragStart={handleDragStart}
       onClick={handleClick}
       className={`block w-full truncate rounded-lg px-3 py-1.5 text-sm transition-colors ${
+        isDraggable ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${
         isActive
           ? 'bg-gray-100 font-medium text-gray-800'
           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
       }`}
       aria-current={isActive ? 'page' : undefined}
+      data-testid={`sidebar-conversation-${conversation.id}`}
+      data-conversation-draggable={isDraggable ? 'true' : 'false'}
     >
       <span className="flex items-center gap-2">
         <span className="truncate">{formatSessionTitle(conversation)}</span>
@@ -483,6 +500,53 @@ function ConversationSidebarLink({
         ) : null}
       </span>
     </a>
+  );
+}
+
+function DraggableConversationMenuItem({
+  conversation,
+  activeConversationId,
+  onSelect,
+  icon,
+}: {
+  conversation: ConversationItem;
+  activeConversationId: string | null;
+  onSelect: (conversationId: string) => void;
+  icon?: React.ReactNode;
+}) {
+  const hub = useRuntimeHub();
+  const isDraggable = hub.layoutMode !== 'single';
+
+  function handleDragStart(event: React.DragEvent<HTMLButtonElement>): void {
+    if (!isDraggable) {
+      event.preventDefault();
+      return;
+    }
+
+    setConversationDragData(event.dataTransfer, conversation.id);
+  }
+
+  return (
+    <button
+      key={conversation.id}
+      type="button"
+      role="menuitem"
+      draggable={isDraggable}
+      onDragStart={handleDragStart}
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+        isDraggable ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${
+        conversation.id === activeConversationId
+          ? 'bg-gray-100 font-medium text-gray-900'
+          : 'text-gray-700 hover:bg-gray-50'
+      }`}
+      data-testid={`sidebar-flyout-conversation-${conversation.id}`}
+      data-conversation-draggable={isDraggable ? 'true' : 'false'}
+      onClick={() => onSelect(conversation.id)}
+    >
+      {icon}
+      <span className="truncate">{formatSessionTitle(conversation)}</span>
+    </button>
   );
 }
 
@@ -602,23 +666,16 @@ function CollapsedSidebarRail({
                 <p className="px-3 py-2 text-xs text-gray-500">No recent chats</p>
               ) : (
                 recentConversations.map((conversation) => (
-                  <button
+                  <DraggableConversationMenuItem
                     key={conversation.id}
-                    type="button"
-                    role="menuitem"
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                      conversation.id === activeConversationId
-                        ? 'bg-gray-100 font-medium text-gray-900'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
+                    conversation={conversation}
+                    activeConversationId={activeConversationId}
+                    onSelect={(conversationId) => {
                       closeFlyouts();
-                      onOpenConversation(conversation.id);
+                      onOpenConversation(conversationId);
                     }}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                    <span className="truncate">{formatSessionTitle(conversation)}</span>
-                  </button>
+                    icon={<MessageSquare className="h-3.5 w-3.5 shrink-0 text-gray-400" />}
+                  />
                 ))
               )}
             </>
@@ -644,22 +701,15 @@ function CollapsedSidebarRail({
               <p className="px-3 py-2 text-xs text-gray-500">No pinned chats</p>
             ) : (
               pinnedConversations.map((conversation) => (
-                <button
+                <DraggableConversationMenuItem
                   key={conversation.id}
-                  type="button"
-                  role="menuitem"
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                    conversation.id === activeConversationId
-                      ? 'bg-gray-100 font-medium text-gray-900'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-                  onClick={() => {
+                  conversation={conversation}
+                  activeConversationId={activeConversationId}
+                  onSelect={(conversationId) => {
                     closeFlyouts();
-                    onOpenConversation(conversation.id);
+                    onOpenConversation(conversationId);
                   }}
-                >
-                  <span className="truncate">{formatSessionTitle(conversation)}</span>
-                </button>
+                />
               ))
             )
           }
@@ -1078,6 +1128,19 @@ export default function SidebarPanel({
             void handleNewChat();
           }}
           onOpenConversation={(conversationId) => {
+            if (hub.layoutMode !== 'single') {
+              const count = hub.layoutMode === 'grid-4' ? 4 : 2;
+              const panes = hub.paneConversationIds;
+              let emptyIndex: number | null = null;
+              for (let index = 0; index < count; index += 1) {
+                if (!panes[index]) {
+                  emptyIndex = index;
+                  break;
+                }
+              }
+              hub.navigateToConversation(conversationId, { paneIndex: emptyIndex ?? 0 });
+              return;
+            }
             hub.navigateToConversation(conversationId);
           }}
           onActivateProject={(projectId) => {

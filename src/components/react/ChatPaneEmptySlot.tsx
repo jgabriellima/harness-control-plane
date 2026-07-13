@@ -48,8 +48,8 @@ export default function ChatPaneEmptySlot({ paneIndex, paneLabel }: ChatPaneEmpt
       <div className="max-w-xs space-y-1">
         <p className="text-sm font-medium text-gray-900">{label} is empty</p>
         <p className="text-xs leading-relaxed text-gray-500">
-          Sidebar links focus the primary pane. Start a separate runtime session here, or pick a chat
-          from the sidebar to fill the next open slot.
+          Sidebar links focus the primary pane. Start a separate runtime session here, drag a chat
+          from the sidebar into this pane, or click a chat to fill the next open slot.
         </p>
       </div>
       <Button
