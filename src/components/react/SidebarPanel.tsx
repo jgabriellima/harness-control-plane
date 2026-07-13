@@ -2,15 +2,14 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createPortal } from 'react-dom';
 import {
   Calendar,
-  Code2,
   Folder,
-  LayoutGrid,
   Library,
-  MoreHorizontal,
+  MessageSquare,
   PanelLeftClose,
   Pin,
   Search,
   SquarePen,
+  Zap,
 } from 'lucide-react';
 
 import type { ExecutionSummary } from '../../lib/harness-types';
@@ -87,11 +86,6 @@ function activeConversationFromPath(pathname: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
-function activeExecutionFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/execution\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
-}
-
 function isRunsSectionActive(pathname: string): boolean {
   return pathname === '/executions' || pathname.startsWith('/execution/');
 }
@@ -106,18 +100,6 @@ function isScheduledActive(pathname: string): boolean {
 
 function isLibraryActive(pathname: string): boolean {
   return pathname === '/library' || pathname.startsWith('/library/');
-}
-
-function isAppsActive(pathname: string): boolean {
-  return pathname === '/settings' || pathname.startsWith('/settings/');
-}
-
-function isCodexActive(pathname: string): boolean {
-  return pathname === '/dashboard' || pathname.startsWith('/dashboard/');
-}
-
-function settingsHref(): string {
-  return '/settings';
 }
 
 function toggleSidebarExpanded(expanded: boolean): void {
@@ -261,7 +243,7 @@ function SidebarRailFlyout({
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
-  triggerMode: 'click' | 'hover';
+  triggerMode: 'click' | 'hover' | 'both';
   menu: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -338,8 +320,8 @@ function SidebarRailFlyout({
               zIndex: 100,
             }}
             className="max-h-72 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-            onMouseEnter={triggerMode === 'hover' ? clearHoverTimer : undefined}
-            onMouseLeave={triggerMode === 'hover' ? scheduleHoverClose : undefined}
+            onMouseEnter={triggerMode === 'hover' || triggerMode === 'both' ? clearHoverTimer : undefined}
+            onMouseLeave={triggerMode === 'hover' || triggerMode === 'both' ? scheduleHoverClose : undefined}
           >
             <p className="border-b border-gray-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
               {label}
@@ -355,14 +337,16 @@ function SidebarRailFlyout({
       className="relative"
       ref={containerRef}
       onMouseEnter={
-        triggerMode === 'hover'
+        triggerMode === 'hover' || triggerMode === 'both'
           ? () => {
               clearHoverTimer();
               onOpen();
             }
           : undefined
       }
-      onMouseLeave={triggerMode === 'hover' ? scheduleHoverClose : undefined}
+      onMouseLeave={
+        triggerMode === 'hover' || triggerMode === 'both' ? scheduleHoverClose : undefined
+      }
     >
       <SidebarIconButton
         ref={triggerRef}
@@ -505,12 +489,18 @@ function ConversationSidebarLink({
 function CollapsedSidebarRail({
   runsSectionActive,
   libraryActive,
+  scheduledActive,
   pinnedConversations,
   conversations,
+  projects,
+  executions,
   activeConversationId,
+  activeProjectId,
+  activeProjectName,
   onOpenSearchModal,
   onNewChat,
   onOpenConversation,
+  onActivateProject,
   displayName,
   subtitle,
   initials,
@@ -520,12 +510,18 @@ function CollapsedSidebarRail({
 }: {
   runsSectionActive: boolean;
   libraryActive: boolean;
+  scheduledActive: boolean;
   pinnedConversations: ConversationItem[];
   conversations: ConversationItem[];
+  projects: ProjectItem[];
+  executions: ExecutionSummary[];
   activeConversationId: string | null;
+  activeProjectId: string | null;
+  activeProjectName: string | null;
   onOpenSearchModal: () => void;
   onNewChat: () => void;
   onOpenConversation: (conversationId: string) => void;
+  onActivateProject: (projectId: string) => void;
   displayName: string;
   subtitle: string;
   initials: string;
@@ -534,10 +530,18 @@ function CollapsedSidebarRail({
   brandAssets?: PresentationAssets;
 }) {
   const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [chatsOpen, setChatsOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const [runsOpen, setRunsOpen] = useState(false);
 
   function closeFlyouts(): void {
     setPinnedOpen(false);
+    setChatsOpen(false);
+    setProjectsOpen(false);
+    setRunsOpen(false);
   }
+
+  const recentConversations = conversations.slice(0, CHATS_PREVIEW_LIMIT);
 
   return (
     <aside
@@ -569,6 +573,61 @@ function CollapsedSidebarRail({
         </SidebarIconButton>
 
         <SidebarRailFlyout
+          label="Recent chats"
+          testId="sidebar-rail-chats"
+          menuTestId="sidebar-rail-chats-menu"
+          active={Boolean(activeConversationId)}
+          open={chatsOpen}
+          onOpen={() => {
+            closeFlyouts();
+            setChatsOpen(true);
+          }}
+          onClose={() => setChatsOpen(false)}
+          triggerMode="both"
+          menu={
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  closeFlyouts();
+                  onNewChat();
+                }}
+              >
+                <SquarePen className="h-3.5 w-3.5" />
+                New chat
+              </button>
+              {recentConversations.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No recent chats</p>
+              ) : (
+                recentConversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    role="menuitem"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                      conversation.id === activeConversationId
+                        ? 'bg-gray-100 font-medium text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      closeFlyouts();
+                      onOpenConversation(conversation.id);
+                    }}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span className="truncate">{formatSessionTitle(conversation)}</span>
+                  </button>
+                ))
+              )}
+            </>
+          }
+        >
+          <MessageSquare className="h-4 w-4" />
+        </SidebarRailFlyout>
+
+        <SidebarRailFlyout
           label="Pinned"
           testId="sidebar-rail-pinned"
           menuTestId="sidebar-rail-pinned-menu"
@@ -579,7 +638,7 @@ function CollapsedSidebarRail({
             setPinnedOpen(true);
           }}
           onClose={() => setPinnedOpen(false)}
-          triggerMode="hover"
+          triggerMode="both"
           menu={
             pinnedConversations.length === 0 ? (
               <p className="px-3 py-2 text-xs text-gray-500">No pinned chats</p>
@@ -608,6 +667,62 @@ function CollapsedSidebarRail({
           <Pin className="h-4 w-4" />
         </SidebarRailFlyout>
 
+        <SidebarRailFlyout
+          label={activeProjectName ? `Project: ${activeProjectName}` : 'Projects'}
+          testId="sidebar-rail-projects"
+          menuTestId="sidebar-rail-projects-menu"
+          active={Boolean(activeProjectId)}
+          open={projectsOpen}
+          onOpen={() => {
+            closeFlyouts();
+            setProjectsOpen(true);
+          }}
+          onClose={() => setProjectsOpen(false)}
+          triggerMode="both"
+          menu={
+            <>
+              {activeProjectName ? (
+                <p className="border-b border-gray-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                  Active · {activeProjectName}
+                </p>
+              ) : null}
+              {projects.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No projects</p>
+              ) : (
+                projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    role="menuitem"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                      project.id === activeProjectId
+                        ? 'bg-gray-100 font-medium text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      closeFlyouts();
+                      onActivateProject(project.id);
+                    }}
+                  >
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span className="truncate">{project.name}</span>
+                  </button>
+                ))
+              )}
+              <a
+                href={projectsHref()}
+                role="menuitem"
+                className="block border-t border-gray-100 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={closeFlyouts}
+              >
+                Manage projects
+              </a>
+            </>
+          }
+        >
+          <Folder className="h-4 w-4" />
+        </SidebarRailFlyout>
+
         <SidebarIconButton
           label="Library"
           testId="sidebar-rail-library"
@@ -616,6 +731,65 @@ function CollapsedSidebarRail({
         >
           <Library className="h-4 w-4" />
         </SidebarIconButton>
+
+        <SidebarIconButton
+          label="Scheduled"
+          testId="sidebar-rail-scheduled"
+          active={scheduledActive}
+          onClick={() => navigateShell('/scheduled')}
+        >
+          <Calendar className="h-4 w-4" />
+        </SidebarIconButton>
+
+        <SidebarRailFlyout
+          label="Workflow runs"
+          testId="sidebar-rail-runs"
+          menuTestId="sidebar-rail-runs-menu"
+          active={runsSectionActive}
+          open={runsOpen}
+          onOpen={() => {
+            closeFlyouts();
+            setRunsOpen(true);
+          }}
+          onClose={() => setRunsOpen(false)}
+          triggerMode="both"
+          menu={
+            <>
+              {executions.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No workflow runs</p>
+              ) : (
+                executions.slice(0, 8).map((execution) => (
+                  <button
+                    key={execution.id}
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full flex-col px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      closeFlyouts();
+                      navigateShell(`/execution/${encodeURIComponent(execution.id)}`);
+                    }}
+                  >
+                    <span className="truncate font-medium">{execution.intent || execution.workflowId}</span>
+                    <span className="truncate text-[10px] text-gray-400">{execution.status}</span>
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full border-t border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  closeFlyouts();
+                  navigateShell('/executions');
+                }}
+              >
+                View all runs
+              </button>
+            </>
+          }
+        >
+          <Zap className="h-4 w-4" />
+        </SidebarRailFlyout>
       </div>
 
       <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-200 px-2 pt-3">
@@ -658,15 +832,11 @@ export default function SidebarPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
 
-  const activeExecutionId = activeExecutionFromPath(pathname);
   const runsSectionActive = isRunsSectionActive(pathname);
   const scheduledActive = isScheduledActive(pathname);
   const libraryActive = isLibraryActive(pathname);
-  const appsActive = isAppsActive(pathname);
-  const codexActive = isCodexActive(pathname);
 
   const activeProject = projects.find((project) => project.active) ?? projects[0];
   const displayName = activeProject?.name ?? 'Operator';
@@ -895,15 +1065,23 @@ export default function SidebarPanel({
         <CollapsedSidebarRail
           runsSectionActive={runsSectionActive}
           libraryActive={libraryActive}
+          scheduledActive={scheduledActive}
           pinnedConversations={pinnedConversations}
           conversations={conversations}
+          projects={projects}
+          executions={executions}
           activeConversationId={activeConversationId}
+          activeProjectId={activeProject?.id ?? null}
+          activeProjectName={activeProject?.name ?? null}
           onOpenSearchModal={() => setSearchModalOpen(true)}
           onNewChat={() => {
             void handleNewChat();
           }}
           onOpenConversation={(conversationId) => {
             hub.navigateToConversation(conversationId);
+          }}
+          onActivateProject={(projectId) => {
+            void handleActivateProject(projectId);
           }}
           displayName={displayName}
           subtitle={subtitle}
@@ -972,74 +1150,6 @@ export default function SidebarPanel({
             onClick={() => navigateShell('/scheduled')}
             icon={<Calendar className="h-4 w-4" />}
           />
-          <SidebarNavRow
-            label="Apps"
-            testId="sidebar-apps"
-            active={appsActive}
-            onClick={() => navigateShell(settingsHref())}
-            icon={<LayoutGrid className="h-4 w-4" />}
-          />
-          <SidebarNavRow
-            label="Codex"
-            testId="sidebar-codex"
-            active={codexActive}
-            onClick={() => navigateShell('/dashboard')}
-            icon={<Code2 className="h-4 w-4" />}
-          />
-          <div className="relative">
-            <SidebarNavRow
-              label="More"
-              testId="sidebar-more"
-              active={moreMenuOpen}
-              onClick={() => setMoreMenuOpen((current) => !current)}
-              icon={<MoreHorizontal className="h-4 w-4" />}
-            />
-            {moreMenuOpen ? (
-              <div
-                className="absolute left-2 right-2 z-10 mt-1 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-                data-testid="sidebar-more-menu"
-              >
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    navigateShell('/executions');
-                  }}
-                >
-                  Workflow runs
-                  {activeExecutionId ? (
-                    <span className="ml-2 text-[10px] text-gray-400">active</span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    navigateShell(projectsHref());
-                  }}
-                >
-                  Manage projects
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    navigateShell('/dashboard');
-                  }}
-                >
-                  Observability dashboard
-                </button>
-                {executions.length > 0 ? (
-                  <p className="border-t border-gray-100 px-3 py-2 text-[10px] text-gray-400">
-                    {executions.length} recent run{executions.length === 1 ? '' : 's'}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
         </div>
 
         {pinnedConversations.length > 0 ? (
