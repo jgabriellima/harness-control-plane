@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 
-import { jsonError, jsonOk } from '../../../lib/api-json';
+import { handleApiError } from '../../../lib/api-error';
+import { jsonOk } from '../../../lib/api-json';
 import { collectInstructionCorpus, estimateRuntimeOverhead } from '../../../lib/context-usage-corpus';
 import {
   readSdkContextUsageSnapshot,
@@ -58,7 +59,12 @@ export const GET: APIRoute = async ({ request, url }) => {
       sdkUsage: null,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to collect context usage corpus';
-    return jsonError(message, 500);
+    return handleApiError(
+      'runtime.context_usage',
+      error,
+      'Unable to load context usage right now.',
+      500,
+      { agent_id: agentId ?? null, project_id: projectId ?? null },
+    );
   }
 };

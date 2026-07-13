@@ -8,6 +8,7 @@ import type {
   SdkGeneratedFileRecord,
   SdkToolCallRecord,
 } from '@/lib/sdk-agent-observability-types';
+import { toUserFacingErrorMessage } from '@/lib/user-facing-error';
 
 interface ObservabilityPayload {
   source?: string;
@@ -78,7 +79,12 @@ export function useSdkObservability(input: {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? `Observability request failed (${response.status})`);
+          throw new Error(
+            toUserFacingErrorMessage(
+              payload.error ?? `Observability request failed (${response.status})`,
+              'Unable to load runtime observability right now.',
+            ),
+          );
         }
 
         if (!cancelled) {
@@ -90,12 +96,10 @@ export function useSdkObservability(input: {
         }
       } catch (loadError) {
         if (!cancelled) {
-          const rawMessage =
-            loadError instanceof Error ? loadError.message : 'Failed to load runtime observability';
-          const message =
-            rawMessage === 'Load failed' || rawMessage === 'Failed to fetch'
-              ? 'Runtime observability unreachable — showing live tool stream only'
-              : rawMessage;
+          const message = toUserFacingErrorMessage(
+            loadError,
+            'Unable to load runtime observability right now.',
+          );
           setError(message);
         }
       } finally {

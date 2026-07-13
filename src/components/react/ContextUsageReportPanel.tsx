@@ -424,9 +424,14 @@ export default function ContextUsageReportPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loadError ? (
-          <p className="p-4 text-sm text-red-600" data-testid="context-usage-error">
-            {loadError}
-          </p>
+          <div
+            className="mx-4 mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3"
+            data-testid="context-usage-error"
+            role="alert"
+          >
+            <p className="text-sm font-medium text-red-800">Context usage unavailable</p>
+            <p className="mt-1 text-sm text-red-700">{loadError}</p>
+          </div>
         ) : null}
 
         {!report && !loadError ? (

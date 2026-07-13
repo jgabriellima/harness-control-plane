@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 
+import { handleApiError } from '../../../lib/api-error';
 import { jsonError, jsonOk } from '../../../lib/api-json';
 import { collectInstructionCorpus, estimateRuntimeOverhead } from '../../../lib/context-usage-corpus';
 import { readSdkAgentObservability } from '../../../lib/sdk-agent-observability';
@@ -83,7 +84,12 @@ export const GET: APIRoute = async ({ request, url }) => {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to read SDK observability';
-    return jsonError(message, 500);
+    return handleApiError(
+      'runtime.observability',
+      error,
+      'Unable to load runtime observability right now.',
+      500,
+      { agent_id: agentId, conversation_id: conversationId ?? null, project_id: projectId ?? null },
+    );
   }
 };

@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Domain-neutral harness control plane \u2014 Astro SSR, Tauri desktop, workspace binding (ADR-039)",
+  "description": "Domain-neutral harness control plane — Astro SSR, Tauri desktop, workspace binding (ADR-039)",
   "exports": {
     "./embed": {
       "types": "./embed/index.d.ts",
@@ -23,9 +23,13 @@
     "preview": "node scripts/astro-cli.mjs preview",
     "astro": "astro",
     "test:e2e": "playwright test",
-    "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts src/lib/harness-commands.test.ts src/lib/file-reference.test.ts src/lib/tool-file-paths.test.ts src/lib/thread-file-paths.test.ts src/lib/workspace-files.test.ts src/lib/workspace-file-index.test.ts src/lib/library-index.test.ts src/lib/composer-mention.test.ts src/lib/active-run-sync.test.ts src/lib/runtime-agent-run-release.test.ts src/lib/voice-input-config.test.ts src/lib/keyboard-shortcut.test.ts src/lib/voice-input-engine.test.ts src/lib/voice-transcription.test.ts src/lib/format-inspect.test.ts src/lib/json-syntax-highlight.test.ts src/lib/runtime-connect-errors.test.ts src/lib/runtime-sdk-auth-gate.test.ts src/lib/assistant-text.test.ts src/lib/runtime-hub-store.test.ts src/lib/runtime-hub-stream.test.ts src/lib/strip-cursor-prompt-envelope.test.ts",
+    "test:unit": "node --import tsx --test src/lib/harness-binding.test.ts src/lib/harness-commands.test.ts src/lib/file-reference.test.ts src/lib/tool-file-paths.test.ts src/lib/thread-file-paths.test.ts src/lib/workspace-files.test.ts src/lib/workspace-file-index.test.ts src/lib/library-index.test.ts src/lib/composer-mention.test.ts src/hooks/useComposerFileDrop.test.ts src/lib/active-run-sync.test.ts src/lib/runtime-run-session-policy.test.ts src/lib/runtime-agent-run-release.test.ts src/lib/voice-input-config.test.ts src/lib/keyboard-shortcut.test.ts src/lib/voice-input-engine.test.ts src/lib/voice-transcription.test.ts src/lib/format-inspect.test.ts src/lib/json-syntax-highlight.test.ts src/lib/runtime-connect-errors.test.ts src/lib/runtime-sdk-auth-gate.test.ts src/lib/assistant-text.test.ts src/lib/runtime-hub-store.test.ts src/lib/runtime-hub-store.openui.test.ts src/lib/runtime-hub-stream.test.ts src/lib/strip-cursor-prompt-envelope.test.ts src/lib/openui-envelope.test.ts src/lib/message-parts.test.ts src/lib/openui-prompt.test.ts src/lib/prompt-inject.test.ts src/lib/user-message-display.test.ts src/lib/presentation-policy.test.ts src/lib/reader-preferences.test.ts src/lib/sdk-agent-observability.test.ts src/hooks/useSdkObservability.test.ts src/lib/runtime-ui-bridge.test.ts src/lib/context-usage.test.ts src/lib/sdk-context-usage.test.ts src/lib/user-facing-error.test.ts",
+    "openui:generate-prompt": "node --import tsx scripts/generate-openui-prompt.mjs",
     "desktop:sidecar": "node desktop-sidecar/build.mjs",
     "desktop:prepare": "node scripts/prepare-desktop-dev.mjs",
+    "runtime:prepare": "node scripts/ensure-node-runtime.mjs",
+    "node:prepare": "node scripts/ensure-node-runtime.mjs",
+    "rust:prepare": "node scripts/warm-rust-dev.mjs",
     "voice:prepare": "node --import tsx scripts/ensure-voice-transcription.mjs",
     "desktop:icons": "python3 scripts/generate-icons.py && tauri icon src-tauri/icons/icon.png -o src-tauri/icons",
     "desktop:sync-version": "node scripts/sync-desktop-version.mjs",
@@ -38,9 +42,13 @@
     "@aiden0z/pptx-renderer": "^1.2.3",
     "@astrojs/node": "^10.1.1",
     "@astrojs/react": "^5.0.6",
-    "@cursor/sdk": "^1.0.18",
+    "@composio/core": "^0.13.1",
+    "@cursor/sdk": "^1.0.23",
     "@dagrejs/dagre": "^1.1.8",
     "@monaco-editor/react": "^4.7.0",
+    "@openuidev/lang-core": "^0.2.8",
+    "@openuidev/react-lang": "^0.2.8",
+    "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-slot": "^1.2.5",
     "@radix-ui/react-tooltip": "^1.2.9",
     "@sentry/astro": "^10.32.1",
@@ -66,7 +74,8 @@
     "three": "^0.185.1",
     "use-stick-to-bottom": "^1.1.6",
     "xlsx": "^0.18.5",
-    "yaml": "^2.8.0"
+    "yaml": "^2.8.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

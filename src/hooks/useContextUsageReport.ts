@@ -14,6 +14,7 @@ import type {
   SdkContextUsagePayload,
 } from '@/lib/context-usage-types';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
+import { toUserFacingErrorMessage } from '@/lib/user-facing-error';
 
 export interface ContextUsageReportSnapshot {
   report: ContextUsageReport | null;
@@ -82,7 +83,12 @@ export function useContextUsageReport(input: {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Failed to load context usage');
+          throw new Error(
+            toUserFacingErrorMessage(
+              payload.error ?? 'Failed to load context usage',
+              'Unable to load context usage right now.',
+            ),
+          );
         }
 
         if (!cancelled) {
@@ -91,7 +97,7 @@ export function useContextUsageReport(input: {
         }
       } catch (error) {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : 'Failed to load context usage';
+          const message = toUserFacingErrorMessage(error, 'Unable to load context usage right now.');
           setFallbackError(message);
         }
       }

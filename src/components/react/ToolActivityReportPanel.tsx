@@ -82,9 +82,14 @@ export default function ToolActivityReportPanel({
       </header>
 
       {observability.error && toolCalls.length === 0 ? (
-        <p className="shrink-0 px-4 py-3 text-sm text-red-600" data-testid="tool-activity-error">
-          {observability.error}
-        </p>
+        <div
+          className="mx-4 mt-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3"
+          data-testid="tool-activity-error"
+          role="alert"
+        >
+          <p className="text-sm font-medium text-red-800">Activity unavailable</p>
+          <p className="mt-1 text-sm text-red-700">{observability.error}</p>
+        </div>
       ) : null}
 
       {observability.error && toolCalls.length > 0 ? (

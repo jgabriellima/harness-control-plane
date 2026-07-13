@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { getDefaultSdkStateRoot } from '@cursor/sdk';
 
 import { getCursorLocalAdapter } from './runtime-adapters/cursor-local';
+import { errorFields, runtimeLogger } from './runtime-logger';
 import { readSdkContextUsageSnapshot } from './sdk-context-usage-reader';
 import type {
   SdkAgentObservability,
@@ -43,20 +44,28 @@ async function querySqliteRows(databasePath: string, sql: string): Promise<strin
 }
 
 async function readAgentRuns(stateRoot: string, agentId: string): Promise<SdkRunRecord[]> {
-  const indexDbPath = `${stateRoot}/index.db`;
-  const escapedAgentId = agentId.replace(/'/g, "''");
-  const rows = await querySqliteRows(
-    indexDbPath,
-    `SELECT run_id, turn_number, status, created_at, COALESCE(finished_at, '') FROM runs WHERE agent_id='${escapedAgentId}' ORDER BY turn_number ASC, created_at ASC;`,
-  );
+  try {
+    const indexDbPath = `${stateRoot}/index.db`;
+    const escapedAgentId = agentId.replace(/'/g, "''");
+    const rows = await querySqliteRows(
+      indexDbPath,
+      `SELECT run_id, turn_number, status, created_at, COALESCE(finished_at, '') FROM runs WHERE agent_id='${escapedAgentId}' ORDER BY turn_number ASC, created_at ASC;`,
+    );
 
-  return rows.map((row) => ({
-    runId: row[0] ?? '',
-    turnNumber: Number.parseInt(row[1] ?? '0', 10) || 0,
-    status: row[2] ?? 'UNKNOWN',
-    createdAt: row[3] ?? '',
-    finishedAt: row[4]?.trim() ? row[4] : null,
-  }));
+    return rows.map((row) => ({
+      runId: row[0] ?? '',
+      turnNumber: Number.parseInt(row[1] ?? '0', 10) || 0,
+      status: row[2] ?? 'UNKNOWN',
+      createdAt: row[3] ?? '',
+      finishedAt: row[4]?.trim() ? row[4] : null,
+    }));
+  } catch (error) {
+    runtimeLogger.warn('sdk_agent_observability.read_agent_runs_failed', {
+      agent_id: agentId,
+      ...errorFields(error),
+    });
+    return [];
+  }
 }
 
 function isTerminalToolStatus(status: string): boolean {
@@ -164,10 +173,19 @@ async function readToolCallsFromRunEvents(
     .map((run) => `'${run.runId.replace(/'/g, "''")}'`)
     .join(',');
 
-  const rows = await querySqliteRows(
-    indexDbPath,
-    `SELECT run_id, seq, payload_json, created_at FROM run_events WHERE run_id IN (${escapedRunIds}) AND event_type='run_stream_event' ORDER BY seq ASC;`,
-  );
+  let rows: string[][];
+  try {
+    rows = await querySqliteRows(
+      indexDbPath,
+      `SELECT run_id, seq, payload_json, created_at FROM run_events WHERE run_id IN (${escapedRunIds}) AND event_type='run_stream_event' ORDER BY seq ASC;`,
+    );
+  } catch (error) {
+    runtimeLogger.warn('sdk_agent_observability.read_tool_calls_failed', {
+      agent_id: agentId,
+      ...errorFields(error),
+    });
+    return [];
+  }
 
   const byCallId = new Map<string, SdkToolCallRecord>();
 
@@ -268,7 +286,13 @@ export async function readSdkAgentObservability(input: {
   const stateRoot = getDefaultSdkStateRoot(workspaceRoot);
   const [runs, contextUsage] = await Promise.all([
     readAgentRuns(stateRoot, agentId),
-    readSdkContextUsageSnapshot({ workspaceCwd: workspaceRoot, agentId }),
+    readSdkContextUsageSnapshot({ workspaceCwd: workspaceRoot, agentId }).catch((error) => {
+      runtimeLogger.warn('sdk_agent_observability.read_context_usage_failed', {
+        agent_id: agentId,
+        ...errorFields(error),
+      });
+      return null;
+    }),
   ]);
 
   let toolCalls = await readToolCallsFromRunEvents(stateRoot, agentId, runs);
