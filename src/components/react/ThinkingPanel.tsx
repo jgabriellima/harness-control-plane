@@ -25,6 +25,7 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
   const [showResizeHandle, setShowResizeHandle] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const userResizedRef = useRef(false);
   const hasContent = content.trim().length > 0;
 
   const measureLayout = useCallback(() => {
@@ -35,13 +36,37 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     setShowResizeHandle(element.scrollHeight > REASONING_CONTENT_DEFAULT_HEIGHT + 1);
   }, []);
 
-  useEffect(() => {
-    setContentHeight(REASONING_CONTENT_DEFAULT_HEIGHT);
-  }, [content]);
+  const expandToContent = useCallback(() => {
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+    const fullHeight = element.scrollHeight;
+    setContentHeight(Math.max(fullHeight, REASONING_CONTENT_MIN_HEIGHT));
+    setShowResizeHandle(fullHeight > REASONING_CONTENT_DEFAULT_HEIGHT + 1);
+  }, []);
 
   useEffect(() => {
+    if (collapsed) {
+      return;
+    }
+
+    if (streaming) {
+      userResizedRef.current = false;
+      expandToContent();
+      return;
+    }
+
+    setContentHeight(REASONING_CONTENT_DEFAULT_HEIGHT);
     measureLayout();
-  }, [content, contentHeight, collapsed, measureLayout]);
+  }, [collapsed, expandToContent, measureLayout, streaming]);
+
+  useEffect(() => {
+    if (collapsed || !streaming || userResizedRef.current) {
+      return;
+    }
+    expandToContent();
+  }, [collapsed, content, expandToContent, streaming]);
 
   useEffect(() => {
     const element = contentRef.current;
@@ -50,6 +75,10 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     }
 
     const observer = new ResizeObserver(() => {
+      if (streaming && !userResizedRef.current) {
+        expandToContent();
+        return;
+      }
       measureLayout();
     });
     observer.observe(element);
@@ -57,11 +86,12 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
     return () => {
       observer.disconnect();
     };
-  }, [collapsed, measureLayout]);
+  }, [collapsed, expandToContent, measureLayout, streaming]);
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     event.preventDefault();
     event.stopPropagation();
+    userResizedRef.current = true;
     resizeRef.current = { startY: event.clientY, startHeight: contentHeight };
     event.currentTarget.setPointerCapture(event.pointerId);
   }

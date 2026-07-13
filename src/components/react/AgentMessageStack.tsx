@@ -23,12 +23,41 @@ export interface StackMessage {
   toolOutput?: string;
 }
 
-type RenderSegment = { kind: 'single'; message: StackMessage };
+type RenderSegment =
+  | { kind: 'single'; message: StackMessage }
+  | { kind: 'turn'; assistant: StackMessage; thinking?: StackMessage };
 
 function buildSegments(messages: StackMessage[]): RenderSegment[] {
-  return messages
-    .filter((message) => message.role !== 'tool')
-    .map((message) => ({ kind: 'single' as const, message }));
+  const filtered = messages.filter((message) => message.role !== 'tool');
+  const segments: RenderSegment[] = [];
+
+  for (let index = 0; index < filtered.length; index += 1) {
+    const message = filtered[index];
+
+    if (message.role === 'thinking') {
+      const next = filtered[index + 1];
+      if (next?.role === 'assistant') {
+        segments.push({ kind: 'turn', thinking: message, assistant: next });
+        index += 1;
+        continue;
+      }
+      segments.push({ kind: 'single', message });
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const previous = filtered[index - 1];
+      if (previous?.role === 'thinking') {
+        continue;
+      }
+      segments.push({ kind: 'turn', assistant: message });
+      continue;
+    }
+
+    segments.push({ kind: 'single', message });
+  }
+
+  return segments;
 }
 
 function MessageTimestamp({
@@ -69,6 +98,53 @@ function avatarLabel(role: ChatMessageRole): string {
   return 'A';
 }
 
+function renderStreamingStatus(message: StackMessage, hasVisibleContent: boolean): React.ReactNode {
+  if (!message.streaming) {
+    return null;
+  }
+
+  if (!hasVisibleContent) {
+    return <StreamingPlaceholder />;
+  }
+
+  return (
+    <div className="mt-2">
+      <StreamingPlaceholder />
+    </div>
+  );
+}
+
+function renderAssistantBody(
+  message: StackMessage,
+  visibleContent: string,
+  onFileClick?: (filePath: string) => void,
+  onLinkClick?: (url: string) => void,
+  options?: { thinkingActive?: boolean },
+): React.ReactNode {
+  const thinkingActive = options?.thinkingActive ?? false;
+  const hasVisibleContent = !thinkingActive && visibleContent.length > 0;
+
+  if (thinkingActive) {
+    return (
+      <MessageContent className="border border-gray-100 bg-white text-gray-900 shadow-sm">
+        <StreamingPlaceholder />
+      </MessageContent>
+    );
+  }
+
+  return (
+    <MessageContent
+      markdown
+      className="border border-gray-100 bg-white text-gray-900 shadow-sm"
+      onFileClick={onFileClick}
+      onLinkClick={onLinkClick}
+    >
+      {hasVisibleContent ? visibleContent : null}
+      {renderStreamingStatus(message, hasVisibleContent)}
+    </MessageContent>
+  );
+}
+
 export default function AgentMessageStack({
   messages,
   onFileClick,
@@ -84,6 +160,47 @@ export default function AgentMessageStack({
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
       {segments.map((segment) => {
+        if (segment.kind === 'turn') {
+          const { assistant, thinking } = segment;
+          const assistantContent = stripRedactedReasoningContent(assistant.content);
+          const thinkingContent = thinking ? stripRedactedReasoningContent(thinking.content) : '';
+          const thinkingActive = thinking?.streaming === true;
+
+          return (
+            <Message key={assistant.id} data-testid="chat-message-assistant" className="group">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="text-xs">{avatarLabel('assistant')}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <MessageTimestamp value={assistant.recordedAt} />
+                  <button
+                    type="button"
+                    className="text-[10px] font-medium text-gray-600 opacity-0 transition-opacity hover:text-gray-700 group-hover:opacity-100"
+                    onClick={() => {
+                      void copyToClipboard(assistantContent);
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+                {renderAssistantBody(assistant, assistantContent, onFileClick, onLinkClick, {
+                  thinkingActive,
+                })}
+                {thinking ? (
+                  <div className="mt-2">
+                    <ThinkingPanel
+                      content={thinkingContent}
+                      streaming={thinking.streaming}
+                      durationMs={thinking.durationMs}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </Message>
+          );
+        }
+
         const message = segment.message;
         const visibleContent =
           message.role === 'assistant' || message.role === 'thinking'
@@ -133,14 +250,7 @@ export default function AgentMessageStack({
                 </button>
               </div>
               {message.role === 'assistant' ? (
-                <MessageContent
-                  markdown
-                  className="border border-gray-100 bg-white text-gray-900 shadow-sm"
-                  onFileClick={onFileClick}
-                  onLinkClick={onLinkClick}
-                >
-                  {visibleContent || (message.streaming ? <StreamingPlaceholder /> : '')}
-                </MessageContent>
+                renderAssistantBody(message, visibleContent, onFileClick, onLinkClick)
               ) : (
                 <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
                   {visibleContent}
