@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CONVERSATION_PANE_DRAG_MIME,
+  beginConversationPaneDrag,
+  endConversationPaneDrag,
   isConversationDragEvent,
   readConversationDragData,
-  setConversationDragData,
 } from './conversation-pane-drag';
 
 function createDataTransferStub(): DataTransfer {
@@ -35,10 +36,22 @@ function createDataTransferStub(): DataTransfer {
 describe('conversation-pane-drag', () => {
   it('round-trips conversation id through drag data', () => {
     const transfer = createDataTransferStub();
-    setConversationDragData(transfer, 'conv-123');
+    beginConversationPaneDrag('conv-123', transfer);
 
     expect(transfer.getData(CONVERSATION_PANE_DRAG_MIME)).toBe('conv-123');
     expect(readConversationDragData(transfer)).toBe('conv-123');
     expect(isConversationDragEvent(transfer)).toBe(true);
+
+    endConversationPaneDrag();
+  });
+
+  it('falls back to active drag session when dataTransfer is empty on drop', () => {
+    const transfer = createDataTransferStub();
+    beginConversationPaneDrag('conv-session', transfer);
+    transfer.clearData();
+
+    expect(readConversationDragData(transfer)).toBe('conv-session');
+
+    endConversationPaneDrag();
   });
 });

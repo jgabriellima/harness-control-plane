@@ -32,7 +32,11 @@ import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-sto
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 import { readPinnedConversationIds } from '@/lib/pinned-conversations';
-import { setConversationDragData } from '@/lib/conversation-pane-drag';
+import {
+  beginConversationPaneDrag,
+  endConversationPaneDrag,
+  isConversationPaneDragActive,
+} from '@/lib/conversation-pane-drag';
 
 interface ProjectItem {
   id: string;
@@ -303,6 +307,9 @@ function SidebarRailFlyout({
   }
 
   function scheduleHoverClose(): void {
+    if (isConversationPaneDragActive()) {
+      return;
+    }
     clearHoverTimer();
     hoverCloseTimerRef.current = setTimeout(() => onClose(), 120);
   }
@@ -469,7 +476,11 @@ function ConversationSidebarLink({
       return;
     }
 
-    setConversationDragData(event.dataTransfer, conversation.id);
+    beginConversationPaneDrag(conversation.id, event.dataTransfer);
+  }
+
+  function handleDragEnd(): void {
+    endConversationPaneDrag();
   }
 
   return (
@@ -477,6 +488,7 @@ function ConversationSidebarLink({
       href={conversationHref(conversation.id)}
       draggable={isDraggable}
       onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onClick={handleClick}
       className={`block w-full truncate rounded-lg px-3 py-1.5 text-sm transition-colors ${
         isDraggable ? 'cursor-grab active:cursor-grabbing' : ''
@@ -523,18 +535,22 @@ function DraggableConversationMenuItem({
       return;
     }
 
-    setConversationDragData(event.dataTransfer, conversation.id);
+    beginConversationPaneDrag(conversation.id, event.dataTransfer);
+  }
+
+  function handleDragEnd(): void {
+    endConversationPaneDrag();
   }
 
   return (
-    <button
-      key={conversation.id}
-      type="button"
+    <div
       role="menuitem"
+      tabIndex={0}
       draggable={isDraggable}
       onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-        isDraggable ? 'cursor-grab active:cursor-grabbing' : ''
+        isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
       } ${
         conversation.id === activeConversationId
           ? 'bg-gray-100 font-medium text-gray-900'
@@ -543,10 +559,16 @@ function DraggableConversationMenuItem({
       data-testid={`sidebar-flyout-conversation-${conversation.id}`}
       data-conversation-draggable={isDraggable ? 'true' : 'false'}
       onClick={() => onSelect(conversation.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(conversation.id);
+        }
+      }}
     >
       {icon}
       <span className="truncate">{formatSessionTitle(conversation)}</span>
-    </button>
+    </div>
   );
 }
 

@@ -18,6 +18,7 @@ export default function ChatPaneSlot({
   paneLabel,
 }: ChatPaneSlotProps) {
   const paneDrop = useConversationPaneDrop(paneIndex);
+  const showDropOverlay = paneDrop.canAcceptDrop && (paneDrop.isDragSessionActive || paneDrop.isDragOver);
 
   return (
     <div
@@ -25,16 +26,22 @@ export default function ChatPaneSlot({
         paneDrop.isDragOver ? 'bg-blue-50 ring-2 ring-inset ring-blue-300' : ''
       }`}
       data-pane-drop-target={paneDrop.canAcceptDrop ? String(paneIndex) : undefined}
-      onDragEnterCapture={paneDrop.onDragEnter}
-      onDragLeaveCapture={paneDrop.onDragLeave}
-      onDragOverCapture={paneDrop.onDragOver}
-      onDropCapture={paneDrop.onDrop}
     >
       {paneConversationId ? (
         <ChatPane conversationId={paneConversationId} compact paneIndex={paneIndex} />
       ) : (
         <ChatPaneEmptySlot paneIndex={paneIndex} paneLabel={paneLabel} />
       )}
+      {showDropOverlay ? (
+        <div
+          className="absolute inset-0 z-50"
+          data-testid={`chat-pane-drop-overlay-${paneIndex}`}
+          onDragEnter={paneDrop.onDragEnter}
+          onDragLeave={paneDrop.onDragLeave}
+          onDragOver={paneDrop.onDragOver}
+          onDrop={paneDrop.onDrop}
+        />
+      ) : null}
     </div>
   );
 }
