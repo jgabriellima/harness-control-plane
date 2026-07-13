@@ -20,8 +20,14 @@ function stringifyPayload(value: unknown): string {
   }
 }
 
+export function estimateToolCallInputTokens(args?: unknown): number {
+  return estimateTokensFromText(stringifyPayload(args));
+}
+
+export function estimateToolCallOutputTokens(result?: unknown): number {
+  return estimateTokensFromText(stringifyPayload(result));
+}
+
 export function estimateToolCallTokens(args?: unknown, result?: unknown): number {
-  return (
-    estimateTokensFromText(stringifyPayload(args)) + estimateTokensFromText(stringifyPayload(result))
-  );
+  return estimateToolCallInputTokens(args) + estimateToolCallOutputTokens(result);
 }

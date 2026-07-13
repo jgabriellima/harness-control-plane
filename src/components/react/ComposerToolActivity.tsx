@@ -5,7 +5,7 @@ import React, { useMemo } from 'react';
 import { ToolInspectorGroup } from '@/components/react/ToolInspector';
 import { useSdkObservability, mergeToolCallsWithLiveMessages } from '@/hooks/useSdkObservability';
 import { sdkToolCallToToolRecord } from '@/lib/sdk-tool-call-mapper';
-import type { ChatMessage } from '@/lib/runtime-hub-types';
+import type { ChatMessage, RunPhase } from '@/lib/runtime-hub-types';
 
 function isToolStatusRunning(status: string): boolean {
   const normalized = status.trim().toLowerCase();
@@ -19,6 +19,8 @@ interface ComposerToolActivityProps {
   projectId: string;
   conversationId: string;
   refreshRevision?: number;
+  toolActivity?: string[];
+  runPhase?: RunPhase;
 }
 
 export default function ComposerToolActivity({
@@ -27,6 +29,8 @@ export default function ComposerToolActivity({
   projectId,
   conversationId,
   refreshRevision = 0,
+  toolActivity = [],
+  runPhase = 'idle',
 }: ComposerToolActivityProps) {
   const observability = useSdkObservability({
     agentId,
@@ -36,12 +40,15 @@ export default function ComposerToolActivity({
   });
 
   const toolCalls = useMemo(
-    () => mergeToolCallsWithLiveMessages(observability.toolCalls, messages),
-    [messages, observability.toolCalls],
+    () =>
+      mergeToolCallsWithLiveMessages(observability.toolCalls, messages, {
+        toolActivity,
+        runPhase,
+      }),
+    [messages, observability.toolCalls, runPhase, toolActivity],
   );
-
-  const defaultCollapsed = true;
   const groupTimestamp = toolCalls.find((call) => call.recordedAt)?.recordedAt;
+  const defaultCollapsed = true;
 
   const activeToolId = useMemo(() => {
     const running = toolCalls.find((call) => isToolStatusRunning(call.status));

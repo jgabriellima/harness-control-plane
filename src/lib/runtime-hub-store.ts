@@ -7,9 +7,13 @@ import type {
   RuntimeHubWireEvent,
 } from './runtime-hub-types';
 import { mergeStreamingAssistantText } from './assistant-text';
+import {
+  textFromParts,
+  upsertParts,
+  type AssistantMessagePart,
+} from './message-parts';
 import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
-import { WELCOME_MESSAGE } from './runtime-hub-types';
 import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
 
 export function createConversationState(conversationId: string): ConversationRuntimeState {
@@ -19,15 +23,17 @@ export function createConversationState(conversationId: string): ConversationRun
     projectId: DEFAULT_WORKSPACE_ID,
     title: null,
     updatedAt: null,
-    messages: [WELCOME_MESSAGE],
+    messages: [],
     activeRunId: null,
     runPhase: 'idle',
     runActivity: 'idle',
     toolActivity: [],
     error: null,
+    continuableRun: null,
     lastRequestId: null,
     sdkHealth: 'unknown',
     sdkHealthMessage: null,
+    contextUsageRevision: 0,
     hydrated: false,
   };
 }
@@ -92,10 +98,17 @@ export function applyHubEvent(
     const text = stripRedactedReasoningContent(
       typeof event.payload.text === 'string' ? event.payload.text : '',
     );
+    const payloadParts = Array.isArray(event.payload.parts)
+      ? (event.payload.parts as AssistantMessagePart[])
+      : undefined;
     const nextActivity: RunActivityPhase =
-      text.length > 0 ? 'responding' : state.runActivity === 'idle' ? 'dispatching' : state.runActivity;
+      text.length > 0 || (payloadParts?.length ?? 0) > 0
+        ? 'responding'
+        : state.runActivity === 'idle'
+          ? 'dispatching'
+          : state.runActivity;
 
-    if (text.length === 0) {
+    if (text.length === 0 && !payloadParts?.length) {
       return withActivity(state, nextActivity);
     }
 
@@ -104,10 +117,16 @@ export function applyHubEvent(
         ...state,
         messages: state.messages.map((message) =>
           message.id === assistantMessageId
-            ? {
-                ...message,
-                content: mergeStreamingAssistantText(message.content, text),
-              }
+            ? payloadParts
+              ? {
+                  ...message,
+                  content: text.length > 0 ? text : message.content,
+                  parts: upsertParts(message.parts, payloadParts),
+                }
+              : {
+                  ...message,
+                  content: mergeStreamingAssistantText(message.content, text),
+                }
             : message,
         ),
       },
@@ -183,10 +202,12 @@ export function applyHubEvent(
         ? JSON.stringify(normalizeInspectablePayload(event.payload.result), null, 2)
         : undefined;
 
-    const toolMessageId = `tool-${event.run_id}-${tool}-${state.messages.length}`;
-    const existingTool = state.messages.find(
-      (message) => message.role === 'tool' && message.id.startsWith(`tool-${event.run_id}-${tool}`),
-    );
+    const callId =
+      typeof event.payload.call_id === 'string' && event.payload.call_id.trim().length > 0
+        ? event.payload.call_id.trim()
+        : `${event.run_id}-${state.messages.filter((message) => message.role === 'tool').length}`;
+    const toolMessageId = `tool-${callId}`;
+    const existingTool = state.messages.find((message) => message.id === toolMessageId);
 
     const toolMessages = existingTool
       ? state.messages.map((message) =>
@@ -214,11 +235,9 @@ export function applyHubEvent(
           },
         ];
 
-    const lastIndex = state.toolActivity.findLastIndex((entry) => entry.startsWith(`${tool} ·`));
-    const toolActivity =
-      lastIndex >= 0
-        ? state.toolActivity.map((entry, index) => (index === lastIndex ? line : entry))
-        : [...state.toolActivity, line].slice(-12);
+    const toolActivity = existingTool
+      ? state.toolActivity.map((entry) => (entry === existingTool.content ? line : entry))
+      : [...state.toolActivity, line].slice(-50);
 
     return withActivity({ ...state, messages: toolMessages, toolActivity }, 'tool');
   }
@@ -242,6 +261,29 @@ export function applyHubEvent(
   }
 
   if (event.type === 'run_complete') {
+    const status =
+      typeof event.payload.status === 'string' ? event.payload.status.trim().toLowerCase() : '';
+    if (status === 'error' || status === 'failed' || status === 'expired') {
+      const message =
+        typeof event.payload.message === 'string' && event.payload.message.trim().length > 0
+          ? event.payload.message
+          : 'A execução do assistente falhou antes de produzir uma resposta.';
+      return {
+        ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
+        error: message,
+        messages: state.messages.map((entry) =>
+          entry.id === assistantMessageId
+            ? {
+                ...entry,
+                content: message,
+                streaming: false,
+                role: 'system',
+              }
+            : entry,
+        ),
+      };
+    }
+
     return finalizeTurn(state, assistantMessageId, thinkingMessageId, 'completed');
   }
 
@@ -264,6 +306,13 @@ export function applyHubEvent(
     };
   }
 
+  if (event.type === 'context.usage') {
+    return {
+      ...state,
+      contextUsageRevision: state.contextUsageRevision + 1,
+    };
+  }
+
   return state;
 }
 
@@ -276,7 +325,30 @@ export function finalizeTurn(
   const messages = state.messages
     .map((message) => {
       if (message.id === assistantMessageId || message.id === thinkingMessageId) {
-        return { ...message, streaming: false };
+        const finalized = { ...message, streaming: false };
+        if (message.id === assistantMessageId && message.parts?.length) {
+          const text = textFromParts(message.parts);
+          return {
+            ...finalized,
+            content: text.length > 0 ? text : message.content,
+            parts: message.parts.map((part) =>
+              part.type === 'openui' && part.status === 'streaming'
+                ? { ...part, status: 'completed' as const }
+                : part,
+            ),
+          };
+        }
+        return finalized;
+      }
+      if (message.role === 'tool' && message.streaming) {
+        const [, status = 'completed'] = message.content.split(' · ');
+        return {
+          ...message,
+          streaming: false,
+          content: message.content.includes(' · ')
+            ? message.content
+            : `${message.content} · ${status.trim() || 'completed'}`,
+        };
       }
       return message;
     })
@@ -289,6 +361,7 @@ export function finalizeTurn(
     runActivity: 'idle',
     activeRunId: null,
     runPhase: phase,
+    continuableRun: null,
   };
 }
 
@@ -306,6 +379,7 @@ export function beginTurn(
     runPhase: 'streaming',
     runActivity: 'dispatching',
     toolActivity: [],
+    continuableRun: null,
     messages: [
       ...state.messages,
       {

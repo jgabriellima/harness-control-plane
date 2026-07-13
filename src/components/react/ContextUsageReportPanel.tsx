@@ -372,8 +372,12 @@ export default function ContextUsageReportPanel({
   });
 
   const toolCalls = useMemo(
-    () => mergeToolCallsWithLiveMessages(observability.toolCalls, messages),
-    [messages, observability.toolCalls],
+    () =>
+      mergeToolCallsWithLiveMessages(observability.toolCalls, messages, {
+        toolActivity: conversation?.toolActivity,
+        runPhase: conversation?.runPhase,
+      }),
+    [conversation?.runPhase, conversation?.toolActivity, messages, observability.toolCalls],
   );
 
   const toggleCategory = useCallback((category: string): void => {

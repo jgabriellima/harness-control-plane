@@ -62,4 +62,19 @@ describe('mergeToolCallsWithLiveMessages', () => {
       ['newer', 'older'],
     );
   });
+
+  it('synthesizes running tools from hub activity during streaming', () => {
+    const merged = mergeToolCallsWithLiveMessages(
+      [],
+      [],
+      {
+        toolActivity: ['Shell · running'],
+        runPhase: 'streaming',
+      },
+    );
+
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]?.tool, 'Shell');
+    assert.equal(merged[0]?.status, 'running');
+  });
 });

@@ -5,8 +5,8 @@ import { X } from 'lucide-react';
 
 import { ToolInspectorList } from '@/components/react/ToolInspector';
 import { useSdkObservability, mergeToolCallsWithLiveMessages } from '@/hooks/useSdkObservability';
+import { useRuntimeConversation } from '@/hooks/useRuntimeConversation';
 import { sdkToolCallToToolRecord } from '@/lib/sdk-tool-call-mapper';
-import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 import type { ToolActivitySelection } from '@/components/react/ToolActivityProvider';
 
 interface ToolActivityReportPanelProps {
@@ -14,14 +14,18 @@ interface ToolActivityReportPanelProps {
   onClose: () => void;
 }
 
+function isToolStatusRunning(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'pending' || normalized === 'in_progress';
+}
+
 export default function ToolActivityReportPanel({
   selection,
   onClose,
 }: ToolActivityReportPanelProps) {
-  const hub = useRuntimeHub();
-  const conversation = hub.getConversationState(selection.conversationId);
-  const contextUsageRevision = conversation?.contextUsageRevision ?? 0;
-  const liveMessages = conversation?.messages ?? [];
+  const { state } = useRuntimeConversation(selection.conversationId);
+  const liveMessages = state.messages;
+  const contextUsageRevision = state.contextUsageRevision;
 
   const observability = useSdkObservability({
     agentId: selection.agentId,
@@ -31,18 +35,23 @@ export default function ToolActivityReportPanel({
   });
 
   const toolCalls = useMemo(
-    () => mergeToolCallsWithLiveMessages(observability.toolCalls, liveMessages),
-    [liveMessages, observability.toolCalls],
+    () =>
+      mergeToolCallsWithLiveMessages(observability.toolCalls, liveMessages, {
+        toolActivity: state.toolActivity,
+        runPhase: state.runPhase,
+      }),
+    [liveMessages, observability.toolCalls, state.runPhase, state.toolActivity],
   );
 
-  const hasRunning = toolCalls.some((call) => call.status === 'running');
-  const activeCallId = toolCalls.find((call) => call.status === 'running')?.callId ?? toolCalls[0]?.callId;
+  const hasRunning = toolCalls.some((call) => isToolStatusRunning(call.status));
+  const activeCallId =
+    toolCalls.find((call) => isToolStatusRunning(call.status))?.callId ?? toolCalls[0]?.callId;
 
   const toolEntries = useMemo(
     () =>
       toolCalls.map((call) => ({
         id: call.callId,
-        streaming: call.status === 'running',
+        streaming: isToolStatusRunning(call.status),
         tool: sdkToolCallToToolRecord(call),
       })),
     [toolCalls],
@@ -54,15 +63,16 @@ export default function ToolActivityReportPanel({
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white" data-testid="tool-activity-report-panel">
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-medium text-gray-900">Tool Activity</h2>
+          <h2 className="truncate text-sm font-medium text-gray-900">Activity</h2>
           <p className="truncate text-xs text-gray-500">
             {selection.title ?? 'Session'}
             {toolCalls.length > 0 ? ` · ${invocationLabel}` : ''}
+            {hasRunning ? ' · live' : ''}
           </p>
         </div>
         <button
           type="button"
-          aria-label="Close tool activity panel"
+          aria-label="Close activity panel"
           className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
           onClick={onClose}
           data-testid="tool-activity-close"
@@ -87,7 +97,7 @@ export default function ToolActivityReportPanel({
       ) : null}
 
       {observability.loading && toolCalls.length === 0 ? (
-        <p className="shrink-0 px-4 py-3 text-sm text-gray-500">Loading tool activity from runtime store…</p>
+        <p className="shrink-0 px-4 py-3 text-sm text-gray-500">Loading activity from runtime store…</p>
       ) : null}
 
       {toolCalls.length === 0 && !observability.loading && !observability.error ? (
@@ -104,6 +114,7 @@ export default function ToolActivityReportPanel({
           />
           <footer className="shrink-0 border-t border-gray-100 px-4 py-2 text-center text-[10px] text-gray-400">
             Runtime agent store · {invocationLabel}
+            {hasRunning ? ' · streaming via SSE' : ''}
           </footer>
         </div>
       ) : null}

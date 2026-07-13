@@ -313,8 +313,8 @@ export default function ChatPane({
 
   const showHeader = Boolean(conversationId) && !isScheduleVariant;
   const consoleGridClass = showHeader
-    ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden'
-    : 'grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden';
+    ? 'grid h-full min-h-0 w-full min-w-0 max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden [&>*]:min-w-0'
+    : 'grid h-full min-h-0 w-full min-w-0 max-w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden [&>*]:min-w-0';
 
   const slashSuggestions = useMemo(() => {
     if (!isActiveSlashQuery(input)) {
@@ -1052,6 +1052,8 @@ export default function ChatPane({
             projectId={projectId}
             conversationId={conversationId ?? ''}
             refreshRevision={contextUsageRevision}
+            toolActivity={state.toolActivity}
+            runPhase={state.runPhase}
           />
 
           {threadFilePaths.length > 0 ? (

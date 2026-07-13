@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import type { RunPhase } from '@/lib/runtime-hub-types';
 import type {
   SdkAgentObservability,
   SdkGeneratedFileRecord,
@@ -121,6 +122,51 @@ export function useSdkObservability(input: {
   };
 }
 
+function isToolStatusRunning(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'pending' || normalized === 'in_progress';
+}
+
+function parseToolActivityLine(line: string): { tool: string; status: string } {
+  const [tool = 'tool', status = 'running'] = line.split(' · ');
+  return { tool: tool.trim(), status: status.trim() };
+}
+
+function synthesizeRunningCallsFromHubActivity(
+  merged: Map<string, SdkToolCallRecord>,
+  toolActivity: string[],
+  runPhase: RunPhase,
+): void {
+  if (runPhase !== 'streaming' || toolActivity.length === 0) {
+    return;
+  }
+
+  for (const line of toolActivity) {
+    const { tool, status } = parseToolActivityLine(line);
+    if (!isToolStatusRunning(status)) {
+      continue;
+    }
+
+    const alreadyTracked = [...merged.values()].some(
+      (call) => call.tool === tool && isToolStatusRunning(call.status),
+    );
+    if (alreadyTracked) {
+      continue;
+    }
+
+    const callId = `hub-activity-${tool}-${merged.size}`;
+    merged.set(callId, {
+      callId,
+      runId: 'live',
+      turnNumber: 0,
+      tool,
+      status: 'running',
+      recordedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+    });
+  }
+}
+
 export function mergeToolCallsWithLiveMessages(
   sdkToolCalls: SdkToolCallRecord[],
   liveMessages: Array<{
@@ -132,6 +178,10 @@ export function mergeToolCallsWithLiveMessages(
     toolOutput?: string;
     streaming?: boolean;
   }>,
+  options?: {
+    toolActivity?: string[];
+    runPhase?: RunPhase;
+  },
 ): SdkToolCallRecord[] {
   const merged = new Map<string, SdkToolCallRecord>();
 
@@ -145,7 +195,7 @@ export function mergeToolCallsWithLiveMessages(
     }
 
     const callId = message.id.startsWith('tool-') ? message.id.slice(5) : message.id;
-    const [tool = 'tool', status = 'running'] = message.content.split(' · ');
+    const { tool, status } = parseToolActivityLine(message.content);
 
     let args: unknown;
     let result: unknown;
@@ -165,19 +215,26 @@ export function mergeToolCallsWithLiveMessages(
     }
 
     const existing = merged.get(callId);
+    const resolvedStatus = message.streaming ? 'running' : status;
     merged.set(callId, {
       callId,
       runId: existing?.runId ?? 'live',
       turnNumber: existing?.turnNumber ?? 0,
       tool: tool.trim(),
-      status: message.streaming ? 'running' : status.trim(),
+      status: resolvedStatus,
       args: args ?? existing?.args,
       result: result ?? existing?.result,
       startedAt: existing?.startedAt ?? message.recordedAt ?? new Date().toISOString(),
       recordedAt: message.recordedAt ?? existing?.recordedAt ?? new Date().toISOString(),
-      durationMs: existing?.durationMs,
+      durationMs: message.streaming ? undefined : existing?.durationMs,
     });
   }
+
+  synthesizeRunningCallsFromHubActivity(
+    merged,
+    options?.toolActivity ?? [],
+    options?.runPhase ?? 'idle',
+  );
 
   return [...merged.values()].sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
 }

@@ -97,16 +97,17 @@ export default function ChatPaneHeader({
 
   return (
     <header
-      className={`flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-white ${
+      className={`flex w-full min-w-0 shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-gray-200 bg-white ${
         compact ? 'px-3 py-2' : 'px-4 py-2.5'
       }`}
       data-testid="chat-pane-header"
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-baseline gap-2">
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
           <h2
-            className={`truncate font-medium text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}
+            className={`min-w-0 flex-1 truncate font-medium text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}
             data-testid="chat-pane-header-title"
+            title={displayTitle}
           >
             {displayTitle}
           </h2>
@@ -121,7 +122,7 @@ export default function ChatPaneHeader({
         </div>
 
         <div
-          className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-500"
+          className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-500"
           data-testid="chat-pane-header-metrics"
         >
           <span title="Total execution time">
@@ -168,9 +169,9 @@ export default function ChatPaneHeader({
         <button
           type="button"
           data-testid="chat-pane-tool-activity"
-          aria-label="Open tool activity report"
+          aria-label="Open activity report"
           aria-pressed={toolActivityOpen}
-          title="Tool activity"
+          title="Activity"
           className={`rounded p-1.5 transition-colors ${
             toolActivityOpen
               ? 'bg-gray-100 text-gray-700'

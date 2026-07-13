@@ -17,10 +17,46 @@ export interface ToolRecord {
   startedAt?: string;
   recordedAt?: string;
   durationMs?: number;
-  tokenEstimate?: number;
+  inputTokenEstimate?: number;
+  outputTokenEstimate?: number;
 }
 
 export type ToolInspectorLayout = 'grouped' | 'panel';
+
+function formatTokenEstimate(value: number | undefined): string | null {
+  if (value === undefined || value <= 0) {
+    return null;
+  }
+  return formatContextTokenCount(value);
+}
+
+function ToolTokenBadges({
+  inputTokens,
+  outputTokens,
+}: {
+  inputTokens: string | null;
+  outputTokens: string | null;
+}) {
+  if (!inputTokens && !outputTokens) {
+    return null;
+  }
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-gray-400">
+      {inputTokens ? (
+        <span data-testid="tool-row-input-tokens" title="Estimated input tokens">
+          {inputTokens} in
+        </span>
+      ) : null}
+      {inputTokens && outputTokens ? <span aria-hidden>·</span> : null}
+      {outputTokens ? (
+        <span data-testid="tool-row-output-tokens" title="Estimated output tokens">
+          {outputTokens} out
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 function statusClasses(status: string): string {
   const normalized = status.toLowerCase();
@@ -79,10 +115,8 @@ export function ToolRow({
   }, [active]);
   const formattedAt = formatRecordedAt(tool.recordedAt ?? tool.startedAt);
   const formattedDuration = formatToolDuration(tool.durationMs);
-  const formattedTokens =
-    tool.tokenEstimate !== undefined && tool.tokenEstimate > 0
-      ? formatContextTokenCount(tool.tokenEstimate)
-      : null;
+  const formattedInputTokens = formatTokenEstimate(tool.inputTokenEstimate);
+  const formattedOutputTokens = formatTokenEstimate(tool.outputTokenEstimate);
   const rowShellClass =
     layout === 'panel'
       ? 'shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm'
@@ -137,15 +171,10 @@ export function ToolRow({
             <span className="min-w-0 truncate rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
               {tool.name}
             </span>
-            {formattedTokens ? (
-              <span
-                className="shrink-0 tabular-nums text-[10px] text-gray-400"
-                data-testid="tool-row-tokens"
-                title="Estimated payload tokens (input + output)"
-              >
-                {formattedTokens} tok
-              </span>
-            ) : null}
+            <ToolTokenBadges
+              inputTokens={formattedInputTokens}
+              outputTokens={formattedOutputTokens}
+            />
             {formattedDuration ? (
               <span
                 className="shrink-0 tabular-nums text-[10px] text-gray-400"
@@ -174,17 +203,10 @@ export function ToolRow({
           <span className="min-w-0 truncate rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-700">
             {tool.name}
           </span>
-          {formattedTokens ? (
-            <span
-              className="shrink-0 tabular-nums text-[10px] text-gray-400"
-              data-testid="tool-row-tokens"
-              title="Estimated payload tokens (input + output)"
-            >
-              {formattedTokens} tok
-            </span>
-          ) : (
-            <span aria-hidden />
-          )}
+          <ToolTokenBadges
+            inputTokens={formattedInputTokens}
+            outputTokens={formattedOutputTokens}
+          />
           {formattedDuration ? (
             <span
               className="shrink-0 tabular-nums text-[10px] text-gray-400"
@@ -291,7 +313,7 @@ export function ToolInspectorGroup({
         ) : (
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
-        <span>Tool activity</span>
+        <span>Activity</span>
         {headerTimestamp ? (
           <time
             dateTime={groupRecordedAt ?? tools.find((entry) => entry.tool.recordedAt)?.tool.recordedAt}
