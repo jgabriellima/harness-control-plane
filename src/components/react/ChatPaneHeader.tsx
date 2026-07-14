@@ -17,6 +17,7 @@ import {
 } from '@/lib/pinned-conversations';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
+import ConversationActionsMenu from '@/components/react/ConversationActionsMenu';
 
 interface ChatPaneHeaderProps {
   conversationId: string;
@@ -109,6 +110,15 @@ export default function ChatPaneHeader({
     >
       <div className="min-w-0 flex-1 overflow-hidden">
         <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+          {!isDraftConversationId(conversationId) ? (
+            <ConversationActionsMenu
+              conversationId={conversationId}
+              projectId={projectId}
+              activeProjectId={projectId}
+              compact={compact}
+              menuTestId="chat-pane-conversation-actions"
+            />
+          ) : null}
           <h2
             className={`min-w-0 flex-1 truncate font-medium text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}
             data-testid="chat-pane-header-title"
