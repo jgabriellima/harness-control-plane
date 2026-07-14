@@ -1,0 +1,595 @@
+/* Ported subset from Open Design home-hero.css — composer + skill chips */
+.home-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px 0 8px;
+}
+.home-hero__brand {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+/* The brand glyph is a self-shaped superellipse tile (rendered through
+   .od-brand-glyph), so it needs no panel disc behind it. */
+.home-hero__brand-mark {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+}
+.home-hero__brand-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-strong);
+}
+.home-hero__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 40px;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  text-align: center;
+}
+.home-hero__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  text-align: center;
+  max-width: 540px;
+  line-height: 1.55;
+}
+.home-hero__subtitle kbd {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-subtle);
+}
+/* ---------- Output-type tab bar ----------
+   Sits below the input card, Manus-style: the selected creation mode
+   stays attached to the composer and unlocks prompt examples directly
+   underneath. Secondary shortcuts collapse behind the trailing more
+   button so they don't compete with the main creation types. */
+.home-hero__type-tabs {
+  width: 100%;
+  max-width: 720px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: -2px 0 0;
+  padding: 0 12px;
+}
+.home-hero__type-tab {
+  appearance: none;
+  position: relative;
+  justify-content: center;
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-subtle));
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 580;
+  line-height: 1.3;
+  letter-spacing: 0;
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition:
+    color 120ms var(--ease-out),
+    background-color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out),
+    box-shadow 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+.home-hero__type-tab:hover:not(:disabled) {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+  background: var(--bg-panel);
+  transform: translateY(-0.5px);
+}
+.home-hero__type-tab.is-active {
+  background: var(--accent-tint);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--accent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--accent) 16%, transparent),
+    var(--shadow-xs);
+}
+.home-hero:focus-within .home-hero__type-tab.is-active {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent),
+    var(--shadow-xs);
+}
+.home-hero__type-tab.is-active:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.home-hero__type-tab.is-pending {
+  opacity: 0.65;
+}
+.home-hero__type-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.home-hero__type-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.home-hero__type-tab-icon {
+  flex: 0 0 auto;
+  opacity: 0.82;
+}
+.home-hero__type-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-hero__type-tab--more {
+  width: 34px;
+  flex: 0 0 34px;
+  padding: 7px;
+}
+.home-hero__subtype-row {
+  width: 100%;
+  max-width: 720px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Single line: overflow chips collapse into the "More" dropdown instead of
+     wrapping onto extra rows (measured by the hidden ghost row below). */
+  flex-wrap: nowrap;
+  gap: 5px;
+  min-width: 0;
+  margin: 6px 0 0;
+  padding: 0 12px;
+}
+/* Off-screen full-set copy used only to measure natural chip widths so the
+   visible row can decide how many fit before the "More" cutover. Clipped to a
+   0-height, row-width box so it never adds page scroll, and its chips never
+   shrink (flex:0 0 auto) so offsetWidth reports each chip's true width. */
+.home-hero__subtype-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.home-hero__subtype-measure > * {
+  flex: 0 0 auto;
+}
+/* Visible-row items keep their natural width (the measurement already made
+   them fit) so a nowrap row doesn't shrink chips into ellipsis. */
+.home-hero__subtype-row > .home-hero__subtype-chip,
+.home-hero__subtype-row > .home-hero__subtype-more {
+  flex: 0 0 auto;
+}
+.home-hero__subtype-more {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.home-hero__subtype-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  min-width: 180px;
+  max-height: min(320px, 60vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+.home-hero__subtype-more-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 540;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.home-hero__subtype-more-item .home-hero__subtype-chip-label {
+  flex: 1 1 auto;
+}
+.home-hero__subtype-more-item:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+.home-hero__subtype-more-item.is-active {
+  color: var(--accent);
+}
+.home-hero__subtype-more-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.home-hero__subtype-chip {
+  appearance: none;
+  position: relative;
+  justify-content: center;
+  min-width: 0;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 540;
+  line-height: 1.3;
+  cursor: pointer;
+  transition:
+    color 120ms var(--ease-out),
+    background-color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+.home-hero__subtype-chip:hover:not(:disabled) {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-subtle));
+  transform: translateY(-0.5px);
+}
+.home-hero__subtype-chip.is-active {
+  background: var(--accent-tint);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--accent);
+}
+.home-hero__subtype-chip.is-active:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.home-hero__subtype-chip.is-pending {
+  opacity: 0.65;
+}
+.home-hero__subtype-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.home-hero__subtype-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.home-hero__subtype-chip-icon {
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+.home-hero__subtype-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-hero__input-card {
+  position: relative;
+  --home-hero-prompt-max-height: 180px;
+  z-index: 2;
+  width: 100%;
+  max-width: 720px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 0;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+/* While one of the composer's popovers is open, the whole card (a stacking
+   context) is lifted so the popover escapes above the static home content
+   below it (recent projects, plugin tiles — their contexts top out at 8).
+   The lift must stay BELOW `.entry-main__topbar` (z-index 10): the sticky
+   topbar is opaque chrome and the card scrolling under it must never cover
+   the chip cluster. It must also stay below the fixed modal family
+   (`.home-hero-confirm__backdrop` 80, `.plus-menu__popup` 90,
+   `.plugins-import-modal__backdrop` 100, `.use-everywhere-modal-backdrop`
+   920). Popover z-indexes inside the card (1503/1701/…) are local to the
+   card's stacking context and only order its own children. */
+.home-hero__input-card:has(.inline-switcher__popover),
+.home-hero__input-card:has(.session-mode-toggle__popover),
+.home-hero__input-card:has(.home-hero__plugin-picker),
+.home-hero__input-card:has(.home-hero__template-menu) {
+  z-index: 9;
+  overflow: visible;
+}
+.home-hero__input-card--compact-authoring {
+  max-width: 640px;
+  padding-block: 12px 10px;
+}
+.home-hero__input-card:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: none;
+}
+.home-hero__input-card.is-drag-active {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.home-hero__active {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  max-height: min(82px, 18vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  font-size: 11.5px;
+}
+.home-hero__active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: min(240px, 100%);
+  min-height: 24px;
+  padding: 2px 5px 2px 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-panel) 86%, var(--accent-tint));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border-soft));
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+  line-height: 1;
+  box-shadow: none;
+}
+.home-hero__active-chip--skill {
+  background: color-mix(in srgb, var(--bg-subtle) 88%, var(--accent-tint));
+  color: var(--text-strong);
+}
+.home-hero__active-chip--context {
+  background: color-mix(in srgb, var(--bg-panel) 90%, var(--bg-subtle));
+  color: var(--text);
+  border-color: var(--border-soft);
+}
+.home-hero__active-chip--file {
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--accent-tint));
+}
+.home-hero__active-file-group {
+  display: contents;
+}
+.home-hero__active-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--text) 7%, var(--bg-subtle));
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+}
+.home-hero__active-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 18px;
+}
+.home-hero__active-meta {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 18px;
+}
+.home-hero__active-chip-body {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.home-hero__active-chip-body:disabled {
+  cursor: default;
+}
+.home-hero__active-chip-body:hover {
+  color: var(--accent);
+}
+.home-hero__active-chip-body:disabled:hover {
+  color: inherit;
+}
+.home-hero__active-file-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+}
+.home-hero__active-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, currentColor 8%, var(--bg-subtle));
+  color: inherit;
+}
+.home-hero__active-thumb {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-subtle);
+}
+.home-hero__active-clear {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-pill);
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.62;
+}
+.home-hero__active-clear svg {
+  display: block;
+}
+.home-hero__active-clear:hover {
+  opacity: 1;
+  background: var(--red-bg);
+  color: var(--red);
+}
+.home-hero__rail {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  padding: 4px 2px 0;
+}
+.home-hero__rail--shortcuts {
+  padding-top: 0;
+}
+.home-hero__rail-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.home-hero__rail-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--border-soft);
+  border-radius: 1px;
+  flex: 0 0 auto;
+}
+.home-hero__rail-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out), transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out);
+}
+.home-hero__rail-chip--migrate {
+  background: var(--bg-subtle);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.home-hero__rail-chip-icon {
+  flex: 0 0 auto;
+  color: currentColor;
+  opacity: 0.82;
+  transition: opacity 140ms var(--ease-out);
+}
+.home-hero__rail-chip-label {
+  white-space: nowrap;
+}
+.home-hero__rail-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--bg-panel);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.home-hero__rail-chip:hover:not(:disabled) .home-hero__rail-chip-icon {
+  opacity: 1;
+}
+.home-hero__rail-chip:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.home-hero__rail-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+  transform: none;
+}
+.home-hero__rail-chip.is-active {
+  background: var(--accent-tint);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--accent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--accent) 18%, transparent),
+    var(--shadow-xs);
+  transform: translateY(-1px);
+}
+.home-hero__rail-chip.is-active .home-hero__rail-chip-icon {
+  opacity: 1;
+}
+.home-hero__rail-chip.is-pending {
+  opacity: 0.75;
+  box-shadow: none;
+}
