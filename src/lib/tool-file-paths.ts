@@ -76,6 +76,39 @@ function normalizedToolName(toolName: string): string {
   return toolName.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
 }
 
+export type FileArtifactAction = 'create' | 'edit' | 'upload' | 'delete';
+
+export function inferFileActionFromTool(toolName: string): FileArtifactAction | null {
+  const normalized = normalizedToolName(toolName);
+
+  if (normalized === 'write') {
+    return 'create';
+  }
+
+  if (normalized === 'delete') {
+    return 'delete';
+  }
+
+  if (['edit', 'strreplace', 'search_replace', 'apply_patch'].includes(normalized)) {
+    return 'edit';
+  }
+
+  if (normalized.includes('upload')) {
+    return 'upload';
+  }
+
+  return null;
+}
+
+export function inferFileActionFromPath(path: string): FileArtifactAction | null {
+  const normalized = normalizeArtifactPath(path);
+  if (normalized.startsWith('.uploads/')) {
+    return 'upload';
+  }
+
+  return null;
+}
+
 /**
  * Extract workspace-relative file paths referenced by a runtime tool invocation.
  */

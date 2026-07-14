@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { collectThreadFilePaths } from './thread-file-paths.ts';
+import { collectThreadFileActivity, collectThreadFilePaths } from './thread-file-paths.ts';
 
 describe('collectThreadFilePaths', () => {
   it('aggregates files across multiple turns in a thread', () => {
@@ -51,5 +51,34 @@ describe('collectThreadFilePaths', () => {
       'artifacts/presentation-production.pb.yaml',
       'artifacts/page.pdf',
     ]);
+  });
+
+  it('excludes cursor internal paths and attaches mutation actions', () => {
+    const items = collectThreadFileActivity([
+      {
+        role: 'tool',
+        content: 'Write · completed',
+        toolInput: JSON.stringify({
+          path: '.cursor/projects/Users/dev/agent/917feb1e.txt',
+        }),
+      },
+      {
+        role: 'tool',
+        content: 'Write · completed',
+        toolInput: JSON.stringify({ path: 'delivery.md' }),
+      },
+      {
+        role: 'tool',
+        content: 'edit · completed',
+        toolInput: JSON.stringify({ file_path: 'report.md' }),
+      },
+    ]);
+
+    assert.deepEqual(
+      items.map((item) => item.path),
+      ['report.md', 'delivery.md'],
+    );
+    assert.equal(items.find((item) => item.path === 'delivery.md')?.action, 'create');
+    assert.equal(items.find((item) => item.path === 'report.md')?.action, 'edit');
   });
 });

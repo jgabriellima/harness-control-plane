@@ -5,6 +5,7 @@ import {
   dedupeArtifactPaths,
   inferMonacoLanguageFromPath,
   isFullscreenCapableArtifact,
+  isOpenableWorkspaceArtifactPath,
   isPresentationHtmlArtifact,
   isSyntaxHighlightedArtifact,
   normalizeArtifactPath,
@@ -18,6 +19,29 @@ describe('artifact path normalization', () => {
       normalizeArtifactPath(absolute),
       '.business/playbooks/runs/playbook-1/artifacts/presentation/deck.pdf',
     );
+  });
+
+  it('filters cursor internal and absolute host paths from dedupe', () => {
+    assert.equal(
+      isOpenableWorkspaceArtifactPath('.cursor/projects/Users/dev/agent/file.txt'),
+      false,
+    );
+    assert.equal(
+      isOpenableWorkspaceArtifactPath('.business/playbooks/runs/playbook-1/artifacts/report.md'),
+      true,
+    );
+    assert.equal(isOpenableWorkspaceArtifactPath('Users/dev/project/file.txt'), false);
+
+    const deduped = dedupeArtifactPaths([
+      '.cursor/projects/Users/dev/agent/917feb1e.txt',
+      '.business/playbooks/runs/playbook-1/artifacts/report.md',
+      'delivery.md',
+    ]);
+
+    assert.deepEqual(deduped, [
+      '.business/playbooks/runs/playbook-1/artifacts/report.md',
+      'delivery.md',
+    ]);
   });
 
   it('dedupes bare filenames in favor of harness paths', () => {

@@ -60,8 +60,7 @@ import {
 import { isDraftConversationId } from '@/lib/draft-conversation';
 import { parseComputerUseTargetMode, type ComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
 import { computerUseTargetModeLabel } from '@/lib/runtime-computer-use-types';
-import { dedupeArtifactPaths } from '@/lib/file-reference';
-import { collectThreadFilePaths } from '@/lib/thread-file-paths';
+import { collectThreadFileActivity } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
@@ -210,6 +209,16 @@ function readPresentationE2eSeed(): boolean {
     return false;
   }
   return new URLSearchParams(window.location.search).get('presentation-e2e') === '1';
+}
+
+function integrationSlotChipLabel(slot: ReadinessSlot): string {
+  if (slot.oauthVerified) {
+    return 'active';
+  }
+  if (slot.oauthConnected) {
+    return 'reconnect';
+  }
+  return slot.status;
 }
 
 export default function ChatPane({
@@ -414,12 +423,14 @@ export default function ChatPane({
     observability: sdkObservability,
   });
 
-  const threadFilePaths = useMemo(() => {
-    const fromMessages = collectThreadFilePaths(displayMessages);
-    const fromObservability = sdkObservability.generatedFiles.map((file) => file.path);
-
-    return dedupeArtifactPaths([...fromObservability, ...fromMessages], { preserveOrder: true });
+  const threadFileItems = useMemo(() => {
+    return collectThreadFileActivity(displayMessages, sdkObservability.generatedFiles);
   }, [displayMessages, sdkObservability.generatedFiles]);
+
+  const threadFilePaths = useMemo(
+    () => threadFileItems.map((item) => item.path),
+    [threadFileItems],
+  );
 
   useEffect(() => {
     setThreadMessages(displayMessages);
@@ -1223,14 +1234,14 @@ export default function ChatPane({
             />
           ) : null}
 
-          {threadFilePaths.length > 0 ? (
+          {threadFileItems.length > 0 ? (
             <div className="mb-2" data-testid="chat-composer-generated-files">
               <FileActivityGroup
-                paths={threadFilePaths}
+                items={threadFileItems}
                 onFileClick={(filePath) => {
                   void openArtifact(filePath, projectId);
                 }}
-                defaultCollapsed={threadFilePaths.length > FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD}
+                defaultCollapsed={threadFileItems.length > FILE_ACTIVITY_AUTO_COLLAPSE_THRESHOLD}
               />
             </div>
           ) : null}
@@ -1332,7 +1343,7 @@ export default function ChatPane({
                       }`}
                       onClick={() => toggleIntegration(slot.slotId)}
                     >
-                      {slot.slotId} · {slot.status}
+                      {slot.slotId} · {integrationSlotChipLabel(slot)}
                     </button>
                   ))
                 )}

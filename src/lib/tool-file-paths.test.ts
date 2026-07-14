@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractFilePathsFromTool } from './tool-file-paths.ts';
+import { extractFilePathsFromTool, inferFileActionFromTool } from './tool-file-paths.ts';
 
 describe('tool-file-paths', () => {
   it('extracts write tool path args', () => {
@@ -25,5 +25,12 @@ describe('tool-file-paths', () => {
       url: 'https://example.com',
     });
     assert.deepEqual(paths, []);
+  });
+
+  it('maps mutation tools to file actions', () => {
+    assert.equal(inferFileActionFromTool('Write'), 'create');
+    assert.equal(inferFileActionFromTool('edit'), 'edit');
+    assert.equal(inferFileActionFromTool('Delete'), 'delete');
+    assert.equal(inferFileActionFromTool('Grep'), null);
   });
 });

@@ -302,6 +302,35 @@ export function normalizeArtifactPath(raw: string): string {
   return trimmed.replace(/^\/+/, '');
 }
 
+/**
+ * True when a normalized artifact path can be resolved via the workspace file API
+ * or thread fallback. Filters Cursor IDE internal stores and absolute host paths.
+ */
+export function isOpenableWorkspaceArtifactPath(normalizedPath: string): boolean {
+  const path = normalizedPath.trim();
+  if (!path) {
+    return false;
+  }
+
+  if (path.startsWith('/')) {
+    return false;
+  }
+
+  if (/^[A-Za-z]:/.test(path) || path.includes(':\\')) {
+    return false;
+  }
+
+  if (path.startsWith('.cursor/projects/')) {
+    return false;
+  }
+
+  if (/(^|\/)Users\//.test(path) || /(^|\/)home\//.test(path)) {
+    return false;
+  }
+
+  return true;
+}
+
 /** Prefer fully-qualified harness paths over bare filenames when both exist. */
 export function dedupeArtifactPaths(
   paths: string[],
@@ -311,7 +340,7 @@ export function dedupeArtifactPaths(
 
   for (const rawPath of paths) {
     const path = normalizeArtifactPath(rawPath);
-    if (!path || !isLikelyFilePath(path)) {
+    if (!path || !isLikelyFilePath(path) || !isOpenableWorkspaceArtifactPath(path)) {
       continue;
     }
 
