@@ -33,6 +33,26 @@ test.describe('runtime console stream QA', () => {
     }
   });
 
+  test('inline slash command query opens filtered suggestions', async ({ page, request }) => {
+    const commandsResponse = await request.get(`${BASE}/api/runtime/commands`);
+    expect(commandsResponse.status()).toBe(200);
+    const body = (await commandsResponse.json()) as { commands: Array<{ command: string }> };
+    const learnCommand =
+      body.commands.find((item) => item.command.includes('learn')) ?? body.commands[0];
+    expect(learnCommand).toBeTruthy();
+
+    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+    await expect(page.getByTestId('chat-pane')).toBeVisible({ timeout: 60_000 });
+
+    const textarea = page.getByPlaceholder(/Ask the runtime or type '\/'/);
+    await textarea.click();
+    await textarea.fill(`vamos implementar um playground use o ${learnCommand?.command.slice(0, 15) ?? '/business:learn'}`);
+
+    const suggestions = page.getByTestId('slash-command-suggestions');
+    await expect(suggestions).toBeVisible({ timeout: 15_000 });
+    await expect(suggestions.getByText(learnCommand?.command ?? '/business:learn')).toBeVisible();
+  });
+
   test('file mention selection renders clickable badge instead of raw text', async ({ page, request }) => {
     const filesResponse = await request.get(`${BASE}/api/workspace/files?q=design-system&project_id=default`);
     expect(filesResponse.status()).toBe(200);

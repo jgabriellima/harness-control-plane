@@ -51,9 +51,10 @@ import {
   clearActiveFileMention,
   clearActiveSlashQuery,
   composerHasSubmittableContent,
-  isActiveSlashQuery,
   parseActiveFileMention,
+  parseActiveSlashQuery,
   rankFileMentionSuggestions,
+  rankSlashCommandSuggestions,
   removeComposerFileMention,
   type FileMentionSuggestion,
 } from '@/lib/composer-mention';
@@ -448,14 +449,15 @@ export default function ChatPane({
     ? 'grid h-full min-h-0 w-full min-w-0 max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden [&>*]:min-w-0'
     : 'grid h-full min-h-0 w-full min-w-0 max-w-full grid-rows-[minmax(0,1fr)_auto] overflow-hidden [&>*]:min-w-0';
 
+  const activeSlashQuery = useMemo(() => parseActiveSlashQuery(input), [input]);
+
   const slashSuggestions = useMemo(() => {
-    if (!isActiveSlashQuery(input)) {
+    if (activeSlashQuery === null) {
       return [];
     }
 
-    const token = input.trim().split(/\s/)[0] ?? '';
-    return commands.filter((item) => item.command.startsWith(token));
-  }, [commands, input]);
+    return rankSlashCommandSuggestions(commands, activeSlashQuery);
+  }, [activeSlashQuery, commands]);
 
   const activeMentionQuery = useMemo(() => parseActiveFileMention(input), [input]);
 

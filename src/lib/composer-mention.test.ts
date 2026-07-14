@@ -5,9 +5,13 @@ import {
   addComposerFileMention,
   buildComposerSubmitMessage,
   clearActiveFileMention,
+  clearActiveSlashQuery,
   composerHasSubmittableContent,
+  isActiveSlashQuery,
   parseActiveFileMention,
+  parseActiveSlashQuery,
   rankFileMentionSuggestions,
+  rankSlashCommandSuggestions,
   replaceActiveFileMention,
   type FileMentionSuggestion,
 } from './composer-mention.ts';
@@ -56,6 +60,44 @@ describe('composer-mention', () => {
     );
     assert.equal(buildComposerSubmitMessage('', mentions), '@design-system.json');
     assert.equal(composerHasSubmittableContent('', mentions), true);
+  });
+
+  it('promotes slash commands to submit prefix and supports badge-only dispatch', () => {
+    assert.equal(
+      buildComposerSubmitMessage('refresh context', [], '/business:hydrate'),
+      '/business:hydrate refresh context',
+    );
+    assert.equal(buildComposerSubmitMessage('', [], '/business:bundle'), '/business:bundle');
+    assert.equal(composerHasSubmittableContent('', [], '/business:bundle'), true);
+    assert.equal(isActiveSlashQuery('/business:bundle'), true);
+    assert.equal(isActiveSlashQuery('/business:bundle run now'), false);
+    assert.equal(clearActiveSlashQuery('/business:bundle'), '');
+    assert.equal(clearActiveSlashQuery('/business:bundle run now'), '/business:bundle run now');
+  });
+
+  it('detects inline slash queries anywhere in the composer text', () => {
+    assert.equal(
+      parseActiveSlashQuery('vamos implementar um playground use o /business:learn'),
+      '/business:learn',
+    );
+    assert.equal(isActiveSlashQuery('vamos implementar um playground use o /business:learn'), true);
+    assert.equal(
+      clearActiveSlashQuery('vamos implementar um playground use o /business:learn'),
+      'vamos implementar um playground use o',
+    );
+    assert.equal(parseActiveFileMention('vamos implementar use o /business:learn'), null);
+  });
+
+  it('ranks partial slash command matches ahead of unrelated commands', () => {
+    const commands = [
+      { command: '/business:goal', description: 'Goal runner' },
+      { command: '/business:learn', description: 'Learn playbook' },
+      { command: '/business:bundle', description: 'Bundle workspace' },
+    ];
+
+    const ranked = rankSlashCommandSuggestions(commands, '/business:learn');
+    assert.equal(ranked[0]?.command, '/business:learn');
+    assert.equal(ranked.some((item) => item.command === '/business:goal'), false);
   });
 
   it('ranks prefix matches ahead of substring matches', () => {

@@ -26,6 +26,80 @@ export function clearActiveFileMention(input: string): string {
   return replaceActiveFileMention(input, '');
 }
 
+const ACTIVE_SLASH_PATTERN = /(?:^|\s)(\/[^\s]*)$/;
+
+/** Return the trailing slash command token, or null when no active slash query. */
+export function parseActiveSlashQuery(input: string): string | null {
+  const match = input.match(ACTIVE_SLASH_PATTERN);
+  return match?.[1] ?? null;
+}
+
+/** True when the composer ends with an in-progress slash command token. */
+export function isActiveSlashQuery(input: string): boolean {
+  return parseActiveSlashQuery(input) !== null;
+}
+
+/** Clear the active trailing slash token after it is promoted to a badge. */
+export function clearActiveSlashQuery(input: string): string {
+  const match = input.match(ACTIVE_SLASH_PATTERN);
+  if (!match) {
+    return input;
+  }
+
+  const prefix = input.slice(0, input.length - match[0].length);
+  return prefix.trimEnd();
+}
+
+export interface SlashCommandCandidate {
+  command: string;
+  description?: string;
+}
+
+export function rankSlashCommandSuggestions<T extends SlashCommandCandidate>(
+  commands: T[],
+  query: string,
+  limit = 50,
+): T[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  const queryBody = normalizedQuery.replace(/^\//, '');
+
+  const scored = commands.map((item) => {
+    const command = item.command.toLowerCase();
+    const commandBody = command.replace(/^\//, '');
+    let score = 0;
+
+    if (!normalizedQuery || normalizedQuery === '/') {
+      score = 10;
+    } else if (command === normalizedQuery) {
+      score = 100;
+    } else if (command.startsWith(normalizedQuery)) {
+      score = 90;
+    } else if (commandBody.startsWith(queryBody)) {
+      score = 85;
+    } else if (queryBody.length >= 2 && commandBody.includes(queryBody)) {
+      score = 70;
+    } else {
+      const segments = queryBody.split(/[:/]/).filter((segment) => segment.length > 0);
+      if (segments.length > 0 && segments.every((segment) => commandBody.includes(segment))) {
+        score = 55;
+      }
+    }
+
+    return { item, score };
+  });
+
+  return scored
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return left.item.command.localeCompare(right.item.command);
+    })
+    .slice(0, limit)
+    .map((entry) => entry.item);
+}
+
 export function addComposerFileMention(
   mentions: FileMentionSuggestion[],
   file: FileMentionSuggestion,
@@ -47,26 +121,33 @@ export function removeComposerFileMention(
 export function buildComposerSubmitMessage(
   input: string,
   mentions: FileMentionSuggestion[],
+  slashCommand?: string | null,
 ): string {
   const trimmed = input.trim();
   const mentionTokens = mentions.map((file) => `@${file.name}`).join(' ');
+  const parts: string[] = [];
 
-  if (!trimmed) {
-    return mentionTokens;
+  if (slashCommand?.trim()) {
+    parts.push(slashCommand.trim());
   }
 
-  if (!mentionTokens) {
-    return trimmed;
+  if (trimmed) {
+    parts.push(trimmed);
   }
 
-  return `${trimmed} ${mentionTokens}`;
+  if (mentionTokens) {
+    parts.push(mentionTokens);
+  }
+
+  return parts.join(' ').trim();
 }
 
 export function composerHasSubmittableContent(
   input: string,
   mentions: FileMentionSuggestion[],
+  slashCommand?: string | null,
 ): boolean {
-  return input.trim().length > 0 || mentions.length > 0;
+  return input.trim().length > 0 || mentions.length > 0 || Boolean(slashCommand?.trim());
 }
 
 export function rankFileMentionSuggestions(
