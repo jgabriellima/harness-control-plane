@@ -93,6 +93,21 @@ function usesHarnessSurface(view: DesignView): boolean {
   return HARNESS_SURFACE_VIEWS.has(view);
 }
 
+/** Catalog views with hero actions — hide EntryTopBar to avoid overlap at 1280px (B-02). */
+const HERO_ACTION_VIEWS = new Set<DesignView>([
+  'automations',
+  'plugins',
+  'plugin-detail',
+  'design-systems',
+  'design-system-create',
+  'design-system-detail',
+  'integrations',
+]);
+
+function shouldShowEntryTopBar(view: DesignView): boolean {
+  return !HERO_ACTION_VIEWS.has(view);
+}
+
 export default function DesignEmbeddedContent({
   presentationTitle,
   brandAssets,
@@ -246,7 +261,7 @@ export default function DesignEmbeddedContent({
     >
       <div className="entry entry--rail-open h-full min-h-0">
         <div className="entry-main entry-main--scroll">
-          <DesignEntryTopBar />
+          {shouldShowEntryTopBar(route.view) ? <DesignEntryTopBar /> : null}
           <div className="entry-main__inner">
             <div className={`${embeddedClass} min-h-0 flex-1 overflow-hidden`}>
               {wrappedContent}

@@ -62,7 +62,10 @@ function nowId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function entryViewFromRoute(route: ParsedDesignRoute): EntryView {
+function entryViewFromRoute(route: ParsedDesignRoute, pathname: string): EntryView {
+  if (route.view === 'projects' && pathname === '/') {
+    return 'home';
+  }
   switch (route.view) {
     case 'home':
       return 'home';
@@ -109,7 +112,7 @@ function pathForEntryView(view: EntryView): string {
   }
 }
 
-function tabFromRoute(route: ParsedDesignRoute, timestamp = Date.now()): WorkspaceChromeTab {
+function tabFromRoute(route: ParsedDesignRoute, pathname: string, timestamp = Date.now()): WorkspaceChromeTab {
   if (route.view === 'studio' && route.projectId) {
     return {
       id: `project:${route.projectId}:${nowId()}`,
@@ -120,9 +123,9 @@ function tabFromRoute(route: ParsedDesignRoute, timestamp = Date.now()): Workspa
     };
   }
   return {
-    id: `entry:${entryViewFromRoute(route)}:${nowId()}`,
+    id: `entry:${entryViewFromRoute(route, pathname)}:${nowId()}`,
     kind: 'entry',
-    view: entryViewFromRoute(route),
+    view: entryViewFromRoute(route, pathname),
     createdAt: timestamp,
     lastActiveAt: timestamp,
   };
@@ -170,13 +173,17 @@ function normalizeTabsState(state: WorkspaceTabsState): WorkspaceTabsState {
   return { tabs: sourceTabs, activeTabId };
 }
 
-function syncStateToRoute(state: WorkspaceTabsState, route: ParsedDesignRoute): WorkspaceTabsState {
+function syncStateToRoute(
+  state: WorkspaceTabsState,
+  route: ParsedDesignRoute,
+  pathname: string,
+): WorkspaceTabsState {
   const timestamp = Date.now();
   const current = normalizeTabsState(state);
   const currentActive = current.tabs.find((tab) => tab.id === current.activeTabId) ?? null;
 
   if (route.view !== 'studio') {
-    const view = entryViewFromRoute(route);
+    const view = entryViewFromRoute(route, pathname);
     const existingEntry = current.tabs.find((tab) => tab.kind === 'entry');
     if (existingEntry) {
       return normalizeTabsState({
@@ -187,7 +194,7 @@ function syncStateToRoute(state: WorkspaceTabsState, route: ParsedDesignRoute): 
         activeTabId: existingEntry.id,
       });
     }
-    const nextTab = tabFromRoute(route, timestamp);
+    const nextTab = tabFromRoute(route, pathname, timestamp);
     return normalizeTabsState({ tabs: [...current.tabs, nextTab], activeTabId: nextTab.id });
   }
 
@@ -205,7 +212,7 @@ function syncStateToRoute(state: WorkspaceTabsState, route: ParsedDesignRoute): 
       });
     }
     if (currentActive?.kind === 'entry') {
-      const nextTab = tabFromRoute(route, timestamp);
+      const nextTab = tabFromRoute(route, pathname, timestamp);
       return normalizeTabsState({
         tabs: [...current.tabs, nextTab],
         activeTabId: nextTab.id,
@@ -214,12 +221,12 @@ function syncStateToRoute(state: WorkspaceTabsState, route: ParsedDesignRoute): 
   }
 
   if (!currentActive) {
-    const nextTab = tabFromRoute(route, timestamp);
+    const nextTab = tabFromRoute(route, pathname, timestamp);
     return normalizeTabsState({ tabs: [...current.tabs, nextTab], activeTabId: nextTab.id });
   }
 
   const replacement = {
-    ...tabFromRoute(route, currentActive.createdAt),
+    ...tabFromRoute(route, pathname, currentActive.createdAt),
     id: currentActive.id,
     lastActiveAt: timestamp,
   };
@@ -229,14 +236,14 @@ function syncStateToRoute(state: WorkspaceTabsState, route: ParsedDesignRoute): 
   });
 }
 
-function initialTabsState(route: ParsedDesignRoute): WorkspaceTabsState {
-  const fallback = tabFromRoute(route);
+function initialTabsState(route: ParsedDesignRoute, pathname: string): WorkspaceTabsState {
+  const fallback = tabFromRoute(route, pathname);
   if (typeof window === 'undefined') {
-    return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route);
+    return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route, pathname);
   }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route);
+    if (!raw) return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route, pathname);
     const parsed = JSON.parse(raw) as { tabs?: unknown[]; activeTabId?: string };
     const tabs = (parsed.tabs ?? [])
       .map((value) => {
@@ -264,11 +271,11 @@ function initialTabsState(route: ParsedDesignRoute): WorkspaceTabsState {
       })
       .filter((tab): tab is WorkspaceChromeTab => tab !== null);
     if (tabs.length === 0) {
-      return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route);
+      return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route, pathname);
     }
-    return syncStateToRoute({ tabs, activeTabId: parsed.activeTabId ?? tabs[0]!.id }, route);
+    return syncStateToRoute({ tabs, activeTabId: parsed.activeTabId ?? tabs[0]!.id }, route, pathname);
   } catch {
-    return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route);
+    return syncStateToRoute({ tabs: [fallback], activeTabId: fallback.id }, route, pathname);
   }
 }
 
@@ -315,7 +322,7 @@ export default function DesignWorkspaceChrome() {
   const hub = useRuntimeHub();
   const pathname = useDesignPathname();
   const route = parseDesignRoute(pathname);
-  const [state, setState] = useState<WorkspaceTabsState>(() => initialTabsState(route));
+  const [state, setState] = useState<WorkspaceTabsState>(() => initialTabsState(route, pathname));
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [projects, setProjects] = useState<DesignProjectRecord[]>([]);
@@ -325,7 +332,7 @@ export default function DesignWorkspaceChrome() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    setState((current) => syncStateToRoute(current, route));
+    setState((current) => syncStateToRoute(current, route, pathname));
   }, [pathname, route.projectId, route.view]);
 
   useEffect(() => {
