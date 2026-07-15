@@ -4,8 +4,13 @@ import type { SettingsSnapshot } from '../../lib/settings-snapshot';
 import { clientSdkMessageContext } from '../../lib/runtime-sdk-messages';
 import { dispatchRuntimeCredentialsChanged } from '../../lib/runtime-credentials-events';
 import SecretInput from './SecretInput';
+import { useActiveProject } from '../../hooks/useActiveProject';
 import IntegrationConnectButton from './IntegrationConnectButton';
+import IntegrationConnectionActions from './IntegrationConnectionActions';
 import ComputerUseActivatePanel from './ComputerUseActivatePanel';
+import PresentationSettingsPanel from './PresentationSettingsPanel';
+import ReaderSettingsPanel from './ReaderSettingsPanel';
+import { ReaderPreferencesProvider } from './ReaderPreferencesProvider';
 
 interface CredentialPresence {
   env_var: string;
@@ -41,45 +46,76 @@ function IntegrationCredentials({
   slotId,
   provider,
   keychainService,
+  reloadToken,
+  projectId,
 }: {
   slotId: string;
   provider: string;
   keychainService: string;
+  reloadToken: number;
+  projectId: string;
 }) {
   const [credentials, setCredentials] = useState<CredentialPresence[]>([]);
   const [connectAvailable, setConnectAvailable] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [failureReason, setFailureReason] = useState<string | null>(null);
+  const [expectedSubdomain, setExpectedSubdomain] = useState<string | null>(null);
+  const [authType, setAuthType] = useState<'manual' | 'composio_oauth'>('manual');
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
+      const connectParams = new URLSearchParams({
+        provider,
+        project_id: projectId,
+      });
       const [credentialsResponse, connectResponse] = await Promise.all([
-        fetch(`/api/integrations/${encodeURIComponent(slotId)}/credentials`),
-        fetch(`/api/integrations/${encodeURIComponent(slotId)}/connect`),
+        fetch(`/api/integrations/${encodeURIComponent(slotId)}/credentials?project_id=${encodeURIComponent(projectId)}`),
+        fetch(`/api/integrations/${encodeURIComponent(slotId)}/connect?${connectParams.toString()}`),
       ]);
       const credentialsPayload = (await credentialsResponse.json()) as CredentialPresence[];
-      const connectPayload = (await connectResponse.json()) as { connect_available?: boolean };
+      const connectPayload = (await connectResponse.json()) as {
+        connect_available?: boolean;
+        connected?: boolean;
+        verified?: boolean;
+        needs_reconnect?: boolean;
+        failure_reason?: string | null;
+        expected_subdomain?: string | null;
+        auth_type?: 'manual' | 'composio_oauth';
+      };
       if (credentialsResponse.ok) {
         setCredentials(credentialsPayload);
       }
       if (connectResponse.ok) {
         setConnectAvailable(Boolean(connectPayload.connect_available));
+        setConnected(Boolean(connectPayload.connected));
+        setVerified(Boolean(connectPayload.verified));
+        setNeedsReconnect(Boolean(connectPayload.needs_reconnect));
+        setFailureReason(connectPayload.failure_reason ?? null);
+        setExpectedSubdomain(connectPayload.expected_subdomain ?? null);
+        setAuthType(connectPayload.auth_type === 'composio_oauth' ? 'composio_oauth' : 'manual');
       }
     } finally {
       setLoading(false);
     }
-  }, [slotId]);
+  }, [slotId, provider, projectId]);
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+  }, [reload, reloadToken]);
 
   async function saveCredential(envVar: string, value: string): Promise<void> {
-    const response = await fetch(`/api/integrations/${encodeURIComponent(slotId)}/credentials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ env_var: envVar, value }),
-    });
+    const response = await fetch(
+      `/api/integrations/${encodeURIComponent(slotId)}/credentials?project_id=${encodeURIComponent(projectId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ env_var: envVar, value }),
+      },
+    );
     const payload = (await response.json()) as {
       error?: string;
       present?: boolean;
@@ -120,13 +156,55 @@ function IntegrationCredentials({
 
   return (
     <div data-testid={`integration-credentials-${slotId}`}>
-      {connectAvailable ? <IntegrationConnectButton slotId={slotId} onConnected={reload} /> : null}
-      {!connectAvailable ? (
+      {authType === 'composio_oauth' ? (
+        connected ? (
+          <div data-testid={`integration-connected-${slotId}`}>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+                  verified && !needsReconnect
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-amber-50 text-amber-700'
+                }`}
+              >
+                {verified && !needsReconnect ? 'Connected' : 'Reconnect required'}
+              </span>
+              <span className="text-xs text-gray-500">
+                Stored in OS keychain (service: {keychainService})
+              </span>
+            </div>
+            <IntegrationConnectionActions
+              slotId={slotId}
+              provider={provider}
+              projectId={projectId}
+              verified={verified}
+              needsReconnect={needsReconnect}
+              failureReason={failureReason}
+              expectedSubdomain={expectedSubdomain}
+              onStateChange={() => {
+                void reload();
+              }}
+            />
+          </div>
+        ) : connectAvailable ? (
+          <IntegrationConnectButton
+            slotId={slotId}
+            provider={provider}
+            projectId={projectId}
+            onConnected={reload}
+          />
+        ) : (
+          <p className="text-sm text-amber-700">
+            Composio server key (COMPOSIO_API_KEY) is not configured — add it to the server environment to enable Connect.
+          </p>
+        )
+      ) : null}
+      {authType === 'manual' ? (
         <p className="mb-3 text-xs text-gray-500">
           Values are stored in the OS keychain (service: {keychainService}). Never written to the repo.
         </p>
       ) : null}
-      {!connectAvailable
+      {authType === 'manual'
         ? credentials.map((credential) => (
             <SecretInput
               key={credential.env_var}
@@ -146,12 +224,190 @@ function IntegrationCredentials({
   );
 }
 
+interface SlotConnectState {
+  authType: 'manual' | 'composio_oauth';
+  connectAvailable: boolean;
+  connected: boolean;
+  verified: boolean;
+  needsReconnect: boolean;
+  failureReason: string | null;
+  expectedSubdomain: string | null;
+}
+
+function IntegrationSlotRow({
+  slotId,
+  provider,
+  status,
+  tenantScope,
+  keychainService,
+  expanded,
+  onToggle,
+  reloadToken,
+  projectId,
+}: {
+  slotId: string;
+  provider: string;
+  status: string;
+  tenantScope: string | null;
+  keychainService: string;
+  expanded: boolean;
+  onToggle: () => void;
+  reloadToken: number;
+  projectId: string;
+}) {
+  const [connectState, setConnectState] = useState<SlotConnectState | null>(null);
+
+  const reloadConnectState = useCallback(async (): Promise<void> => {
+    const params = new URLSearchParams({ provider, project_id: projectId });
+    const response = await fetch(
+      `/api/integrations/${encodeURIComponent(slotId)}/connect?${params.toString()}`,
+    );
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as {
+      auth_type?: 'manual' | 'composio_oauth';
+      connect_available?: boolean;
+      connected?: boolean;
+      verified?: boolean;
+      needs_reconnect?: boolean;
+      failure_reason?: string | null;
+      expected_subdomain?: string | null;
+    };
+    setConnectState({
+      authType: payload.auth_type === 'composio_oauth' ? 'composio_oauth' : 'manual',
+      connectAvailable: Boolean(payload.connect_available),
+      connected: Boolean(payload.connected),
+      verified: Boolean(payload.verified),
+      needsReconnect: Boolean(payload.needs_reconnect),
+      failureReason: payload.failure_reason ?? null,
+      expectedSubdomain: payload.expected_subdomain ?? null,
+    });
+  }, [slotId, provider, projectId]);
+
+  useEffect(() => {
+    void reloadConnectState();
+  }, [reloadConnectState, reloadToken]);
+
+  useEffect(() => {
+    function handleFocus(): void {
+      void reloadConnectState();
+    }
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [reloadConnectState]);
+
+  const displayStatus =
+    connectState?.authType === 'composio_oauth'
+      ? connectState.connected
+        ? connectState.verified && !connectState.needsReconnect
+          ? 'active'
+          : 'reconnect'
+        : 'pending'
+      : status;
+  const showRowConnect =
+    connectState?.authType === 'composio_oauth' &&
+    connectState.connectAvailable &&
+    !connectState.connected;
+  const showRowReconnect =
+    connectState?.authType === 'composio_oauth' &&
+    connectState.connected &&
+    connectState.needsReconnect;
+
+  return (
+    <li className="py-3 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          onClick={onToggle}
+          data-testid={`integration-toggle-${slotId}`}
+        >
+          <p className="text-sm font-medium text-gray-900">{provider}</p>
+          <p className="text-xs text-gray-500">{slotId}</p>
+          {tenantScope ? (
+            <p className="mt-0.5 max-w-[240px] truncate text-xs text-gray-400">{tenantScope}</p>
+          ) : null}
+        </button>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <p
+            className={`text-xs font-semibold uppercase ${
+              displayStatus === 'active'
+                ? 'text-emerald-600'
+                : displayStatus === 'reconnect'
+                  ? 'text-amber-600'
+                  : 'text-amber-600'
+            }`}
+          >
+            {displayStatus === 'reconnect' ? 'reconnect' : displayStatus}
+          </p>
+          {showRowConnect ? (
+            <IntegrationConnectButton
+              slotId={slotId}
+              provider={provider}
+              projectId={projectId}
+              compact
+              onConnected={() => {
+                void reloadConnectState();
+              }}
+            />
+          ) : null}
+          {showRowReconnect ? (
+            <IntegrationConnectionActions
+              slotId={slotId}
+              provider={provider}
+              projectId={projectId}
+              compact
+              verified={connectState?.verified ?? false}
+              needsReconnect={connectState?.needsReconnect ?? true}
+              failureReason={connectState?.failureReason ?? null}
+              expectedSubdomain={connectState?.expectedSubdomain ?? null}
+              onStateChange={() => {
+                void reloadConnectState();
+              }}
+            />
+          ) : null}
+        </div>
+      </div>
+      {expanded ? (
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <IntegrationCredentials
+            slotId={slotId}
+            provider={provider}
+            keychainService={keychainService}
+            reloadToken={reloadToken}
+            projectId={projectId}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 export default function SettingsView() {
+  const activeProject = useActiveProject();
+  const projectId = activeProject?.id ?? 'default';
   const [settings, setSettings] = useState<SettingsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
   const [keychainService, setKeychainService] = useState('control-plane');
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const channel = new BroadcastChannel('composio-oauth-complete');
+    channel.onmessage = () => {
+      setReloadToken((current) => current + 1);
+    };
+    return () => {
+      channel.close();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,7 +437,7 @@ export default function SettingsView() {
       setError(null);
 
       try {
-        const response = await fetch('/api/settings');
+        const response = await fetch(`/api/settings?project_id=${encodeURIComponent(projectId)}`);
         const payload = (await response.json()) as SettingsSnapshot & { error?: string };
 
         if (!response.ok) {
@@ -208,7 +464,7 @@ export default function SettingsView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   if (loading && !settings) {
     return (
@@ -235,14 +491,15 @@ export default function SettingsView() {
   const shippableDesktop = clientSdkMessageContext().operatorContext === false;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="settings-view">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8 pb-12">
+    <ReaderPreferencesProvider>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="settings-view">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8 pb-12">
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Project Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
           {shippableDesktop
             ? 'Runtime profile and secure credentials for this installation.'
-            : 'Runtime profile and credentials from .business/business.yaml and OS keychain'}
+            : 'Runtime profile and credentials from workspaces/{project}/.business and OS keychain'}
         </p>
       </header>
 
@@ -288,7 +545,12 @@ export default function SettingsView() {
           Values are stored in the OS keychain (service: {keychainService}). Chat becomes available
           immediately after saving — no restart required.
         </p>
-        <IntegrationCredentials slotId="runtime" provider="runtime" keychainService={keychainService} />
+        <IntegrationCredentials
+          slotId="runtime"
+          provider="runtime"
+          keychainService={keychainService}
+          projectId={projectId}
+        />
       </SettingsSection>
 
       <SettingsSection title="Integrations">
@@ -297,44 +559,20 @@ export default function SettingsView() {
         ) : (
           <ul className="divide-y divide-gray-100">
             {settings.integrations.map((slot) => (
-              <li key={slot.slotId} className="py-3 first:pt-0 last:pb-0">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between text-left"
-                  onClick={() =>
-                    setExpandedSlot((current) => (current === slot.slotId ? null : slot.slotId))
-                  }
-                  data-testid={`integration-toggle-${slot.slotId}`}
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{slot.provider}</p>
-                    <p className="text-xs text-gray-500">{slot.slotId}</p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className={`text-xs font-semibold uppercase ${
-                        slot.status === 'active' ? 'text-emerald-600' : 'text-amber-600'
-                      }`}
-                    >
-                      {slot.status}
-                    </p>
-                    {slot.tenantScope ? (
-                      <p className="mt-0.5 max-w-[200px] truncate text-xs text-gray-400">
-                        {slot.tenantScope}
-                      </p>
-                    ) : null}
-                  </div>
-                </button>
-                {expandedSlot === slot.slotId ? (
-                  <div className="mt-4 border-t border-gray-100 pt-4">
-                    <IntegrationCredentials
-                      slotId={slot.slotId}
-                      provider={slot.provider}
-                      keychainService={keychainService}
-                    />
-                  </div>
-                ) : null}
-              </li>
+              <IntegrationSlotRow
+                key={slot.slotId}
+                slotId={slot.slotId}
+                provider={slot.provider}
+                status={slot.status}
+                tenantScope={slot.tenantScope}
+                keychainService={keychainService}
+                expanded={expandedSlot === slot.slotId}
+                reloadToken={reloadToken}
+                projectId={projectId}
+                onToggle={() =>
+                  setExpandedSlot((current) => (current === slot.slotId ? null : slot.slotId))
+                }
+              />
             ))}
           </ul>
         )}
@@ -366,6 +604,14 @@ export default function SettingsView() {
         </SettingsSection>
       ) : null}
 
+      <SettingsSection title="Assistant presentation">
+        <PresentationSettingsPanel />
+      </SettingsSection>
+
+      <SettingsSection title="Reader typography">
+        <ReaderSettingsPanel />
+      </SettingsSection>
+
       {settings.computerUse ? (
         <SettingsSection title="Computer Use">
           <ComputerUseActivatePanel
@@ -375,7 +621,8 @@ export default function SettingsView() {
           />
         </SettingsSection>
       ) : null}
+        </div>
       </div>
-    </div>
+    </ReaderPreferencesProvider>
   );
 }

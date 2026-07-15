@@ -5,6 +5,7 @@ import { parse as parseYaml } from 'yaml';
 
 import { DEFAULT_PRESENTATION_TITLE } from './ui-branding';
 import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 import { resolveActiveWorkspaceRoot } from './workspace-manager';
 import type {
   BusinessConfig,
@@ -27,7 +28,7 @@ const READINESS_READ_RETRIES = 3;
 const READINESS_READ_DELAY_MS = 25;
 
 async function harnessPaths(workspaceRoot?: string) {
-  const binding = await resolveHarnessBinding(workspaceRoot ? { workspaceRoot } : {});
+  const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
   const stateDir = join(binding.harnessRoot, 'state');
   return {
     binding,
@@ -544,8 +545,8 @@ export async function getConversationDetail(
 }
 
 
-export async function listExecutions(): Promise<ExecutionSummary[]> {
-  const paths = await harnessPaths();
+export async function listExecutions(workspaceRoot?: string): Promise<ExecutionSummary[]> {
+  const paths = await harnessPaths(workspaceRoot);
   const entries = await listRunDirectoryNames(paths.runsDir);
 
   const summaries: ExecutionSummary[] = [];

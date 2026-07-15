@@ -1,0 +1,131 @@
+---
+export const prerender = false;
+
+const slotId = Astro.url.searchParams.get('slot')?.trim() ?? '';
+const provider = Astro.url.searchParams.get('provider')?.trim() ?? '';
+const projectId = Astro.url.searchParams.get('project_id')?.trim() ?? '';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Integration connected</title>
+  </head>
+  <body class="bg-gray-50 text-gray-900">
+    <main class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-8 text-center">
+      <h1 class="text-lg font-semibold">Completing authorization…</h1>
+      <p id="status" class="text-sm text-gray-600">Saving connection to the system keychain.</p>
+      <button
+        id="close-btn"
+        type="button"
+        class="hidden rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white"
+      >
+        Close window
+      </button>
+    </main>
+    <script define:vars={{ slotId, provider, projectId }}>
+      const statusEl = document.getElementById('status');
+      const closeBtn = document.getElementById('close-btn');
+
+      function notifyApp(payload) {
+        try {
+          const channel = new BroadcastChannel('composio-oauth-complete');
+          channel.postMessage(payload);
+          channel.close();
+        } catch {
+          // ignore
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function showCloseButton() {
+        if (!closeBtn) return;
+        closeBtn.classList.remove('hidden');
+        closeBtn.addEventListener('click', () => window.close());
+      }
+
+      function renderSuccess(payload) {
+        notifyApp({ slotId, projectId: projectId || 'default', verified: Boolean(payload.verified) });
+        if (!statusEl) return;
+        if (payload.verified) {
+          statusEl.textContent =
+            'Connected and verified. Return to Settings — Confluence is ready for chat.';
+        } else if (payload.failure_reason === 'credential_invalid') {
+          statusEl.textContent =
+            'Connected, but credentials failed verification. Return to Settings and reconnect.';
+        } else if (payload.failure_reason === 'subdomain_malformed' && payload.expected_subdomain) {
+          statusEl.textContent =
+            `Invalid subdomain stored in Composio. Reconnect and enter only "${payload.expected_subdomain}" — not the full .atlassian.net URL.`;
+        } else if (payload.failure_reason === 'subdomain_malformed') {
+          statusEl.textContent =
+            'Invalid subdomain stored in Composio. Reconnect and enter only the site slug before .atlassian.net.';
+        } else {
+          statusEl.textContent =
+            'Connected. Credentials could not be verified — check Settings for reconnect.';
+        }
+        showCloseButton();
+      }
+
+      async function pollCallbackGet(params) {
+        const response = await fetch(`/api/integrations/composio/callback?${params.toString()}`);
+        return { response, payload: await response.json() };
+      }
+
+      async function finalize() {
+        if (!slotId) {
+          if (statusEl) statusEl.textContent = 'Missing slot parameter.';
+          return;
+        }
+        const params = new URLSearchParams({ slot: slotId });
+        if (provider) params.set('provider', provider);
+        if (projectId) params.set('project_id', projectId);
+
+        const response = await fetch(`/api/integrations/composio/callback?${params.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot_id: slotId, provider, project_id: projectId || undefined }),
+        });
+        let payload = await response.json();
+
+        if (response.ok && payload.connected) {
+          renderSuccess(payload);
+          return;
+        }
+
+        if (response.status === 422 || payload.code === 'composio_subdomain_malformed') {
+          if (statusEl) statusEl.textContent = payload.error ?? 'Invalid subdomain.';
+          showCloseButton();
+          return;
+        }
+
+        if (statusEl) {
+          statusEl.textContent = 'Waiting for Composio to confirm the connection…';
+        }
+
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          await sleep(2000);
+          const polled = await pollCallbackGet(params);
+          payload = polled.payload;
+          if (polled.response.ok && payload.connected) {
+            renderSuccess(payload);
+            return;
+          }
+        }
+
+        if (statusEl) {
+          statusEl.textContent =
+            payload.error ??
+            'Composio is still processing. Close this tab and check Settings — the connection may appear shortly.';
+        }
+        showCloseButton();
+      }
+
+      void finalize();
+    </script>
+  </body>
+</html>

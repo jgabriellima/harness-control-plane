@@ -3,11 +3,16 @@
  * Run Astro CLI; load repo-root `.env` when present.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { prepareDevPort } from './dev-port.mjs';
+import {
+  applyNodeRuntimeToProcessEnv,
+  buildNodeRuntimeEnv,
+  ensureNodeRuntime,
+} from './node-runtime.mjs';
+import { applyDesktopBundleEnv, resolveEnvFilePaths } from './resolve-env-files.mjs';
 
 const [command, ...args] = process.argv.slice(2);
 if (!command) {
@@ -18,39 +23,11 @@ if (!command) {
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const astroBin = path.join(appRoot, 'node_modules', '.bin', 'astro');
 
-function resolvePrimaryRepoRoot(worktreeRoot) {
-  const gitPath = path.join(worktreeRoot, '.git');
-  if (!existsSync(gitPath)) {
-    return null;
-  }
+const nodeRuntime = await ensureNodeRuntime({ logPrefix: '[astro-cli]' });
+applyNodeRuntimeToProcessEnv(nodeRuntime);
 
-  try {
-    const stat = readFileSync(gitPath);
-    const content = stat.toString('utf8').trim();
-    const match = content.match(/^gitdir:\s*(.+)$/m);
-    if (!match) {
-      return null;
-    }
-    const gitdir = path.resolve(worktreeRoot, match[1].trim());
-    return path.dirname(path.dirname(path.dirname(gitdir)));
-  } catch {
-    return null;
-  }
-}
-
-function resolveEnvFile() {
-  const localEnv = path.join(appRoot, '.env');
-  if (existsSync(localEnv)) {
-    return localEnv;
-  }
-
-  const repoRoot = resolvePrimaryRepoRoot(path.join(appRoot, '..'));
-  if (!repoRoot) {
-    return null;
-  }
-
-  const primaryEnv = path.join(repoRoot, '.env');
-  return existsSync(primaryEnv) ? primaryEnv : null;
+function resolveEnvFiles() {
+  return resolveEnvFilePaths(appRoot);
 }
 
 const astroArgs = [...args];
@@ -67,16 +44,26 @@ if (command === 'dev' && !astroArgs.some((token) => token === '--port')) {
   astroArgs.push('--port', port);
 }
 
-const envFile = resolveEnvFile();
-const nodeArgs =
-  envFile !== null
-    ? ['--env-file', envFile, astroBin, command, ...astroArgs]
-    : [astroBin, command, ...astroArgs];
+const envFiles = resolveEnvFiles();
+const nodeArgs = [
+  ...envFiles.flatMap((envFile) => ['--env-file', envFile]),
+  astroBin,
+  command,
+  ...astroArgs,
+];
 
-const child = spawn(process.execPath, nodeArgs, {
+const projectRoot = process.env.CONTROL_PLANE_PROJECT_ROOT?.trim();
+if (command === 'dev' && !projectRoot) {
+  console.warn(
+    '[dev] WARNING: CONTROL_PLANE_PROJECT_ROOT is unset. UI config, commands, and workspace binding will use the HCP repo root, not your bound app. Set e.g. CONTROL_PLANE_PROJECT_ROOT=/path/to/your/app npm run dev',
+  );
+}
+const childEnv = applyDesktopBundleEnv(buildNodeRuntimeEnv(nodeRuntime), projectRoot);
+
+const child = spawn(nodeRuntime.nodeBinary, nodeArgs, {
   cwd: appRoot,
   stdio: 'inherit',
-  env: process.env,
+  env: childEnv,
 });
 
 child.on('exit', (code, signal) => {

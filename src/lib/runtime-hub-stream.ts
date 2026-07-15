@@ -2,6 +2,7 @@ import type { Run, SDKMessage } from '@cursor/sdk';
 
 import { joinAssistantTextBlocks } from './assistant-text';
 import { appendDispatchLog } from './runtime-dispatch-log';
+import { clearOpenUIAssistantAccumulator, wireOpenUIAssistantMessage } from './openui-wire';
 import {
   formatRuntimeConnectError,
   isConnectCanceled,
@@ -11,7 +12,12 @@ import {
 import { installRuntimeProcessGuard } from './runtime-process-guard';
 import { appendRunInterrupted, type RunInterruptReason } from './runtime-run-interrupt';
 import { readLiveActiveRuns } from './runtime-active-runs';
-import { appendRunTerminal } from './runtime-run-registry';
+import {
+  loadRunSessionLifecyclePolicy,
+  shouldAutoAttachIndexedRuns,
+} from './runtime-run-session-policy';
+import { appendRunTerminal, findActiveRunEntry } from './runtime-run-registry';
+import { isFailedRunStatus } from './runtime-run-failure';
 import { errorFields, runtimeLogger } from './runtime-logger';
 import { hasRuntimeSdkCredentials, localGetRunOptions } from './runtime-sdk-local';
 import {
@@ -19,6 +25,8 @@ import {
   markRuntimeAuthUnavailable,
 } from './runtime-sdk-auth-gate';
 import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
+import { reconcileRuntimeCredentials } from './runtime-credentials-reconcile';
+import { invalidateSdkProbeCache } from './runtime-sdk-probe';
 import {
   getActiveRunIds,
   getRuntimeRunEntry,
@@ -29,6 +37,7 @@ import {
   runWithWorkspaceCwdAsync,
   workspaceCwd,
 } from './runtime-sessions';
+import { clearRunContext, getRunContext } from './runtime-run-context';
 import type { RuntimeHubWireEvent } from './runtime-hub-types';
 
 installRuntimeProcessGuard();
@@ -91,6 +100,7 @@ export function wireFromSdkMessage(
       timestamp,
       payload: {
         tool: message.name,
+        call_id: message.call_id,
         status: message.status,
         args: message.args,
         result: message.result,
@@ -108,6 +118,32 @@ export function wireFromSdkMessage(
       payload: {
         text: message.text,
         duration_ms: message.thinking_duration_ms,
+      },
+    };
+  }
+
+  if (message.type === 'status' && message.status === 'ERROR') {
+    return {
+      type: 'error',
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      timestamp,
+      payload: {
+        message: message.message?.trim() || 'Runtime run failed',
+      },
+    };
+  }
+
+  if (message.type === 'usage') {
+    return {
+      type: 'context.usage',
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      timestamp,
+      payload: {
+        usage: message.usage,
       },
     };
   }
@@ -147,6 +183,10 @@ export function broadcastBrowserSessionReady(input: {
   sessionId: string;
   url: string;
   interactive?: boolean;
+  controlMode?: string;
+  viewportWidth?: number;
+  viewportHeight?: number;
+  renderMode?: string;
 }): void {
   broadcastEvent({
     type: 'browser.session.ready',
@@ -158,6 +198,44 @@ export function broadcastBrowserSessionReady(input: {
       sessionId: input.sessionId,
       url: input.url,
       interactive: Boolean(input.interactive),
+      controlMode: input.controlMode ?? 'agent',
+      viewportWidth: input.viewportWidth ?? 1280,
+      viewportHeight: input.viewportHeight ?? 720,
+      renderMode: input.renderMode ?? 'screencast',
+    },
+  });
+}
+
+export function broadcastBrowserUrlChanged(input: {
+  conversationId: string;
+  sessionId: string;
+  url: string;
+}): void {
+  broadcastEvent({
+    type: 'browser.url.changed',
+    run_id: '',
+    agent_id: '',
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      sessionId: input.sessionId,
+      url: input.url,
+    },
+  });
+}
+
+export function broadcastBrowserSessionClosed(input: {
+  conversationId: string;
+  sessionId: string;
+}): void {
+  broadcastEvent({
+    type: 'browser.session.closed',
+    run_id: '',
+    agent_id: '',
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      sessionId: input.sessionId,
     },
   });
 }
@@ -199,10 +277,36 @@ export function broadcastRunInterrupted(input: {
   });
 }
 
+export function broadcastRunRecoveredComplete(input: {
+  runId: string;
+  agentId: string;
+  conversationId: string;
+  status: string;
+}): void {
+  broadcastEvent({
+    type: 'run_complete',
+    run_id: input.runId,
+    agent_id: input.agentId,
+    conversation_id: input.conversationId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      status: input.status,
+      recovered: true,
+    },
+  });
+}
+
 interface CompleteRunFanoutOptions {
   workspaceRoot?: string;
   notifyClient?: boolean;
   errorMessage?: string;
+  clearAgent?: boolean;
+}
+
+function teardownRunFanout(runId: string): void {
+  fanoutStarted.delete(runId);
+  clearRunContext(runId);
+  clearOpenUIAssistantAccumulator(runId);
 }
 
 async function completeRunFanout(
@@ -224,7 +328,10 @@ async function completeRunFanout(
         agent_id: agentId,
         conversation_id: conversationId,
         timestamp: new Date().toISOString(),
-        payload: { message: errorMessage },
+        payload: {
+          message: errorMessage,
+          ...(options.clearAgent ? { clear_agent: true } : {}),
+        },
       });
     }
 
@@ -246,6 +353,24 @@ async function completeRunFanout(
       conversation_id: conversationId,
       timestamp: new Date().toISOString(),
       payload: { status },
+    });
+
+    try {
+      await appendRunTerminal({
+        runId,
+        event: 'run.completed',
+        status,
+        workspaceRoot: resolvedWorkspaceRoot,
+      });
+    } catch {
+      // Registry append is best-effort on terminal path.
+    }
+  } else if (!isFailedRunStatus(status) && status.trim().toLowerCase() !== 'cancelled') {
+    broadcastRunRecoveredComplete({
+      runId,
+      agentId,
+      conversationId,
+      status,
     });
 
     try {
@@ -282,7 +407,7 @@ async function completeRunFanout(
 
   releaseRuntimeRun(runId);
   releaseAgentSlot();
-  fanoutStarted.delete(runId);
+  teardownRunFanout(runId);
 }
 
 async function abandonRunFanout(
@@ -321,7 +446,7 @@ async function abandonRunFanout(
 
   releaseRuntimeRun(runId);
   releaseAgentSlot();
-  fanoutStarted.delete(runId);
+  teardownRunFanout(runId);
 }
 
 export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; message?: string }> {
@@ -369,10 +494,77 @@ export async function cancelRuntimeRun(runId: string): Promise<{ ok: boolean; me
   } else {
     releaseRuntimeRun(runId);
     releaseAgentSlot();
-    fanoutStarted.delete(runId);
+    teardownRunFanout(runId);
   }
 
   return { ok: true };
+}
+
+async function finalizeStreamedRunFanout(
+  runId: string,
+  agentId: string,
+  conversationId: string,
+  cwd: string,
+  silent: boolean,
+  requestId?: string,
+): Promise<void> {
+  const entry = getRuntimeRunEntry(runId);
+  const run = entry?.run;
+  if (!run) {
+    const message = 'Run stream ended without a registered runtime handle';
+    runtimeLogger.error('chat.fanout.run_missing', {
+      request_id: requestId,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      error_message: message,
+    });
+    if (silent) {
+      await abandonRunFanout(runId, agentId, conversationId, cwd, message);
+      return;
+    }
+    await completeRunFanout(runId, agentId, conversationId, 'failed', {
+      workspaceRoot: cwd,
+      errorMessage: message,
+    });
+    return;
+  }
+
+  const terminal = await resolveRunTerminalStatus(run, { workspaceCwd: cwd });
+
+  if (terminal.authFailed) {
+    markRuntimeAuthUnavailable('fanout_run_auth_failed');
+    invalidateSdkProbeCache(cwd);
+    void reconcileRuntimeCredentials();
+  }
+
+  if (terminal.failed) {
+    const message = terminal.errorMessage ?? 'Runtime run failed';
+    runtimeLogger.warn('chat.fanout.run_failed', {
+      request_id: requestId,
+      run_id: runId,
+      agent_id: agentId,
+      conversation_id: conversationId,
+      status: terminal.status,
+      auth_failed: terminal.authFailed,
+      error_message: message,
+    });
+    if (silent) {
+      await abandonRunFanout(runId, agentId, conversationId, cwd, message);
+      return;
+    }
+    await completeRunFanout(runId, agentId, conversationId, 'failed', {
+      workspaceRoot: cwd,
+      errorMessage: message,
+      clearAgent: terminal.authFailed,
+    });
+    return;
+  }
+
+  await completeRunFanout(runId, agentId, conversationId, terminal.cancelled ? 'cancelled' : terminal.status, {
+    workspaceRoot: cwd,
+    notifyClient: !silent,
+  });
 }
 
 async function streamRunToHub(
@@ -384,7 +576,11 @@ async function streamRunToHub(
   silent: boolean,
 ): Promise<void> {
   const outcome = await consumeRunStream(run, (message) => {
-    const wire = wireFromSdkMessage(message, runId, agentId, conversationId);
+    const runContext = getRunContext(runId);
+    const wire =
+      runContext?.wireMode === 'rich' && message.type === 'assistant'
+        ? wireOpenUIAssistantMessage(message, runId, agentId, conversationId, runContext.surfaceId)
+        : wireFromSdkMessage(message, runId, agentId, conversationId);
     if (wire) {
       broadcastEvent(wire);
     }
@@ -399,6 +595,9 @@ async function streamRunToHub(
   }
 
   if (outcome === 'auth_failed') {
+    markRuntimeAuthUnavailable('fanout_stream_auth_failed');
+    invalidateSdkProbeCache(cwd);
+    void reconcileRuntimeCredentials();
     const message = formatRuntimeConnectError(new Error('[unauthenticated] Error'));
     if (silent) {
       await abandonRunFanout(runId, agentId, conversationId, cwd, message);
@@ -406,30 +605,13 @@ async function streamRunToHub(
       await completeRunFanout(runId, agentId, conversationId, 'failed', {
         workspaceRoot: cwd,
         errorMessage: message,
+        clearAgent: true,
       });
     }
     return;
   }
 
-  const { status, cancelled, authFailed } = await resolveRunTerminalStatus(run);
-
-  if (authFailed) {
-    const message = formatRuntimeConnectError(new Error('[unauthenticated] Error'));
-    if (silent) {
-      await abandonRunFanout(runId, agentId, conversationId, cwd, message);
-    } else {
-      await completeRunFanout(runId, agentId, conversationId, 'failed', {
-        workspaceRoot: cwd,
-        errorMessage: message,
-      });
-    }
-    return;
-  }
-
-  await completeRunFanout(runId, agentId, conversationId, cancelled ? 'cancelled' : status, {
-    workspaceRoot: cwd,
-    notifyClient: !silent,
-  });
+  await finalizeStreamedRunFanout(runId, agentId, conversationId, cwd, silent);
 }
 
 function handleFanoutError(
@@ -512,7 +694,7 @@ export function startRunHubFanout(
   const cwd = harnessWorkspaceCwd ?? workspaceCwd();
 
   if (!hasRuntimeSdkCredentials() || !canAttemptRuntimeSdkCall()) {
-    fanoutStarted.delete(runId);
+    teardownRunFanout(runId);
     runtimeLogger.debug('chat.fanout.skip_credentials_or_auth_gate', {
       request_id: requestId,
       run_id: runId,
@@ -557,7 +739,7 @@ export function startRunHubFanout(
 
       if (!run) {
         const { Agent } = await import('@cursor/sdk');
-        run = await Agent.getRun(runId, localGetRunOptions(workspaceCwd()));
+        run = await Agent.getRun(runId, await localGetRunOptions(workspaceCwd()));
         registerRuntimeRun(runId, run, conversationId, agentId);
       }
 
@@ -575,7 +757,7 @@ export function startRunHubFanout(
       );
     }
   }).catch((error) => {
-    fanoutStarted.delete(runId);
+    teardownRunFanout(runId);
     void handleFanoutError(
       error,
       runId,
@@ -611,12 +793,25 @@ async function attachIndexedRunsToHub(): Promise<void> {
     return;
   }
 
+  const policy = await loadRunSessionLifecyclePolicy();
+  if (!shouldAutoAttachIndexedRuns(policy)) {
+    runtimeLogger.debug('chat.fanout.skip_indexed_session_boundary', {
+      indexed_at_process_start: policy.indexedAtProcessStart,
+    });
+    return;
+  }
+
   try {
     const index = await readLiveActiveRuns();
     for (const entry of index.active) {
-      startRunHubFanout(entry.runId, entry.agentId, entry.conversationId, undefined, {
-        silent: true,
-      });
+      const located = await findActiveRunEntry(entry.runId);
+      startRunHubFanout(
+        entry.runId,
+        entry.agentId,
+        entry.conversationId,
+        located?.workspaceRoot,
+        { silent: true },
+      );
     }
   } catch {
     // Index may not exist on cold start.

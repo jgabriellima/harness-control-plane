@@ -1,13 +1,15 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
-import { resolveHarnessBinding } from '../../../lib/harness-binding';
+import { resolveWorkspaceHarnessBinding } from '../../../lib/workspace-harness-binding';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const binding = await resolveHarnessBinding();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const specsDir = join(binding.harnessRoot, 'workflows');
     const indexPath = join(binding.harnessRoot, 'INDEX.md');
 

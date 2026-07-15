@@ -29,6 +29,10 @@ keyring = "3"
 serde_yaml = "0.9"
 tauri-plugin-prevent-default = "0.5.0"
 
+[profile.dev]
+incremental = true
+codegen-units = 256
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

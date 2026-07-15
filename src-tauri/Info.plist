@@ -2,7 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleName</key>
+  <string>Tailwind</string>
+  <key>CFBundleDisplayName</key>
+  <string>Tailwind</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Jambu uses the microphone for voice input in the runtime chat composer.</string>
+  <string>Tailwind uses the microphone for voice input in the runtime chat composer.</string>
 </dict>
 </plist>

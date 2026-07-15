@@ -33,3 +33,6 @@ test-results/
 .sdlc/runs/
 .sync-backup/
 output/
+
+# Vendored Node runtime (provisioned by scripts/node-runtime.mjs)
+.runtime/node/

@@ -145,6 +145,16 @@ const Callout = defineComponent({
   },
 });
 
+function normalizeTableRow(row: unknown): string[] {
+  if (Array.isArray(row)) {
+    return row.map((cell) => String(cell ?? ''));
+  }
+  if (row !== null && typeof row === 'object') {
+    return Object.values(row as Record<string, unknown>).map((cell) => String(cell ?? ''));
+  }
+  return [];
+}
+
 const Table = defineComponent({
   name: 'Table',
   description: 'Tabular data with column headers and row values.',
@@ -155,6 +165,7 @@ const Table = defineComponent({
   }),
   component: ({ props }) => {
     const cellPadding = props.density === 'compact' ? 'px-2 py-1' : 'px-3 py-2';
+    const normalizedRows = props.rows.map((row) => normalizeTableRow(row));
     return (
       <div className="overflow-x-auto rounded-md border border-gray-200">
         <table className="min-w-full text-left text-sm">
@@ -168,7 +179,7 @@ const Table = defineComponent({
             </tr>
           </thead>
           <tbody>
-            {props.rows.slice(0, 50).map((row, rowIndex) => (
+            {normalizedRows.slice(0, 50).map((row, rowIndex) => (
               <tr key={`row-${rowIndex}`} className="border-t border-gray-100">
                 {row.map((cell, cellIndex) => (
                   <td key={`cell-${rowIndex}-${cellIndex}`} className={cellPadding}>

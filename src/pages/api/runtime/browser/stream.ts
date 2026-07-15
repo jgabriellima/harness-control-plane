@@ -1,11 +1,16 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError } from '../../../../lib/api-json';
-import { getBrowserSession, subscribeBrowserScreencast } from '../../../../lib/runtime-browser-bridge';
+import { getBrowserSession, subscribeBrowserScreencast, subscribeBrowserUrl } from '../../../../lib/runtime-browser-bridge';
 
 function encodeSseFrame(frameBase64: string): Uint8Array {
   const encoder = new TextEncoder();
-  return encoder.encode(`data: ${JSON.stringify({ frame: frameBase64 })}\n\n`);
+  return encoder.encode(`data: ${JSON.stringify({ type: 'frame', frame: frameBase64 })}\n\n`);
+}
+
+function encodeSseUrl(url: string): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(`data: ${JSON.stringify({ type: 'url', url })}\n\n`);
 }
 
 function encodeSseHeartbeat(): Uint8Array {
@@ -29,6 +34,7 @@ export const GET: APIRoute = async ({ url, request }) => {
       let closed = false;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let unsubscribe: (() => void) | null = null;
+      let unsubscribeUrl: (() => void) | null = null;
 
       function closeStream(): void {
         if (closed) {
@@ -41,6 +47,8 @@ export const GET: APIRoute = async ({ url, request }) => {
         }
         unsubscribe?.();
         unsubscribe = null;
+        unsubscribeUrl?.();
+        unsubscribeUrl = null;
         try {
           controller.close();
         } catch {
@@ -65,6 +73,10 @@ export const GET: APIRoute = async ({ url, request }) => {
 
       unsubscribe = subscribeBrowserScreencast(sessionId, (frame) => {
         safeEnqueue(encodeSseFrame(frame));
+      });
+
+      unsubscribeUrl = subscribeBrowserUrl(sessionId, (url) => {
+        safeEnqueue(encodeSseUrl(url));
       });
 
       if (!unsubscribe) {

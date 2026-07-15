@@ -31,9 +31,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function loadBaselineConfig(baselineRoot?: string): Promise<{ scope: string[]; excludes: string[] }> {
-  const binding = baselineRoot
-    ? await resolveHarnessBinding({ workspaceRoot: baselineRoot })
-    : await resolveHarnessBinding();
+  const resolvedRoot =
+    baselineRoot?.trim() ||
+    join(resolveHostRepoRoot(), 'templates', 'workspace-baseline');
+  const binding = await resolveHarnessBinding({ workspaceRoot: resolvedRoot });
   const raw = await readFile(binding.dslPath, 'utf8');
   const doc = parseYaml(raw) as unknown;
 

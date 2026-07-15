@@ -15,6 +15,7 @@ interface RuntimeBrowserPanelProps {
   onNavigate: (url: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onControlModeChange: (mode: BrowserControlMode) => Promise<void>;
+  onLiveUrlChange?: (url: string) => void;
 }
 
 function normalizeAddressInput(raw: string): string {
@@ -38,6 +39,7 @@ export default function RuntimeBrowserPanel({
   onNavigate,
   onRefresh,
   onControlModeChange,
+  onLiveUrlChange,
 }: RuntimeBrowserPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -47,10 +49,16 @@ export default function RuntimeBrowserPanel({
   const [navigating, setNavigating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [controlPending, setControlPending] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const sessionIdRef = useRef(selection.sessionId);
+  sessionIdRef.current = selection.sessionId;
 
   useEffect(() => {
     setAddressValue(selection.url);
-  }, [selection.url]);
+    if (!selection.loading && selection.sessionId) {
+      setPageLoading(true);
+    }
+  }, [selection.loading, selection.sessionId, selection.url]);
 
   useEffect(() => {
     if (!selection.streamUrl || selection.loading) {
@@ -62,9 +70,20 @@ export default function RuntimeBrowserPanel({
 
     source.onmessage = (message: MessageEvent<string>) => {
       try {
-        const payload = JSON.parse(message.data) as { frame?: string };
+        const payload = JSON.parse(message.data) as {
+          type?: string;
+          frame?: string;
+          url?: string;
+        };
+
+        if (payload.type === 'url' && payload.url) {
+          onLiveUrlChange?.(payload.url);
+          return;
+        }
+
         if (payload.frame) {
           setFrameSrc(`data:image/jpeg;base64,${payload.frame}`);
+          setPageLoading(false);
         }
       } catch {
         // Ignore malformed frames.
@@ -79,7 +98,7 @@ export default function RuntimeBrowserPanel({
     return () => {
       source.close();
     };
-  }, [selection.loading, selection.streamUrl]);
+  }, [onLiveUrlChange, selection.loading, selection.streamUrl]);
 
   const userControl = selection.controlMode === 'user';
 
@@ -94,7 +113,7 @@ export default function RuntimeBrowserPanel({
     }).catch(() => undefined);
   }
 
-  function pageCoordsFromEvent(event: React.MouseEvent<HTMLImageElement>): { x: number; y: number } | null {
+  function pageCoordsFromClient(clientX: number, clientY: number): { x: number; y: number } | null {
     const img = imgRef.current;
     if (!img) {
       return null;
@@ -111,8 +130,8 @@ export default function RuntimeBrowserPanel({
     const renderedHeight = contentHeight * scale;
     const offsetX = (rect.width - renderedWidth) / 2;
     const offsetY = (rect.height - renderedHeight) / 2;
-    const localX = event.clientX - rect.left - offsetX;
-    const localY = event.clientY - rect.top - offsetY;
+    const localX = clientX - rect.left - offsetX;
+    const localY = clientY - rect.top - offsetY;
 
     if (localX < 0 || localY < 0 || localX > renderedWidth || localY > renderedHeight) {
       return null;
@@ -121,6 +140,10 @@ export default function RuntimeBrowserPanel({
     const x = (localX / renderedWidth) * selection.viewportWidth;
     const y = (localY / renderedHeight) * selection.viewportHeight;
     return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function pageCoordsFromEvent(event: React.MouseEvent<HTMLImageElement>): { x: number; y: number } | null {
+    return pageCoordsFromClient(event.clientX, event.clientY);
   }
 
   async function handleViewportClick(event: React.MouseEvent<HTMLImageElement>): Promise<void> {
@@ -150,9 +173,44 @@ export default function RuntimeBrowserPanel({
     await postAction({ action: 'keydown', key: event.key });
   }
 
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    function handleWheel(event: WheelEvent): void {
+      const sessionId = sessionIdRef.current;
+      if (!sessionId || selection.loading || selection.error) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const coords = pageCoordsFromClient(event.clientX, event.clientY);
+      const x = coords?.x ?? selection.viewportWidth / 2;
+      const y = coords?.y ?? selection.viewportHeight / 2;
+
+      void postAction({
+        action: 'scroll',
+        x,
+        y,
+        delta_x: event.deltaX,
+        delta_y: event.deltaY,
+      });
+    }
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel);
+    };
+  }, [selection.error, selection.loading, selection.viewportHeight, selection.viewportWidth]);
+
   async function handleNavigate(): Promise<void> {
     const target = normalizeAddressInput(addressValue);
     setNavigating(true);
+    setPageLoading(true);
     try {
       await onNavigate(target);
     } finally {
@@ -162,6 +220,7 @@ export default function RuntimeBrowserPanel({
 
   async function handleRefresh(): Promise<void> {
     setRefreshing(true);
+    setPageLoading(true);
     try {
       await onRefresh();
     } finally {
@@ -180,6 +239,13 @@ export default function RuntimeBrowserPanel({
       setControlPending(false);
     }
   }
+
+  const showLoadingOverlay =
+    selection.loading || navigating || refreshing || pageLoading;
+
+  const loadingMessage = selection.loading
+    ? 'Starting browser session…'
+    : 'Loading page…';
 
   return (
     <aside
@@ -327,10 +393,14 @@ export default function RuntimeBrowserPanel({
           void handleViewportKeyDown(event);
         }}
       >
-        {selection.loading ? (
-          <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
-            Starting browser session…
-          </p>
+        {showLoadingOverlay ? (
+          <div
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/85 backdrop-blur-sm"
+            data-testid="runtime-browser-loading"
+          >
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" aria-hidden />
+            <p className="text-sm text-gray-500">{loadingMessage}</p>
+          </div>
         ) : null}
 
         {!selection.loading && selection.error ? (
@@ -366,7 +436,7 @@ export default function RuntimeBrowserPanel({
           </div>
         ) : null}
 
-        {!selection.loading && !selection.error && !frameSrc && !streamError ? (
+        {!selection.loading && !selection.error && !frameSrc && !streamError && !showLoadingOverlay ? (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
             Waiting for browser stream…
           </p>

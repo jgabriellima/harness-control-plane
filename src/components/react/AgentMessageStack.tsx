@@ -3,14 +3,21 @@
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Message, MessageContent } from '@/components/ui/message';
+import { MessageContent } from '@/components/ui/message';
+import type { ChatSessionMode } from '@/lib/chat-types';
+import type { DesignDeliveryOutcome } from '@/lib/chat-types';
 import type { AssistantMessagePart } from '@/lib/message-parts';
 import type { UserContextBadge } from '@/lib/user-message-display';
 import { formatUserMessageForDisplay } from '@/lib/user-message-display';
 import { stripRedactedReasoningContent } from '@/lib/strip-redacted-content';
 import { cn } from '@/lib/utils';
+import {
+  resolveDesignDeliveryOutcome,
+  resolveNextStepVariant,
+} from '@/runtime/design-delivery';
 
+import MemoryAppliedBadge from './chat/MemoryAppliedBadge';
+import NextStepActions, { type NextStepActionsVariant } from './chat/NextStepActions';
 import ThinkingPanel from './ThinkingPanel';
 import OpenUISurface from './OpenUISurface';
 import UserContextBadgeRow from './UserContextBadgeRow';
@@ -35,6 +42,11 @@ export interface StackMessage {
   branchAnchorId?: string;
   branchVersionIndex?: number;
   branchVersionCount?: number;
+  runStatus?: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
+  sessionMode?: ChatSessionMode;
+  resultDeliveryState?: DesignDeliveryOutcome;
+  memoryBrief?: string | null;
+  agentLabel?: string | null;
 }
 
 type RenderSegment =
@@ -252,14 +264,46 @@ function MessageCopyButton({ text }: { text: string }) {
   );
 }
 
-function avatarLabel(role: ChatMessageRole): string {
-  if (role === 'user') {
-    return 'U';
+function sessionModeLabel(mode: ChatSessionMode | undefined): string | null {
+  if (mode === 'chat') return 'Ask';
+  if (mode === 'plan') return 'Plan';
+  if (mode === 'design') return 'Design';
+  return null;
+}
+
+function SessionModeChip({ mode }: { mode: ChatSessionMode | undefined }) {
+  const label = sessionModeLabel(mode);
+  if (!label) {
+    return null;
   }
-  if (role === 'thinking') {
-    return 'R';
+  return (
+    <span
+      className={`msg-mode-chip${mode === 'chat' ? ' msg-mode-chip--chat' : ''}`}
+      data-testid="chat-message-mode-chip"
+    >
+      {label}
+    </span>
+  );
+}
+
+function AssistantAgentLabel({ label }: { label: string | null | undefined }) {
+  if (!label) {
+    return <span className="role">Assistant</span>;
   }
-  return 'A';
+  return <span className="role">{label}</span>;
+}
+
+function resolveNextStepForMessage(
+  message: StackMessage,
+  producedFileCount: number,
+): NextStepActionsVariant | null {
+  const delivery = resolveDesignDeliveryOutcome({
+    sessionMode: message.sessionMode ?? 'design',
+    runStatus: message.runStatus ?? 'succeeded',
+    content: message.content,
+    producedFileCount,
+  });
+  return resolveNextStepVariant(message.sessionMode ?? 'design', delivery);
 }
 
 function resolveAssistantParts(message: StackMessage): AssistantMessagePart[] | undefined {
@@ -395,7 +439,9 @@ export default function AgentMessageStack({
   onLinkClick,
   onEditMessage,
   onSwitchBranchVersion,
+  onPromptAction,
   branchNavigationDisabled = false,
+  producedFileCount = 0,
 }: {
   messages: StackMessage[];
   onFileClick?: (filePath: string) => void;
@@ -403,43 +449,63 @@ export default function AgentMessageStack({
   streaming?: boolean;
   onEditMessage?: (messageId: string, content: string) => void;
   onSwitchBranchVersion?: (anchorId: string, direction: 'prev' | 'next') => void;
+  onPromptAction?: (prompt: string, options?: { sessionMode?: ChatSessionMode }) => void;
   branchNavigationDisabled?: boolean;
+  producedFileCount?: number;
 }) {
   const segments = useMemo(() => buildSegments(messages), [messages]);
+  const lastAssistantId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === 'assistant') {
+        return messages[index]?.id ?? null;
+      }
+    }
+    return null;
+  }, [messages]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-4">
+    <div className="chat-log mx-auto w-full max-w-3xl p-4">
       {segments.map((segment) => {
         if (segment.kind === 'turn') {
           const { assistant, thinking } = segment;
           const assistantContent = stripRedactedReasoningContent(assistant.content);
           const thinkingContent = thinking ? stripRedactedReasoningContent(thinking.content) : '';
           const thinkingActive = thinking?.streaming === true;
+          const nextStepVariant =
+            assistant.id === lastAssistantId && !assistant.streaming
+              ? resolveNextStepForMessage(assistant, producedFileCount)
+              : null;
 
           return (
-            <Message key={assistant.id} data-testid="chat-message-assistant" className="group">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="text-xs">{avatarLabel('assistant')}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-center gap-2">
-                  <MessageTimestamp value={assistant.recordedAt} />
-                  <MessageCopyButton text={assistantContent} />
-                </div>
+            <article key={assistant.id} className="msg assistant group" data-testid="chat-message-assistant">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <AssistantAgentLabel label={assistant.agentLabel} />
+                <SessionModeChip mode={assistant.sessionMode} />
+                <MessageTimestamp value={assistant.recordedAt} className="msg-time" />
+                <MessageCopyButton text={assistantContent} />
+              </div>
+              {assistant.memoryBrief ? (
+                <MemoryAppliedBadge briefContent={assistant.memoryBrief} />
+              ) : null}
+              {thinking ? (
+                <ThinkingPanel
+                  content={thinkingContent}
+                  streaming={thinking.streaming}
+                  durationMs={thinking.durationMs}
+                />
+              ) : null}
+              <div className="assistant-body">
                 {renderAssistantBody(assistant, assistantContent, onFileClick, onLinkClick, {
                   thinkingActive,
                 })}
-                {thinking ? (
-                  <div className="mt-2">
-                    <ThinkingPanel
-                      content={thinkingContent}
-                      streaming={thinking.streaming}
-                      durationMs={thinking.durationMs}
-                    />
-                  </div>
-                ) : null}
               </div>
-            </Message>
+              {nextStepVariant && onPromptAction ? (
+                <NextStepActions
+                  variant={nextStepVariant}
+                  onPromptAction={onPromptAction}
+                />
+              ) : null}
+            </article>
           );
         }
 
@@ -452,8 +518,8 @@ export default function AgentMessageStack({
 
         if (message.role === 'thinking') {
           return (
-            <div key={message.id}>
-              <MessageTimestamp value={message.recordedAt} />
+            <div key={message.id} className="msg">
+              <MessageTimestamp value={message.recordedAt} className="msg-time" />
               <ThinkingPanel
                 content={visibleContent}
                 streaming={message.streaming}
@@ -465,61 +531,76 @@ export default function AgentMessageStack({
 
         if (message.role === 'system') {
           return (
-            <Message key={message.id} data-testid="chat-message-system">
+            <article key={message.id} className="msg" data-testid="chat-message-system">
               <MessageContent className="border border-amber-100 bg-amber-50 text-sm text-amber-900">
                 <MessageTimestamp value={message.recordedAt} />
                 {visibleContent}
               </MessageContent>
-            </Message>
+            </article>
           );
         }
 
-        return (
-          <Message key={message.id} data-testid={`chat-message-${message.role}`} className="group">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="text-xs">{avatarLabel(message.role)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <MessageTimestamp value={message.recordedAt} />
-                {message.role === 'user' ? (
-                  <>
-                    {message.branchAnchorId && onSwitchBranchVersion ? (
-                      <MessageBranchNavigator
-                        versionIndex={message.branchVersionIndex ?? 0}
-                        versionCount={message.branchVersionCount ?? 1}
-                        disabled={branchNavigationDisabled}
-                        onPrev={() => onSwitchBranchVersion(message.branchAnchorId!, 'prev')}
-                        onNext={() => onSwitchBranchVersion(message.branchAnchorId!, 'next')}
-                      />
-                    ) : null}
-                    {onEditMessage && !branchNavigationDisabled ? (
-                      <MessageActionButton
-                        label="Edit"
-                        testId="chat-message-edit"
-                        onClick={() => onEditMessage(message.id, userDisplay?.body ?? visibleContent)}
-                      />
-                    ) : null}
-                  </>
+        if (message.role === 'user') {
+          return (
+            <article key={message.id} className="msg user group" data-testid="chat-message-user">
+              <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
+                <MessageTimestamp value={message.recordedAt} className="msg-time" />
+                {message.branchAnchorId && onSwitchBranchVersion ? (
+                  <MessageBranchNavigator
+                    versionIndex={message.branchVersionIndex ?? 0}
+                    versionCount={message.branchVersionCount ?? 1}
+                    disabled={branchNavigationDisabled}
+                    onPrev={() => onSwitchBranchVersion(message.branchAnchorId!, 'prev')}
+                    onNext={() => onSwitchBranchVersion(message.branchAnchorId!, 'next')}
+                  />
+                ) : null}
+                {onEditMessage && !branchNavigationDisabled ? (
+                  <MessageActionButton
+                    label="Edit"
+                    testId="chat-message-edit"
+                    onClick={() => onEditMessage(message.id, userDisplay?.body ?? visibleContent)}
+                  />
                 ) : null}
                 <MessageCopyButton text={userDisplay?.body ?? visibleContent} />
               </div>
-              {message.role === 'assistant' ? (
-                renderAssistantBody(message, visibleContent, onFileClick, onLinkClick)
-              ) : (
-                <MessageContent className="bg-gray-100 text-sm text-gray-900 shadow-sm">
-                  {userDisplay ? (
-                    <>
-                      <UserContextBadgeRow badges={userDisplay.badges} />
-                      {userDisplay.body}
-                    </>
-                  ) : (
-                    visibleContent
-                  )}
-                </MessageContent>
-              )}
+              <div className="msg-run-context-row">
+                <SessionModeChip mode={message.sessionMode} />
+              </div>
+              <div className="user-text">
+                {userDisplay ? (
+                  <>
+                    <UserContextBadgeRow badges={userDisplay.badges} />
+                    {userDisplay.body}
+                  </>
+                ) : (
+                  visibleContent
+                )}
+              </div>
+            </article>
+          );
+        }
+
+        const nextStepVariant =
+          message.id === lastAssistantId && !message.streaming
+            ? resolveNextStepForMessage(message, producedFileCount)
+            : null;
+
+        return (
+          <article key={message.id} className="msg assistant group" data-testid="chat-message-assistant">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <AssistantAgentLabel label={message.agentLabel} />
+              <SessionModeChip mode={message.sessionMode} />
+              <MessageTimestamp value={message.recordedAt} className="msg-time" />
+              <MessageCopyButton text={visibleContent} />
             </div>
-          </Message>
+            {message.memoryBrief ? <MemoryAppliedBadge briefContent={message.memoryBrief} /> : null}
+            <div className="assistant-body">
+              {renderAssistantBody(message, visibleContent, onFileClick, onLinkClick)}
+            </div>
+            {nextStepVariant && onPromptAction ? (
+              <NextStepActions variant={nextStepVariant} onPromptAction={onPromptAction} />
+            ) : null}
+          </article>
         );
       })}
     </div>

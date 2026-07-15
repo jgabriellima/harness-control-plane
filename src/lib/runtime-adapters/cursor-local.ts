@@ -1,7 +1,9 @@
 import { access, readFile, readdir, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { joinAssistantTextBlocks } from '../assistant-text';
 import { resolveAppRoot } from '../app-root';
@@ -14,6 +16,8 @@ import type {
   RuntimeSessionAdapter,
   SessionRefs,
 } from './types';
+
+const execFileAsync = promisify(execFile);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -248,7 +252,15 @@ export class CursorLocalAdapter implements RuntimeSessionAdapter {
     const transcriptPath = join(dataRoot, transcriptRef);
 
     if (!(await pathExists(transcriptPath))) {
-      throw new Error(`transcript missing: ${transcriptPath}`);
+      const storeRef = await this.resolveStoreRef(dataRoot, slug, vendorAgentId);
+      return {
+        vendorAgentId,
+        vendorDataRoot: dataRoot,
+        vendorProjectSlug: slug,
+        cwd,
+        transcriptRef,
+        storeRef,
+      };
     }
 
     const storeRef = await this.resolveStoreRef(dataRoot, slug, vendorAgentId);
@@ -266,7 +278,8 @@ export class CursorLocalAdapter implements RuntimeSessionAdapter {
   async resolveProjectSlug(dataRoot: string, vendorAgentId: string): Promise<string> {
     const projectsRoot = join(dataRoot, 'projects');
     const entries = await readdir(projectsRoot, { withFileTypes: true });
-    const matches: string[] = [];
+    const transcriptMatches: string[] = [];
+    const storeMatches: string[] = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory()) {
@@ -280,17 +293,66 @@ export class CursorLocalAdapter implements RuntimeSessionAdapter {
         `${vendorAgentId}.jsonl`,
       );
       if (await pathExists(transcriptPath)) {
-        matches.push(entry.name);
+        transcriptMatches.push(entry.name);
+      }
+
+      const storeMatch = await this.projectSlugFromStore(
+        join(projectsRoot, entry.name, 'sdk-agent-store'),
+        entry.name,
+        vendorAgentId,
+      );
+      if (storeMatch) {
+        storeMatches.push(storeMatch);
       }
     }
 
-    if (matches.length === 1) {
-      return matches[0];
+    if (transcriptMatches.length === 1) {
+      return transcriptMatches[0];
     }
-    if (matches.length > 1) {
+    if (transcriptMatches.length > 1) {
       throw new Error(`ambiguous project slug for ${vendorAgentId}`);
     }
+    if (storeMatches.length === 1) {
+      return storeMatches[0];
+    }
+    if (storeMatches.length > 1) {
+      throw new Error(`ambiguous project slug (store) for ${vendorAgentId}`);
+    }
     throw new Error(`no transcript project for ${vendorAgentId}`);
+  }
+
+  private async projectSlugFromStore(
+    storeRoot: string,
+    slug: string,
+    vendorAgentId: string,
+  ): Promise<string | null> {
+    if (!(await pathExists(storeRoot))) {
+      return null;
+    }
+
+    const hashDirs = await readdir(storeRoot, { withFileTypes: true });
+    for (const entry of hashDirs) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const indexDb = join(storeRoot, entry.name, 'index.db');
+      if (!(await pathExists(indexDb))) {
+        continue;
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'sqlite3',
+          [indexDb, `SELECT agent_id FROM agents WHERE agent_id = '${vendorAgentId.replace(/'/g, "''")}' LIMIT 1;`],
+          { maxBuffer: 64 * 1024 },
+        );
+        if (stdout.trim().length > 0) {
+          return slug;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   async resolveStoreRef(dataRoot: string, slug: string, vendorAgentId: string): Promise<string> {

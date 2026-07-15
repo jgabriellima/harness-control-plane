@@ -3,7 +3,15 @@ import {
   type ActiveRunEntry,
   type RunsIndex,
 } from './runtime-run-registry';
+import {
+  buildRunSessionSnapshot,
+  loadRunSessionLifecyclePolicy,
+  type RunSessionSnapshot,
+} from './runtime-run-session-policy';
 import { getActiveRunIds, getRuntimeRunEntry } from './runtime-sessions';
+import { isRunExecutingInProcessSession, markRunExecutingInProcessSession } from './runtime-process-session';
+
+export type { RunSessionSnapshot, ContinuableRunEntry, RunSessionLifecyclePolicy } from './runtime-run-session-policy';
 
 /** Runs registered in this Astro process — authoritative while the dev server is alive. */
 export function listInMemoryActiveRunEntries(): ActiveRunEntry[] {
@@ -43,24 +51,50 @@ export function mergeActiveRunEntries(disk: ActiveRunEntry[], memory: ActiveRunE
 }
 
 /**
- * Active runs for UI reattach and badges.
+ * Authoritative run presence for UI — applies DSL session-boundary rules from business.yaml.
  *
- * In-memory SDK registrations win over the materialized runs-index.json, which is
- * append-only audit state that may lag or fail without invalidating a live run.
+ * Disk-indexed runs that predate this process session are `continuable`, not `executing`.
+ * Only runs started (or explicitly resumed) in this session appear under `executing`.
  */
-export async function readLiveActiveRuns(): Promise<RunsIndex> {
+export async function readRunSessionSnapshot(): Promise<RunSessionSnapshot> {
   const disk = await readAggregatedActiveRuns();
   const memory = listInMemoryActiveRunEntries();
-  const active = mergeActiveRunEntries(disk.active, memory);
+  const merged = mergeActiveRunEntries(disk.active, memory);
+
+  for (const entry of memory) {
+    markRunExecutingInProcessSession(entry.runId);
+  }
+
+  const policy = await loadRunSessionLifecyclePolicy();
+  return buildRunSessionSnapshot(merged, policy);
+}
+
+/**
+ * Active runs for UI reattach and badges.
+ *
+ * @deprecated Prefer readRunSessionSnapshot — `active` is only truly executing runs under session policy.
+ */
+export async function readLiveActiveRuns(): Promise<RunsIndex> {
+  const snapshot = await readRunSessionSnapshot();
 
   const updatedAt =
-    active.length > 0
-      ? active[0]?.startedAt ?? disk.updatedAt
-      : disk.updatedAt;
+    snapshot.executing.length > 0
+      ? snapshot.executing[0]?.startedAt ?? new Date().toISOString()
+      : new Date().toISOString();
 
   return {
     version: 1,
     updatedAt,
-    active,
+    active: snapshot.executing,
   };
+}
+
+/** Ensures in-memory runs are marked executing before snapshot partition. */
+export function promoteInMemoryRunsToSessionExecuting(): void {
+  for (const runId of getActiveRunIds()) {
+    if (isRunExecutingInProcessSession(runId)) {
+      continue;
+    }
+    markRunExecutingInProcessSession(runId);
+  }
 }

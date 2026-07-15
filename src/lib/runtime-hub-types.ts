@@ -1,3 +1,4 @@
+import type { ChatMessageEvent, ChatRunStatus, ChatSessionMode, DesignDeliveryOutcome } from './chat-types';
 import type { AssistantMessagePart } from './message-parts';
 import type { UserContextBadge } from './user-message-display';
 
@@ -20,6 +21,18 @@ export interface ChatMessage {
   branchVersionIndex?: number;
   /** Total versions available for branch navigation UI. */
   branchVersionCount?: number;
+  /** Per-turn run lifecycle (open-design chat contract). */
+  runStatus?: ChatRunStatus;
+  runId?: string | null;
+  agentId?: string | null;
+  agentLabel?: string | null;
+  sessionMode?: ChatSessionMode;
+  events?: ChatMessageEvent[];
+  errorCode?: string | null;
+  failureCategory?: string | null;
+  failureDetail?: string | null;
+  resultDeliveryState?: DesignDeliveryOutcome;
+  memoryBrief?: string | null;
 }
 
 export interface MessageBranchVersion {
@@ -66,6 +79,9 @@ export interface ConversationRuntimeState {
   runActivity: RunActivityPhase;
   toolActivity: string[];
   error: string | null;
+  runFailureCode?: string | null;
+  runFailureDetail?: string | null;
+  sessionMode: ChatSessionMode;
   continuableRun: ContinuableRunState | null;
   lastRequestId?: string | null;
   sdkHealth: SdkHealthStatus;

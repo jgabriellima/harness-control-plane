@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import * as Sentry from '@sentry/astro';
 import { parse as parseYaml } from 'yaml';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 import type {
   WorkflowDetail,
   WorkflowDocument,
@@ -66,9 +66,9 @@ async function readWorkflowDocument(
   return assertWorkflowDocument(parsed, fileName);
 }
 
-export async function listWorkflowSummaries(): Promise<WorkflowSummary[]> {
+export async function listWorkflowSummaries(workspaceRoot?: string): Promise<WorkflowSummary[]> {
   return Sentry.startSpan({ name: 'listWorkflowSummaries', op: 'fs.read' }, async () => {
-    const binding = await resolveHarnessBinding();
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const entries = await readdir(binding.workflowsDir, { withFileTypes: true });
     const fileNames = entries
       .filter((entry) => entry.isFile() && isWorkflowFile(entry.name))
@@ -86,11 +86,14 @@ export async function listWorkflowSummaries(): Promise<WorkflowSummary[]> {
   });
 }
 
-export async function getWorkflowDetail(workflowId: string): Promise<WorkflowDetail | null> {
+export async function getWorkflowDetail(
+  workflowId: string,
+  workspaceRoot?: string,
+): Promise<WorkflowDetail | null> {
   return Sentry.startSpan(
     { name: 'getWorkflowDetail', op: 'fs.read', attributes: { workflowId } },
     async () => {
-      const binding = await resolveHarnessBinding();
+      const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
       const filePath = join(binding.workflowsDir, `${workflowId}.yaml`);
 
       let document: WorkflowDocument;

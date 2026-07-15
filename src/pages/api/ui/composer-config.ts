@@ -3,9 +3,14 @@ import type { APIRoute } from 'astro';
 import { jsonError, jsonOk } from '../../../lib/api-json';
 import { resolveProjectRoot } from '../../../lib/project-root';
 import { resolveRuntimeSurface } from '../../../lib/runtime-surface';
+import { resolvePresentationAssets } from '../../../lib/presentation-assets';
 import { resolveUIBranding } from '../../../lib/ui-branding';
 import { loadUIConfig } from '../../../lib/ui-config';
 import { resolveVoiceInputConfig } from '../../../lib/voice-input-config';
+import { resolveComposerToolActivityEnabled } from '../../../lib/composer-tool-activity-config';
+import { resolveContextUsagePanelEnabled } from '../../../lib/context-usage-config';
+import { resolveDesignStudioEnabled } from '../../../lib/design-studio-config';
+import { parsePresentationDefaultFromUiConfig } from '../../../lib/presentation-policy';
 import {
   getVoiceTranscriptionStatus,
   scheduleVoiceTranscriptionBootstrap,
@@ -41,7 +46,15 @@ export const GET: APIRoute = async () => {
       presentationTitle: branding.presentationTitle,
       windowTitle: branding.windowTitle,
       desktopIdentifier: branding.desktopIdentifier,
-      brandAssets: branding.assets ?? null,
+      brandAssets: resolvePresentationAssets(branding.assets) ?? null,
+      features: {
+        context_usage_panel: resolveContextUsagePanelEnabled(uiConfig),
+        composer_tool_activity: resolveComposerToolActivityEnabled(uiConfig),
+        design_studio: resolveDesignStudioEnabled(uiConfig),
+      },
+      presentation: {
+        default_rich_ui: parsePresentationDefaultFromUiConfig(uiConfig),
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load composer config';

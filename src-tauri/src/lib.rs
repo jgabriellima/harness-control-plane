@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, RunEvent};
 
 mod identity_migration;
+mod macos_menu;
 mod secrets;
 
 struct SidecarState {
@@ -253,9 +254,9 @@ fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     {
         use tauri_plugin_prevent_default::Flags;
 
-        // Dev: keep devtools + reload; still block browser context menu and other chrome.
+        // Dev: no WebView chrome blocking — right-click menu, reload, and devtools work normally.
         tauri_plugin_prevent_default::Builder::new()
-            .with_flags(Flags::all().difference(Flags::DEV_TOOLS | Flags::RELOAD))
+            .with_flags(Flags::empty())
             .build()
     }
 
@@ -287,6 +288,13 @@ pub fn run() {
             sidecar_launch_url,
         ])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(error) = macos_menu::install_branded_menu(app.handle()) {
+                    eprintln!("[business-runtime] failed to install branded macOS menu: {error}");
+                }
+            }
+
             #[cfg(not(debug_assertions))]
             {
                 identity_migration::run_identity_migration(app.handle());

@@ -9,6 +9,7 @@ import {
   useGroupRef,
   usePanelRef,
   type PanelImperativeHandle,
+  type PanelSize,
 } from 'react-resizable-panels';
 
 import { usePanelCollapsed } from '@/lib/panel-layout-store';
@@ -18,6 +19,7 @@ import {
   SHELL_LAYOUT_GROUP_ID,
   SHELL_LAYOUT_MIN,
   SHELL_PANEL_IDS,
+  SIDEBAR_WIDTH,
   layoutNeedsRepair,
   sanitizePanelLayout,
   shellManifestToLayout,
@@ -39,6 +41,13 @@ function debounce<T extends (...args: Parameters<T>) => void>(fn: T, ms: number)
     timer = setTimeout(() => fn(...args), ms);
   }) as T;
 }
+
+function parsePx(value: string): number {
+  const match = value.match(/^(\d+(?:\.\d+)?)px$/);
+  return match ? Number(match[1]) : 0;
+}
+
+const SIDEBAR_EXPANDED_MIN_PX = parsePx(SIDEBAR_WIDTH.expandedMin);
 
 function FixedOrchestrationShell({
   sidebar,
@@ -69,6 +78,7 @@ function ResizableOrchestrationShellInner({
   const sidebarExpanded = useSidebarExpanded();
   const [manifestLayout, setManifestLayout] = useState<ShellLayoutSizes | null>(null);
   const repairedRef = useRef(false);
+  const syncingSidebarRef = useRef(false);
 
   const persistRef = useRef(
     debounce(async (layout: Record<string, number>) => {
@@ -168,17 +178,64 @@ function ResizableOrchestrationShellInner({
       return;
     }
 
+    syncingSidebarRef.current = true;
+
     if (sidebarExpanded) {
       if (panel.isCollapsed()) {
         panel.expand();
+        requestAnimationFrame(() => {
+          const expandedPanel = sidebarPanelRef.current as PanelImperativeHandle | null;
+          if (!expandedPanel) {
+            syncingSidebarRef.current = false;
+            return;
+          }
+
+          if (expandedPanel.getSize().inPixels < SIDEBAR_EXPANDED_MIN_PX) {
+            expandedPanel.resize(SIDEBAR_WIDTH.expandedDefault);
+          }
+          syncingSidebarRef.current = false;
+        });
+        return;
       }
+
+      if (panel.getSize().inPixels < SIDEBAR_EXPANDED_MIN_PX) {
+        panel.resize(SIDEBAR_WIDTH.expandedDefault);
+      }
+      syncingSidebarRef.current = false;
       return;
     }
 
     if (!panel.isCollapsed()) {
       panel.collapse();
     }
+    syncingSidebarRef.current = false;
   }, [sidebarExpanded, sidebarPanelRef]);
+
+  const handleSidebarResize = useCallback(
+    (_size: PanelSize) => {
+      if (syncingSidebarRef.current) {
+        return;
+      }
+
+      const panel = sidebarPanelRef.current as PanelImperativeHandle | null;
+      if (!panel) {
+        return;
+      }
+
+      const collapsed = panel.isCollapsed();
+      if (collapsed && sidebarExpanded) {
+        sidebarLayoutStore.setExpanded(false);
+        void sidebarLayoutStore.persistExpanded(false).catch(() => undefined);
+        return;
+      }
+
+      if (!collapsed && !sidebarExpanded) {
+        sidebarLayoutStore.setExpanded(true);
+        void sidebarLayoutStore.persistExpanded(true).catch(() => undefined);
+      }
+    },
+    [sidebarExpanded, sidebarPanelRef],
+  );
 
   const handleLayoutChanged = useCallback(
     (layout: Record<string, number>) => {
@@ -207,10 +264,13 @@ function ResizableOrchestrationShellInner({
       <Panel
         id={SHELL_PANEL_IDS.sidebar}
         panelRef={sidebarPanelRef}
-        minSize="56px"
+        minSize={SIDEBAR_WIDTH.expandedMin}
+        maxSize={SIDEBAR_WIDTH.expandedMax}
         collapsible
-        collapsedSize="56px"
+        collapsedSize={SIDEBAR_WIDTH.collapsed}
         defaultSize={initialLayout[SHELL_PANEL_IDS.sidebar] ?? SHELL_LAYOUT_DEFAULTS.sidebar}
+        groupResizeBehavior="preserve-pixel-size"
+        onResize={handleSidebarResize}
         className="relative min-h-0 overflow-hidden bg-white [&>*]:min-h-0"
       >
         {sidebar}

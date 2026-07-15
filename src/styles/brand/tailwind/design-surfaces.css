@@ -1,0 +1,449 @@
+/**
+ * Tailwind brand remapping for embedded harness surfaces inside the design host.
+ * Scoped to [data-brand="tailwind"] — does not alter the runtime harness shell.
+ */
+
+/* ── Embedded harness wrapper ────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-embedded--harness {
+  background: var(--tw-paper);
+}
+
+/* ── Harness surface wrapper ─────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface {
+  background: var(--tw-paper);
+  color: var(--tw-ink);
+  font-family: var(--font-body);
+}
+
+[data-brand="tailwind"] .design-harness-surface .bg-primary {
+  background-color: var(--tw-paper) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .bg-white {
+  background-color: var(--tw-white) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .bg-gray-50 {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .bg-gray-100 {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .bg-gray-900 {
+  background-color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .hover\:bg-gray-50:hover {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .hover\:bg-gray-100:hover {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .hover\:bg-gray-800:hover {
+  background-color: var(--tw-ink-soft) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-900 {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-800,
+[data-brand="tailwind"] .design-harness-surface .text-gray-700 {
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-600 {
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-500 {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-400 {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .text-gray-300 {
+  color: var(--tw-line-strong) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .hover\:text-gray-600:hover,
+[data-brand="tailwind"] .design-harness-surface .hover\:text-gray-700:hover,
+[data-brand="tailwind"] .design-harness-surface .hover\:text-gray-800:hover,
+[data-brand="tailwind"] .design-harness-surface .hover\:text-gray-900:hover {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .group:hover .group-hover\:text-gray-700 {
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .group:hover .group-hover\:text-gray-800 {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .border-gray-100,
+[data-brand="tailwind"] .design-harness-surface .border-gray-200,
+[data-brand="tailwind"] .design-harness-surface .border-gray-300,
+[data-brand="tailwind"] .design-harness-surface .border-dashed.border-gray-200 {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .ring-gray-200 {
+  --tw-ring-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .placeholder\:text-gray-400::placeholder {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .focus\:border-gray-300:focus {
+  border-color: var(--tw-line-strong) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .focus\:ring-gray-200:focus {
+  --tw-ring-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .focus\:bg-white:focus {
+  background-color: var(--tw-white) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .shadow-sm {
+  box-shadow: var(--shadow-sm) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface .shadow-md,
+[data-brand="tailwind"] .design-harness-surface .shadow-lg,
+[data-brand="tailwind"] .design-harness-surface .shadow-xl {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ── Primary actions (gray-900 → tw-blue) ────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-new"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-send"]:not(.bg-red-600) {
+  background-color: var(--tw-blue) !important;
+  color: var(--text-on-brand) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-new"]:hover:not(:disabled),
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-send"]:hover:not(:disabled):not(.bg-red-600) {
+  background-color: var(--tw-blue-600) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-send"]:focus-visible {
+  outline-color: var(--tw-blue) !important;
+  --tw-ring-color: var(--tw-blue-50) !important;
+}
+
+/* ── LibraryView ─────────────────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] > header {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] h1 {
+  color: var(--tw-ink) !important;
+  font-family: var(--font-body);
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-search"] {
+  background-color: var(--tw-mist) !important;
+  border-color: var(--tw-line) !important;
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-search"]:focus {
+  border-color: var(--tw-blue) !important;
+  background-color: var(--tw-white) !important;
+  --tw-ring-color: var(--tw-blue-50) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] [role="tablist"] {
+  background: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] [role="tab"][aria-selected="true"] {
+  background: var(--tw-white) !important;
+  color: var(--tw-blue-700) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] [role="tab"]:not([aria-selected="true"]) {
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] [role="tab"]:not([aria-selected="true"]):hover {
+  color: var(--tw-blue-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-list"] button[aria-pressed="true"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-grid"] button[aria-pressed="true"] {
+  background-color: var(--tw-blue-50) !important;
+  border-color: var(--tw-blue) !important;
+  --tw-ring-color: var(--tw-blue-50) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-list"] button:hover,
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-grid"] button:hover {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view"] .sticky.top-0 {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-filter"][aria-expanded="true"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view-list"][aria-pressed="true"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="library-view-grid"][aria-pressed="true"] {
+  background-color: var(--tw-blue-50) !important;
+  color: var(--tw-blue-700) !important;
+  --tw-ring-color: var(--tw-blue-50) !important;
+}
+
+/* ── ExecutionsListView ──────────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="executions-list-view"] > header {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="executions-list-view"] h1 {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="executions-empty"] {
+  background: var(--tw-mist) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="execution-list-item-"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="execution-list-item-"]:hover {
+  background: var(--tw-mist) !important;
+  border-color: var(--tw-line-strong) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="execution-list-item-"] .rounded-full.bg-gray-100 {
+  background: var(--tw-blue-50) !important;
+  color: var(--tw-blue-700) !important;
+}
+
+/* ── ScheduledView ───────────────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="scheduled-view"] > header {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="scheduled-view"] h1,
+[data-brand="tailwind"] .design-harness-surface [data-testid="scheduled-view"] h2 {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="schedule-filter"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="schedule-filter"]:hover {
+  background: var(--tw-mist) !important;
+  border-color: var(--tw-line-strong) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="schedule-registry-list"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="schedule-item-"] {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="schedule-item-"]:hover {
+  background: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="schedule-item-"] .rounded-full.border-gray-200 {
+  background: var(--tw-blue-50) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid^="schedule-item-"] .rounded-full.border-gray-200 svg {
+  color: var(--tw-blue-700) !important;
+}
+
+/* ── ChatPane ────────────────────────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane"] {
+  background: var(--tw-paper);
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-header"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-header-title"] {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-header"] button[aria-pressed="true"] {
+  background: var(--tw-blue-50) !important;
+  color: var(--tw-blue-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-header"] button:hover {
+  background: var(--tw-mist) !important;
+  color: var(--tw-slate-700) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-composer"] [class*="rounded-2xl"] {
+  border-color: var(--tw-line) !important;
+  background-color: color-mix(in srgb, var(--tw-white) 90%, transparent) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-composer"] [class*="rounded-2xl"]:hover {
+  border-color: var(--tw-line-strong) !important;
+  background-color: var(--tw-white) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-composer"] [class*="rounded-2xl"]:focus-within {
+  border-color: var(--tw-blue) !important;
+  background-color: var(--tw-white) !important;
+  box-shadow: 0 0 0 3px var(--tw-blue-50) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-messages"] .border-gray-100 {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-messages"] .bg-gray-100 {
+  background-color: var(--tw-mist) !important;
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-messages"] [data-testid^="chat-message-user"] .bg-gray-100 {
+  background-color: var(--tw-blue-50) !important;
+  border: 1px solid var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="chat-pane-messages"] [data-testid^="chat-message-assistant"] .border-gray-100 {
+  border-color: var(--tw-line) !important;
+  background: var(--tw-white) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="file-mention-suggestions"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="slash-command-suggestions"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="file-mention-suggestions"] button[aria-selected="true"],
+[data-brand="tailwind"] .design-harness-surface [data-testid="slash-command-suggestions"] button[aria-selected="true"] {
+  background: var(--tw-blue-50) !important;
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="schedule-interview-empty-state"] h2 {
+  color: var(--tw-ink) !important;
+}
+
+/* ── Design conversations list ───────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="design-conversations-view"] {
+  background: var(--tw-paper) !important;
+}
+
+[data-brand="tailwind"] .design-harness-surface [data-testid="design-conversation-row"]:hover {
+  background: var(--tw-blue-50) !important;
+}
+
+/* ── Context panel (design host) ─────────────────────────────────────────── */
+
+[data-brand="tailwind"] .design-context-panel,
+[data-brand="tailwind"] .design-context-panel [data-testid="context-panel"] {
+  background: var(--tw-mist) !important;
+  border-color: var(--tw-line) !important;
+  color: var(--tw-ink);
+  font-family: var(--font-body);
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] {
+  background: var(--tw-white) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] > header {
+  background: var(--tw-mist) !important;
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] header .text-gray-500 {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .text-gray-900 {
+  color: var(--tw-ink) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .text-gray-500,
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .text-gray-600,
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .text-gray-700 {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .bg-gray-50,
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .bg-gray-100 {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .hover\:bg-gray-50:hover,
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .hover\:bg-gray-100:hover {
+  background-color: var(--tw-mist) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .border-gray-100,
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .border-gray-200 {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--tw-line) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel [data-testid^="context-widget-"] .bg-white {
+  background-color: var(--tw-white) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel .text-gray-300 {
+  color: var(--tw-line-strong) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel .text-gray-400 {
+  color: var(--tw-slate-500) !important;
+}
+
+[data-brand="tailwind"] .design-context-panel .text-gray-500 {
+  color: var(--tw-slate-500) !important;
+}

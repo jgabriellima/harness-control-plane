@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
-import { resolveHarnessBinding } from '../../../lib/harness-binding';
+import { resolveWorkspaceHarnessBinding } from '../../../lib/workspace-harness-binding';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 import {
   loadComputerUseStatus,
   saveComputerUsePreferences,
@@ -30,9 +31,10 @@ function parsePatch(body: unknown): ComputerUsePreferencesPatch {
   return patch;
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const binding = await resolveHarnessBinding();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const root = binding.workspaceRoot;
     let status = await loadComputerUseStatus(root);
 
@@ -48,7 +50,7 @@ export const GET: APIRoute = async () => {
   }
 };
 
-export const PATCH: APIRoute = async ({ request }) => {
+export const PATCH: APIRoute = async ({ request, url }) => {
   let body: unknown;
 
   try {
@@ -58,7 +60,8 @@ export const PATCH: APIRoute = async ({ request }) => {
   }
 
   try {
-    const binding = await resolveHarnessBinding();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const patch = parsePatch(body);
 
     if (patch.hostControlEnabled === undefined && patch.allowForegroundCursor === undefined) {

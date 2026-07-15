@@ -1,5 +1,6 @@
 import type { ChatDispatchResponse, ChatRequest } from './harness-types';
 import { SCHEDULE_INTERVIEW_AGENT_BRIEF } from './schedule-tips';
+import { wrapPromptInject } from './prompt-inject';
 import { sendAgentPromptWithRelease } from './runtime-agent-run-release';
 import { appendDispatchLog } from './runtime-dispatch-log';
 import { isConnectUnauthenticated } from './runtime-connect-errors';
@@ -14,6 +15,16 @@ import {
   buildComputerUseCustomTools,
   probeComputerUseHealth,
 } from './runtime-computer-use-bridge';
+import {
+  buildComposioMcpServers,
+  composioMcpServersForSdk,
+  connectedComposioSlots,
+  type ComposioMcpServerBinding,
+} from './composio-mcp-bridge';
+import {
+  buildIntegrationBaselineContract,
+  buildIntegrationSlotContext,
+} from './integration-prompt';
 import { loadComputerUsePreferences, isComputerUseContractEnabled } from './runtime-computer-use-preferences';
 import { probeComputerUseSetup, ensureDaemonRunning } from './runtime-computer-use-setup';
 import { loadComputerUseSession, saveComputerUseSession } from './runtime-computer-use-sessions';
@@ -23,9 +34,31 @@ import {
   parseComputerUseTargetMode,
   type ComputerUseTargetMode,
 } from './runtime-computer-use-types';
-import { buildSandboxOpenUrlRecipe, readSandboxManifest } from './runtime-computer-use-sandbox-bridge';
-import { resolveControlPlaneInstallRoot } from './repo-root';
-import { resolveRuntimeApiKey } from './runtime-sdk-local';
+import {
+  buildSandboxOpenUrlRecipe,
+  ensureSandboxVncStream,
+  normalizeProjectId,
+  resolveSandboxManifestForProject,
+} from './runtime-computer-use-sandbox-bridge';
+import { buildSandboxCustomTools } from './runtime-computer-use-sandbox-tools';
+import { resolveControlPlaneInstallRoot, resolvePlatformAppRoot } from './repo-root';
+import { resolveRuntimeApiKey, ensureRuntimeApiKeyInProcessEnv } from './runtime-sdk-local';
+import { resolveLocalAgentStore } from './runtime-sdk-config';
+import { canAttemptRuntimeSdkCall } from './runtime-sdk-auth-gate';
+import { invalidateSdkProbeCache, probeSdkDispatchHealth } from './runtime-sdk-probe';
+import { buildPresentationPromptSection } from './openui-prompt';
+import {
+  parsePresentationDefaultFromUiConfig,
+  resolvePresentation,
+  stripPresentationPrefixes,
+} from './presentation-policy';
+import type { ResolvedPresentation } from './presentation-types';
+import { setRunContext } from './runtime-run-context';
+import { loadUIConfig } from './ui-config';
+import {
+  readWorkspacePresentation,
+  toPresentationConfig,
+} from './workspace-presentation';
 
 export class RuntimeGatewayError extends Error {
   readonly statusCode: number;
@@ -63,35 +96,51 @@ function requireApiKey(requestId: string): string {
   return apiKey;
 }
 
-function buildPrompt(request: ChatRequest, computerUseLine: string | null): string {
-  const sections: string[] = [];
-
-  if (request.metadata?.schedule_interview === true) {
-    sections.push(SCHEDULE_INTERVIEW_AGENT_BRIEF);
-  }
-
-  sections.push(request.message.trim());
-
-  if (request.mode === 'deep_research') {
-    sections.unshift('[mode: deep_research]');
-  }
+function buildPrompt(
+  request: ChatRequest,
+  computerUseLine: string | null,
+  presentation: ResolvedPresentation,
+  composioBindings?: Record<string, ComposioMcpServerBinding>,
+): string {
+  const injections: string[] = [];
 
   if (computerUseLine) {
-    sections.unshift(computerUseLine);
+    injections.push(wrapPromptInject('computer_use', computerUseLine));
   }
 
-  if (request.integration_slots && request.integration_slots.length > 0) {
-    sections.push(`[active_integrations: ${request.integration_slots.join(', ')}]`);
+  if (request.mode === 'deep_research') {
+    injections.push(wrapPromptInject('deep_research', 'enabled'));
   }
+
+  if (request.metadata?.schedule_interview === true) {
+    injections.push(wrapPromptInject('schedule_interview', SCHEDULE_INTERVIEW_AGENT_BRIEF));
+  }
+
+  const presentationPrompt = buildPresentationPromptSection(presentation.promptVariant);
+  if (presentationPrompt) {
+    injections.push(presentationPrompt);
+  }
+
+  const userBody = stripPresentationPrefixes(request.message).trim();
+
+  const integrationContract =
+    request.integration_slots && request.integration_slots.length > 0
+      ? buildIntegrationSlotContext(request.integration_slots, composioBindings)
+      : buildIntegrationBaselineContract();
+  injections.push(wrapPromptInject('integrations', integrationContract));
 
   if (request.attachments && request.attachments.length > 0) {
     const attachmentList = request.attachments
       .map((item) => item.path ?? item.name)
       .join(', ');
-    sections.push(`[attachments: ${attachmentList}]`);
+    injections.push(wrapPromptInject('attachments', attachmentList));
   }
 
-  return sections.join('\n\n');
+  if (userBody.length > 0) {
+    injections.push(userBody);
+  }
+
+  return injections.join('\n\n');
 }
 
 function resolveRuntimeModelId(): string {
@@ -103,6 +152,7 @@ async function resolveComputerUsePreviewPromptHints(
   conversationId: string,
   targetMode: ComputerUseTargetMode | null,
   workspaceRoot?: string,
+  projectId?: string,
 ): Promise<{
   previewActive?: boolean;
   previewControlMode?: 'user' | 'agent';
@@ -122,7 +172,9 @@ async function resolveComputerUsePreviewPromptHints(
     sandboxOpenUrlRecipe?: string;
   } = {};
 
-  const previewManifest = await readComputerUsePreviewManifest();
+  const previewManifest = workspaceRoot
+    ? await readComputerUsePreviewManifest(workspaceRoot)
+    : null;
   if (previewManifest && typeof previewManifest === 'object') {
     const active = (previewManifest as Record<string, unknown>).active;
     if (active && typeof active === 'object') {
@@ -134,8 +186,12 @@ async function resolveComputerUsePreviewPromptHints(
     }
   }
 
-  if (targetMode === 'sandbox') {
-    const sandboxManifest = await readSandboxManifest(conversationId, workspaceRoot);
+  if (targetMode === 'sandbox' && workspaceRoot) {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    const sandboxManifest = await resolveSandboxManifestForProject(
+      normalizedProjectId,
+      workspaceRoot,
+    );
     if (sandboxManifest?.phase === 'ready' && sandboxManifest.sandboxName) {
       const harnessRoot = resolveControlPlaneInstallRoot();
       hints.sandboxReady = true;
@@ -159,13 +215,18 @@ async function buildLocalAgentOptions(
   cwd: string,
   requestId: string,
   hostComputerUseActive: boolean,
+  sandboxComputerUseActive: boolean,
   computerUseHealthError: string | null,
+  integrationSlots: string[] = [],
+  projectId?: string,
 ) {
   const local: {
     cwd: string;
     settingSources: readonly [];
     sandboxOptions?: { enabled: boolean };
-    customTools?: Awaited<ReturnType<typeof buildComputerUseCustomTools>>;
+    customTools?: Record<string, import('@cursor/sdk').SDKCustomTool>;
+    autoReview?: boolean;
+    store?: Awaited<ReturnType<typeof resolveLocalAgentStore>>;
   } = {
     cwd,
     settingSources: [] as const,
@@ -174,12 +235,67 @@ async function buildLocalAgentOptions(
   if (hostComputerUseActive && !computerUseHealthError) {
     local.sandboxOptions = { enabled: false };
     local.customTools = await buildComputerUseCustomTools();
+  } else if (sandboxComputerUseActive) {
+    local.sandboxOptions = { enabled: false };
+    local.customTools = buildSandboxCustomTools({
+      workspaceRoot: cwd,
+      projectId: normalizeProjectId(projectId),
+    });
+    runtimeLogger.info('chat.computer_use.sandbox_tools.injected', {
+      request_id: requestId,
+      phase: 'chat.sdk.dispatch',
+      cwd,
+      project_id: normalizeProjectId(projectId),
+      tools: Object.keys(local.customTools),
+    });
+  }
+
+  const composioBindings = await buildComposioMcpServers({
+    workspaceRoot: cwd,
+    integrationSlots,
+    projectId: projectId?.trim() || 'default',
+  });
+  const composioMcp = composioMcpServersForSdk(composioBindings);
+  const composioActive = Boolean(composioMcp && Object.keys(composioMcp).length > 0);
+
+  if (composioActive) {
+    // OAuth in Settings is the trust boundary for Composio. Disable sandbox and do NOT
+    // enable autoReview — the embed has no Smart Mode approval UI, so the classifier
+    // would block MCP calls with no way for the operator to approve.
+    local.sandboxOptions = { enabled: false };
+    runtimeLogger.info('chat.composio.mcp.injected', {
+      request_id: requestId,
+      phase: 'chat.sdk.dispatch',
+      cwd,
+      project_id: projectId,
+      integration_slots: integrationSlots,
+      mcp_servers: Object.keys(composioMcp ?? {}),
+    });
+  } else if (integrationSlots.length > 0) {
+    const connected = await connectedComposioSlots(integrationSlots, projectId?.trim() || 'default');
+    if (connected.length > 0) {
+      throw new RuntimeGatewayError(
+        'Selected integrations are connected in Settings but Composio MCP failed to initialize. Verify COMPOSIO_API_KEY and retry.',
+        503,
+        'chat.composio.mcp',
+        requestId,
+      );
+    }
+  }
+
+  const store = await resolveLocalAgentStore(cwd);
+  if (store) {
+    local.store = store;
   }
 
   return {
-    apiKey: requireApiKey(requestId),
-    model: { id: resolveRuntimeModelId() },
-    local,
+    agentOptions: {
+      apiKey: requireApiKey(requestId),
+      model: { id: resolveRuntimeModelId() },
+      local,
+      ...(composioMcp ? { mcpServers: composioMcp } : {}),
+    },
+    composioBindings,
   };
 }
 
@@ -219,9 +335,11 @@ async function withDispatchTimeout<T>(
   }
 }
 
+import type { AgentOptions } from '@cursor/sdk';
+
 async function resolveAgent(
   request: ChatRequest,
-  agentOptions: Awaited<ReturnType<typeof buildLocalAgentOptions>>,
+  agentOptions: AgentOptions,
   requestId: string,
   cwd: string,
   conversationKey: string,
@@ -278,6 +396,27 @@ export async function dispatchChatToRuntime(
   const conversationKey = request.conversation_id?.trim() || 'ephemeral-new-chat';
   const startedAt = Date.now();
 
+  requireApiKey(requestId);
+  ensureRuntimeApiKeyInProcessEnv();
+
+  if (!canAttemptRuntimeSdkCall()) {
+    invalidateSdkProbeCache(cwd);
+    const health = await probeSdkDispatchHealth({
+      cacheKey: cwd,
+      force: true,
+      workspaceCwd: cwd,
+      probeLocalExecution: true,
+    });
+    if (!health.ready) {
+      throw new RuntimeGatewayError(
+        health.message ?? sdkDispatchAuthMessage(getCachedServerSdkMessageContext()),
+        503,
+        'chat.auth.reconcile',
+        requestId,
+      );
+    }
+  }
+
   const contractEnabled = await isComputerUseContractEnabled(cwd);
   const computerUsePreferences = contractEnabled ? await loadComputerUsePreferences(cwd) : null;
   const setup = contractEnabled ? await probeComputerUseSetup(cwd) : null;
@@ -317,6 +456,14 @@ export async function dispatchChatToRuntime(
       cwd,
       sessionEnabled ? targetMode : null,
     );
+  }
+
+  if (sandboxComputerUseActive) {
+    await ensureSandboxVncStream({
+      projectId: normalizeProjectId(request.project_id),
+      conversationId: conversationKey,
+      workspaceRoot: cwd,
+    });
   }
 
   runtimeLogger.info('chat.sdk.dispatch.start', {
@@ -368,21 +515,35 @@ export async function dispatchChatToRuntime(
         allowForegroundCursor: computerUsePreferences?.allowForegroundCursor ?? false,
         consentedAt: computerUsePreferences?.consentedAt ?? null,
         healthError: computerUseHealthError,
-        ...(await resolveComputerUsePreviewPromptHints(conversationKey, targetMode ?? 'host', cwd)),
+        ...(await resolveComputerUsePreviewPromptHints(
+          conversationKey,
+          targetMode ?? 'host',
+          cwd,
+          request.project_id,
+        )),
       })
     : null;
 
-  const prompt = buildPrompt(request, computerUseLine);
+  const workspacePresentation = toPresentationConfig(await readWorkspacePresentation(cwd));
+  const uiConfig = await loadUIConfig(resolvePlatformAppRoot());
+  const dslDefault = parsePresentationDefaultFromUiConfig(uiConfig);
+  const presentation = resolvePresentation(request, workspacePresentation, dslDefault);
+
+  const { agentOptions, composioBindings } = await buildLocalAgentOptions(
+    cwd,
+    requestId,
+    hostComputerUseActive,
+    sandboxComputerUseActive,
+    computerUseHealthError,
+    request.integration_slots ?? [],
+    request.project_id,
+  );
+
+  const prompt = buildPrompt(request, computerUseLine, presentation, composioBindings);
   if (prompt.trim().length === 0) {
     throw new RuntimeGatewayError('message is required', 400, 'chat.sdk.dispatch', requestId);
   }
 
-  const agentOptions = await buildLocalAgentOptions(
-    cwd,
-    requestId,
-    hostComputerUseActive,
-    computerUseHealthError,
-  );
   const timeoutMs = resolveDispatchTimeoutMs();
 
   const dispatchRequest: ChatRequest = {
@@ -414,6 +575,12 @@ export async function dispatchChatToRuntime(
   const durationMs = Date.now() - startedAt;
 
   registerRuntimeRun(runId, run, conversationKey, agentId);
+  setRunContext(runId, {
+    wireMode: presentation.wireMode,
+    promptVariant: presentation.promptVariant,
+    surfaceId: `openui-${runId}`,
+    requestId,
+  });
 
   runtimeLogger.info('chat.sdk.dispatch.ok', {
     request_id: requestId,

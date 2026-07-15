@@ -21,7 +21,7 @@ function buildSampleReport(): ContextUsageReport {
     corpus,
     sdkUsage: {
       usedTokens: 87_200,
-      maxTokens: 269_800,
+      maxTokens: 200_000,
       categories: [
         { id: 'summarized_conversation', label: 'Conversation', tokens: 76_100 },
         { id: 'tools', label: 'Tool definitions', tokens: 6_600 },
@@ -39,9 +39,9 @@ describe('context usage bar data contract', () => {
   it('report slices align with SDK checkpoint totals for segmented bar', () => {
     const report = buildSampleReport();
 
-    assert.equal(report.percentFull, 32);
+    assert.equal(report.percentFull, 44);
     assert.equal(report.totalTokens, 87_200);
-    assert.equal(report.contextWindowSize, 269_800);
+    assert.equal(report.contextWindowSize, 200_000);
 
     const sliceTotal = report.slices.reduce((sum, slice) => sum + slice.tokens, 0);
     assert.equal(sliceTotal, report.totalTokens);
@@ -56,7 +56,7 @@ describe('context usage bar data contract', () => {
     const report = buildSampleReport();
     const freeTokens = report.contextWindowSize - report.totalTokens;
 
-    assert.equal(freeTokens, 182_600);
+    assert.equal(freeTokens, 112_800);
     assert.ok(freeTokens > 0);
   });
 });

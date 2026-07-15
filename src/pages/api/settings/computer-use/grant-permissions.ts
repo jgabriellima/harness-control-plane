@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../lib/api-json';
-import { resolveHarnessBinding } from '../../../../lib/harness-binding';
+import { resolveWorkspaceHarnessBinding } from '../../../../lib/workspace-harness-binding';
+import { resolveRequestWorkspace } from '../../../../lib/workspace-request';
 import {
   COMPUTER_USE_PERMISSION_ACTIVE_MESSAGE,
   COMPUTER_USE_PERMISSION_DIALOG_HINT,
@@ -20,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, url }) => {
   let body: unknown = {};
 
   try {
@@ -33,7 +34,8 @@ export const POST: APIRoute = async ({ request }) => {
   const grantOnly = isRecord(body) && body.grant_only === true;
 
   try {
-    const binding = await resolveHarnessBinding();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const root = binding.workspaceRoot;
 
     // Stop driver before toggling permissions — avoids macOS "Quit & Reopen" in most cases.

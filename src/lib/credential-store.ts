@@ -55,6 +55,17 @@ function credentialProbeEnv(): NodeJS.ProcessEnv {
 }
 
 async function probeKeychainPresence(envVar: string, storage: SecretStorage, provider: string): Promise<boolean> {
+  if (storage === 'composio_connection') {
+    if (isDesktopKeychainContext()) {
+      return desktopKeychainHas(envVar);
+    }
+    try {
+      return await probePython(envVar, storage, provider);
+    } catch {
+      return false;
+    }
+  }
+
   if (storage === 'runtime_env') {
     if (envVar === 'RUNTIME_API_KEY' || envVar === 'CURSOR_API_KEY') {
       return (

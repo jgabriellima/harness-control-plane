@@ -45,6 +45,9 @@ export default defineConfig({
     }),
   ],
   vite: {
+    optimizeDeps: {
+      include: ['xlsx', 'lucide-react'],
+    },
     // @ts-expect-error Tailwind Vite plugin types differ across bundled Vite versions.
     plugins: [
       fixAstroServerAppReload(),

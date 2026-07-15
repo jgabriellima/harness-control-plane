@@ -21,8 +21,19 @@ import {
 } from '@/lib/file-reference';
 import type { ChatArtifactSelection } from '@/lib/chat-artifact-types';
 
-const ArtifactSpreadsheetPreview = lazy(
-  () => import('@/components/react/ArtifactSpreadsheetPreview'),
+function SpreadsheetPreviewLoadError(): React.ReactElement {
+  return (
+    <p className="p-4 text-sm text-red-600" role="alert" data-testid="chat-artifact-spreadsheet-load-error">
+      Failed to load spreadsheet preview. Refresh the page and try again.
+    </p>
+  );
+}
+
+const ArtifactSpreadsheetPreview = lazy(() =>
+  import('@/components/react/ArtifactSpreadsheetPreview').catch((error: unknown) => {
+    console.error('[artifact-preview] spreadsheet chunk failed', error);
+    return { default: SpreadsheetPreviewLoadError };
+  }),
 );
 const ArtifactDocxPreview = lazy(() => import('@/components/react/ArtifactDocxPreview'));
 const ArtifactPptxPreview = lazy(() => import('@/components/react/ArtifactPptxPreview'));
@@ -30,6 +41,47 @@ const ArtifactModel3DPreview = lazy(() => import('@/components/react/ArtifactMod
 
 function PreviewLoadingFallback(): React.ReactElement {
   return <p className="p-4 text-sm text-gray-500">Loading preview…</p>;
+}
+
+interface ArtifactPreviewErrorBoundaryProps {
+  children: React.ReactNode;
+  resetKey: string;
+}
+
+interface ArtifactPreviewErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ArtifactPreviewErrorBoundary extends React.Component<
+  ArtifactPreviewErrorBoundaryProps,
+  ArtifactPreviewErrorBoundaryState
+> {
+  state: ArtifactPreviewErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ArtifactPreviewErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(prevProps: ArtifactPreviewErrorBoundaryProps): void {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error('[artifact-preview]', error);
+  }
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <p className="p-4 text-sm text-red-600" role="alert" data-testid="chat-artifact-preview-error">
+          Failed to load preview. Refresh the page or try again.
+        </p>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 interface ChatArtifactPanelProps {
@@ -239,25 +291,33 @@ export default function ChatArtifactPanel({ selection, onClose }: ChatArtifactPa
 
           {!selection.loading && !selection.error && hasPreviewContent ? (
             previewMode === 'spreadsheet' && selection.previewUrl ? (
-              <Suspense fallback={<PreviewLoadingFallback />}>
-                <ArtifactSpreadsheetPreview
-                  previewUrl={selection.previewUrl}
-                  filePath={selection.path}
-                  textContent={selection.content}
-                />
-              </Suspense>
+              <ArtifactPreviewErrorBoundary resetKey={selection.path}>
+                <Suspense fallback={<PreviewLoadingFallback />}>
+                  <ArtifactSpreadsheetPreview
+                    previewUrl={selection.previewUrl}
+                    filePath={selection.path}
+                    textContent={selection.content}
+                  />
+                </Suspense>
+              </ArtifactPreviewErrorBoundary>
             ) : previewMode === 'document' && selection.previewUrl ? (
-              <Suspense fallback={<PreviewLoadingFallback />}>
-                <ArtifactDocxPreview previewUrl={selection.previewUrl} />
-              </Suspense>
+              <ArtifactPreviewErrorBoundary resetKey={selection.path}>
+                <Suspense fallback={<PreviewLoadingFallback />}>
+                  <ArtifactDocxPreview previewUrl={selection.previewUrl} />
+                </Suspense>
+              </ArtifactPreviewErrorBoundary>
             ) : previewMode === 'presentation' && selection.previewUrl ? (
-              <Suspense fallback={<PreviewLoadingFallback />}>
-                <ArtifactPptxPreview previewUrl={selection.previewUrl} fileName={fileName} />
-              </Suspense>
+              <ArtifactPreviewErrorBoundary resetKey={selection.path}>
+                <Suspense fallback={<PreviewLoadingFallback />}>
+                  <ArtifactPptxPreview previewUrl={selection.previewUrl} fileName={fileName} />
+                </Suspense>
+              </ArtifactPreviewErrorBoundary>
             ) : previewMode === 'model-3d' && selection.previewUrl ? (
-              <Suspense fallback={<PreviewLoadingFallback />}>
-                <ArtifactModel3DPreview previewUrl={selection.previewUrl} filePath={selection.path} />
-              </Suspense>
+              <ArtifactPreviewErrorBoundary resetKey={selection.path}>
+                <Suspense fallback={<PreviewLoadingFallback />}>
+                  <ArtifactModel3DPreview previewUrl={selection.previewUrl} filePath={selection.path} />
+                </Suspense>
+              </ArtifactPreviewErrorBoundary>
             ) : previewMode === 'unsupported-binary' ? (
               <ArtifactUnsupportedPreview
                 message={unsupportedBinaryMessage(selection.path)}

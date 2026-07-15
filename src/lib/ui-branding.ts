@@ -15,6 +15,8 @@ export interface UIBranding {
   presentationTitle: string;
   windowTitle: string;
   desktopIdentifier: string;
+  productId?: string;
+  themePack?: string;
   assets?: PresentationAssets;
 }
 

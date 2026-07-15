@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { resolveAppRoot } from './app-root';
-import { resolveHarnessBinding } from './harness-binding';
 import { callCuaDriverTool } from './runtime-computer-use-bridge';
 import { syncComputerUseAgentInputBlocked } from './runtime-computer-use-control-gate';
+import { resolveHarnessBinding } from './harness-binding';
 import {
   clearSandboxManifest,
   ensureSandboxVncStream,
   readSandboxManifest,
+  requireProjectWorkspaceRoot,
   resetSandboxBootstrapState,
   type SandboxLoadPhase,
 } from './runtime-computer-use-sandbox-bridge';
@@ -41,6 +41,8 @@ export interface RuntimeComputerUsePreviewSession {
 
 interface PreviewSessionHandle {
   record: RuntimeComputerUsePreviewSession;
+  workspaceRoot: string;
+  projectId: string;
   lastFrameBase64: string | null;
   lastFrameMime: 'image/png' | 'image/jpeg';
   screencastTimer: ReturnType<typeof setInterval> | null;
@@ -113,15 +115,18 @@ function extractScreenshotFromState(data: unknown): {
   return null;
 }
 
-async function sessionsDir(): Promise<string> {
-  const binding = await resolveHarnessBinding({ workspaceRoot: resolveAppRoot() });
+async function sessionsDir(workspaceRoot: string): Promise<string> {
+  const binding = await resolveHarnessBinding({ workspaceRoot });
   const dir = join(binding.harnessRoot, 'runtime-sessions');
   await mkdir(dir, { recursive: true });
   return dir;
 }
 
-async function persistPreviewManifest(session: RuntimeComputerUsePreviewSession): Promise<void> {
-  const dir = await sessionsDir();
+async function persistPreviewManifest(
+  session: RuntimeComputerUsePreviewSession,
+  workspaceRoot: string,
+): Promise<void> {
+  const dir = await sessionsDir(workspaceRoot);
   const manifestPath = join(dir, 'computer-use-preview.json');
   const payload = {
     version: 1,
@@ -144,8 +149,8 @@ async function persistPreviewManifest(session: RuntimeComputerUsePreviewSession)
   await writeFile(manifestPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
-async function clearPreviewManifest(): Promise<void> {
-  const dir = await sessionsDir();
+async function clearPreviewManifest(workspaceRoot: string): Promise<void> {
+  const dir = await sessionsDir(workspaceRoot);
   const manifestPath = join(dir, 'computer-use-preview.json');
   try {
     await writeFile(
@@ -202,7 +207,7 @@ async function captureDesktopFrame(handle: PreviewSessionHandle): Promise<void> 
 
   handle.captureInFlight = true;
   try {
-    const dir = await sessionsDir();
+    const dir = await sessionsDir(handle.workspaceRoot);
     const screenshotPath = join(dir, `${handle.record.sessionId}-latest.png`);
     const result = await callCuaDriverTool('get_desktop_state', {
       session: handle.record.sessionId,
@@ -289,7 +294,7 @@ async function disposeSession(handle: PreviewSessionHandle): Promise<void> {
   handle.record.status = 'closed';
   handle.record.updatedAt = new Date().toISOString();
   syncAgentInputBlockedFromSessions();
-  await clearPreviewManifest();
+  await clearPreviewManifest(handle.workspaceRoot);
 }
 
 function syncAgentInputBlockedFromSessions(): void {
@@ -328,26 +333,30 @@ function applySandboxManifestToHandle(
 }
 
 async function startSandboxVncBootstrap(handle: PreviewSessionHandle): Promise<void> {
-  const binding = await resolveHarnessBinding({ workspaceRoot: resolveAppRoot() });
-  const workspaceRoot = binding.workspaceRoot;
+  const workspaceRoot = handle.workspaceRoot;
+  const normalizedProjectId = handle.projectId;
 
   void ensureSandboxVncStream({
+    projectId: normalizedProjectId,
     conversationId: handle.record.conversationId,
     workspaceRoot,
   }).then((manifest) => {
     applySandboxManifestToHandle(handle, manifest);
-    void persistPreviewManifest(handle.record);
+    void persistPreviewManifest(handle.record, workspaceRoot);
   });
 
-  const existing = await readSandboxManifest(handle.record.conversationId, workspaceRoot);
+  const existing = await readSandboxManifest(normalizedProjectId, workspaceRoot);
   applySandboxManifestToHandle(handle, existing);
 }
 
 export async function resetComputerUsePreviewState(input: {
   conversationId: string;
-  workspaceRoot?: string;
+  projectId?: string;
+  workspaceRoot: string;
 }): Promise<void> {
   const conversationId = input.conversationId.trim() || 'default';
+  const projectId = input.projectId?.trim() || 'default';
+  const workspaceRoot = requireProjectWorkspaceRoot(input.workspaceRoot);
   const existingId = sessionsByConversation.get(conversationId);
   if (existingId) {
     const existing = sessions.get(existingId);
@@ -355,26 +364,29 @@ export async function resetComputerUsePreviewState(input: {
       await disposeSession(existing);
     }
   }
-  resetSandboxBootstrapState(conversationId);
-  await clearSandboxManifest(conversationId, input.workspaceRoot);
+  resetSandboxBootstrapState(projectId);
+  await clearSandboxManifest(projectId, workspaceRoot);
 }
 
 export async function createComputerUsePreviewSession(input: {
   conversationId?: string;
+  projectId?: string;
   targetMode?: ComputerUseTargetMode;
   forceRestart?: boolean;
-  workspaceRoot?: string;
+  workspaceRoot: string;
 }): Promise<RuntimeComputerUsePreviewSession> {
   const conversationId = input.conversationId?.trim() || 'default';
+  const projectId = input.projectId?.trim() || 'default';
+  const workspaceRoot = requireProjectWorkspaceRoot(input.workspaceRoot);
   const targetMode = input.targetMode ?? 'host';
   const streamKind: ComputerUsePreviewStreamKind =
     targetMode === 'sandbox' ? 'sandbox_vnc' : 'host_screencast';
 
   if (input.forceRestart) {
-    const binding = await resolveHarnessBinding({ workspaceRoot: resolveAppRoot() });
     await resetComputerUsePreviewState({
       conversationId,
-      workspaceRoot: input.workspaceRoot ?? binding.workspaceRoot,
+      projectId,
+      workspaceRoot,
     });
   }
 
@@ -418,6 +430,8 @@ export async function createComputerUsePreviewSession(input: {
 
   const handle: PreviewSessionHandle = {
     record,
+    workspaceRoot,
+    projectId,
     lastFrameBase64: null,
     lastFrameMime: 'image/png',
     screencastTimer: null,
@@ -434,7 +448,7 @@ export async function createComputerUsePreviewSession(input: {
     if (targetMode === 'sandbox') {
       await startSandboxVncBootstrap(handle);
       syncAgentInputBlockedFromSessions();
-      await persistPreviewManifest(record);
+      await persistPreviewManifest(record, workspaceRoot);
       return record;
     }
 
@@ -449,7 +463,7 @@ export async function createComputerUsePreviewSession(input: {
     record.updatedAt = new Date().toISOString();
     startScreencast(handle);
     syncAgentInputBlockedFromSessions();
-    await persistPreviewManifest(record);
+    await persistPreviewManifest(record, workspaceRoot);
     return record;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start computer-use preview';
@@ -467,10 +481,9 @@ export async function refreshSandboxPreviewSession(
     return handle?.record ?? null;
   }
 
-  const binding = await resolveHarnessBinding({ workspaceRoot: resolveAppRoot() });
-  const manifest = await readSandboxManifest(handle.record.conversationId, binding.workspaceRoot);
+  const manifest = await readSandboxManifest(handle.projectId, handle.workspaceRoot);
   applySandboxManifestToHandle(handle, manifest);
-  await persistPreviewManifest(handle.record);
+  await persistPreviewManifest(handle.record, handle.workspaceRoot);
   return handle.record;
 }
 
@@ -515,7 +528,7 @@ export async function setComputerUsePreviewControlMode(
   handle.record.controlMode = mode;
   handle.record.updatedAt = new Date().toISOString();
   syncAgentInputBlockedFromSessions();
-  await persistPreviewManifest(handle.record);
+  await persistPreviewManifest(handle.record, handle.workspaceRoot);
   return handle.record;
 }
 
@@ -658,9 +671,11 @@ export function subscribeComputerUsePreviewStream(
   };
 }
 
-export async function readComputerUsePreviewManifest(): Promise<Record<string, unknown> | null> {
+export async function readComputerUsePreviewManifest(
+  workspaceRoot: string,
+): Promise<Record<string, unknown> | null> {
   try {
-    const dir = await sessionsDir();
+    const dir = await sessionsDir(requireProjectWorkspaceRoot(workspaceRoot));
     const raw = await readFile(join(dir, 'computer-use-preview.json'), 'utf8');
     return JSON.parse(raw) as Record<string, unknown>;
   } catch {

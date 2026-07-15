@@ -12,6 +12,8 @@ import {
   collectUniqueToolNames,
   DEFAULT_TOOL_ACTIVITY_FILTER,
   filterAndSortToolActivityEntries,
+  isToolFilterActive,
+  pruneSelectedTools,
   type ToolActivityFilterState,
 } from '@/lib/tool-activity-filter';
 import {
@@ -78,10 +80,11 @@ export default function ToolActivityReportPanel({
   );
 
   useEffect(() => {
-    if (filterState.toolFilter !== 'all' && !toolNames.includes(filterState.toolFilter)) {
-      setFilterState((current) => ({ ...current, toolFilter: 'all' }));
+    const pruned = pruneSelectedTools(filterState.selectedTools, toolNames);
+    if (pruned.length !== filterState.selectedTools.length) {
+      setFilterState((current) => ({ ...current, selectedTools: pruned }));
     }
-  }, [filterState.toolFilter, toolNames]);
+  }, [filterState.selectedTools, toolNames]);
 
   useEffect(() => {
     if (!observability.error) {
@@ -102,7 +105,7 @@ export default function ToolActivityReportPanel({
   const hasActiveFilters =
     filterState.query.trim().length > 0 ||
     filterState.statusFilter !== 'all' ||
-    filterState.toolFilter !== 'all';
+    isToolFilterActive(filterState.selectedTools);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white" data-testid="tool-activity-report-panel">

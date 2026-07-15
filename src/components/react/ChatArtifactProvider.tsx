@@ -1,6 +1,14 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import ChatArtifactPanel from '@/components/react/ChatArtifactPanel';
@@ -23,21 +31,80 @@ import {
 import { buildWorkspaceFileRawUrl, normalizeArtifactPath } from '@/lib/file-reference';
 import { runtimeLogger, errorFields } from '@/lib/runtime-logger';
 import { installHcpUiBridge } from '@/lib/runtime-ui-bridge';
+import { resolveThreadFileContent } from '@/lib/thread-file-content';
+import type { ThreadFileMessage } from '@/lib/thread-file-paths';
 import { toUserFacingArtifactErrorMessage } from '@/lib/user-facing-error';
 
 interface ChatArtifactContextValue {
   openArtifact: (filePath: string, projectId?: string) => Promise<void>;
   closeArtifact: () => void;
   selection: ChatArtifactSelection | null;
+  setThreadMessages: (messages: ThreadFileMessage[]) => void;
 }
 
 const ChatArtifactContext = createContext<ChatArtifactContextValue | null>(null);
 
+function createThreadPreviewUrl(content: string, mime: string): string | null {
+  if (mime !== 'text/html') {
+    return null;
+  }
+
+  return URL.createObjectURL(new Blob([content], { type: 'text/html;charset=utf-8' }));
+}
+
 export function ChatArtifactProvider({ children }: { children: React.ReactNode }) {
   const [selection, setSelection] = useState<ChatArtifactSelection | null>(null);
+  const threadMessagesRef = useRef<ThreadFileMessage[]>([]);
+  const previewBlobUrlRef = useRef<string | null>(null);
+
+  const revokePreviewBlobUrl = useCallback((): void => {
+    if (previewBlobUrlRef.current) {
+      URL.revokeObjectURL(previewBlobUrlRef.current);
+      previewBlobUrlRef.current = null;
+    }
+  }, []);
+
+  const setThreadMessages = useCallback((messages: ThreadFileMessage[]): void => {
+    threadMessagesRef.current = messages;
+  }, []);
+
+  const applyThreadFallback = useCallback(
+    (normalizedPath: string): boolean => {
+      const fallback = resolveThreadFileContent(threadMessagesRef.current, normalizedPath);
+      if (!fallback) {
+        return false;
+      }
+
+      revokePreviewBlobUrl();
+      const previewUrl = createThreadPreviewUrl(fallback.content, fallback.mime);
+      if (previewUrl) {
+        previewBlobUrlRef.current = previewUrl;
+      }
+
+      runtimeLogger.info('chat_artifact.thread_fallback', {
+        path: normalizedPath,
+        mime: fallback.mime,
+        bytes: fallback.content.length,
+      });
+
+      setSelection({
+        path: normalizedPath,
+        content: fallback.content,
+        mime: fallback.mime,
+        size: fallback.content.length,
+        loading: false,
+        error: null,
+        encoding: 'utf8',
+        previewUrl,
+      });
+      return true;
+    },
+    [revokePreviewBlobUrl],
+  );
 
   const openArtifact = useCallback(async (filePath: string, projectId?: string): Promise<void> => {
     const normalizedPath = normalizeArtifactPath(filePath);
+    revokePreviewBlobUrl();
     setSelection(emptyArtifactSelection(normalizedPath));
 
     const params = new URLSearchParams({ path: normalizedPath });
@@ -64,6 +131,9 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
           status: response.status,
           error: payload.error,
         });
+        if (applyThreadFallback(normalizedPath)) {
+          return;
+        }
         setSelection({
           path: normalizedPath,
           content: null,
@@ -97,6 +167,9 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
         project_id: trimmedProjectId,
         ...errorFields(loadError),
       });
+      if (applyThreadFallback(normalizedPath)) {
+        return;
+      }
       setSelection({
         path: normalizedPath,
         content: null,
@@ -108,11 +181,18 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
         size: 0,
       });
     }
-  }, []);
+  }, [applyThreadFallback, revokePreviewBlobUrl]);
 
   const closeArtifact = useCallback((): void => {
+    revokePreviewBlobUrl();
     setSelection(null);
-  }, []);
+  }, [revokePreviewBlobUrl]);
+
+  useEffect(() => {
+    return () => {
+      revokePreviewBlobUrl();
+    };
+  }, [revokePreviewBlobUrl]);
 
   useEffect(() => {
     return installHcpUiBridge({
@@ -137,8 +217,9 @@ export function ChatArtifactProvider({ children }: { children: React.ReactNode }
       openArtifact,
       closeArtifact,
       selection,
+      setThreadMessages,
     }),
-    [closeArtifact, openArtifact, selection],
+    [closeArtifact, openArtifact, selection, setThreadMessages],
   );
 
   return <ChatArtifactContext.Provider value={value}>{children}</ChatArtifactContext.Provider>;

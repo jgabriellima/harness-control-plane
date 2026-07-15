@@ -6,15 +6,17 @@ import {
   loadCredentialManifest,
 } from '../../../../lib/credential-manifest';
 import { probeCredentialPresence, storeCredential } from '../../../../lib/credential-store';
+import { resolveRequestWorkspace } from '../../../../lib/workspace-request';
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request, url }) => {
   const slotId = params.slotId;
   if (!slotId) {
     return jsonError('slotId is required', 400);
   }
 
   try {
-    const manifest = await loadCredentialManifest();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const manifest = await loadCredentialManifest(workspaceRoot);
     if (!manifest) {
       return jsonOk([]);
     }
@@ -37,7 +39,7 @@ export const GET: APIRoute = async ({ params }) => {
   }
 };
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, url }) => {
   const slotId = params.slotId;
   if (!slotId) {
     return jsonError('slotId is required', 400);
@@ -62,7 +64,8 @@ export const POST: APIRoute = async ({ params, request }) => {
   const { env_var: envVar, value } = body as { env_var: string; value: string };
 
   try {
-    const manifest = await loadCredentialManifest();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const manifest = await loadCredentialManifest(workspaceRoot);
     const entry = manifest?.secrets.find(
       (secret) => secret.slot_id === slotId && secret.env_var === envVar,
     );

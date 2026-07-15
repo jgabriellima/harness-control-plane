@@ -6,6 +6,7 @@ import {
   enableUserBrowserWindow,
   performBrowserClick,
   performBrowserKeyPress,
+  performBrowserScroll,
   performBrowserType,
   refreshBrowserSession,
   setBrowserControlMode,
@@ -43,6 +44,8 @@ export const POST: APIRoute = async ({ request }) => {
   const controlMode = parseControlMode(body.control_mode);
   const text = typeof body.text === 'string' ? body.text : '';
   const key = typeof body.key === 'string' ? body.key.trim() : '';
+  const deltaX = typeof body.delta_x === 'number' ? body.delta_x : 0;
+  const deltaY = typeof body.delta_y === 'number' ? body.delta_y : 0;
 
   if (!sessionId) {
     return jsonError('session_id is required', 400);
@@ -77,6 +80,13 @@ export const POST: APIRoute = async ({ request }) => {
     if (action === 'keydown' && key) {
       await performBrowserKeyPress(sessionId, key);
       return jsonOk({ ok: true, action: 'keydown' });
+    }
+
+    if (action === 'scroll' && (deltaX !== 0 || deltaY !== 0)) {
+      const scrollX = x ?? 0;
+      const scrollY = y ?? 0;
+      await performBrowserScroll(sessionId, scrollX, scrollY, deltaX, deltaY);
+      return jsonOk({ ok: true, action: 'scroll' });
     }
 
     if (action === 'open_user_browser') {

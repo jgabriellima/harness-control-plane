@@ -15,11 +15,7 @@ import {
 import { normalizeInspectablePayload } from './format-inspect';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
 import { DEFAULT_WORKSPACE_ID } from './workspace-constants';
-import {
-  logInternalRuntimeError,
-  runtimeRunIncompleteMessage,
-  toUserFacingRuntimeStreamErrorMessage,
-} from './user-facing-error';
+import { inferFailureCodeFromMessage } from '@/runtime/amr-guidance';
 
 export function createConversationState(conversationId: string): ConversationRuntimeState {
   return {
@@ -34,6 +30,9 @@ export function createConversationState(conversationId: string): ConversationRun
     runActivity: 'idle',
     toolActivity: [],
     error: null,
+    runFailureCode: null,
+    runFailureDetail: null,
+    sessionMode: 'design',
     continuableRun: null,
     lastRequestId: null,
     sdkHealth: 'unknown',
@@ -279,16 +278,26 @@ export function applyHubEvent(
         status,
       });
       const message = toUserFacingRuntimeStreamErrorMessage(rawMessage);
+      const failureCode =
+        typeof event.payload.error_code === 'string'
+          ? event.payload.error_code
+          : inferFailureCodeFromMessage(rawMessage);
       return {
         ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
         error: message,
+        runFailureCode: failureCode,
+        runFailureDetail:
+          typeof event.payload.failure_detail === 'string' ? event.payload.failure_detail : null,
         messages: state.messages.map((entry) =>
           entry.id === assistantMessageId
             ? {
                 ...entry,
                 content: message,
                 streaming: false,
-                role: 'system',
+                runStatus: 'failed',
+                runId: event.run_id,
+                errorCode: failureCode,
+                role: 'assistant',
               }
             : entry,
         ),
@@ -303,10 +312,17 @@ export function applyHubEvent(
       typeof event.payload.message === 'string' ? event.payload.message : 'Runtime stream failed';
     logInternalRuntimeError('stream.error', rawMessage, { run_id: event.run_id });
     const message = toUserFacingRuntimeStreamErrorMessage(rawMessage);
+    const failureCode =
+      typeof event.payload.error_code === 'string'
+        ? event.payload.error_code
+        : inferFailureCodeFromMessage(rawMessage);
     const clearAgent = event.payload.clear_agent === true;
     return {
       ...finalizeTurn(state, assistantMessageId, thinkingMessageId, 'failed'),
       error: message,
+      runFailureCode: failureCode,
+      runFailureDetail:
+        typeof event.payload.failure_detail === 'string' ? event.payload.failure_detail : null,
       ...(clearAgent ? { agentId: null } : {}),
       messages: state.messages.map((entry) =>
         entry.id === assistantMessageId
@@ -314,7 +330,10 @@ export function applyHubEvent(
               ...entry,
               content: message,
               streaming: false,
-              role: 'system',
+              runStatus: 'failed',
+              runId: event.run_id,
+              errorCode: failureCode,
+              role: 'assistant',
             }
           : entry,
       ),

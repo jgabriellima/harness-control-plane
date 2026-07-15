@@ -1,0 +1,55 @@
+/* ============================================================
+   Harness page header — design-native titles for embedded views
+   ============================================================ */
+
+.harness-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 24px 8px;
+}
+
+.harness-page-header__copy {
+  min-width: 0;
+}
+
+.harness-page-header__title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--text);
+}
+
+.harness-page-header__description {
+  margin: 8px 0 0;
+  max-width: 620px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.harness-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.harness-conversations-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.harness-conversations-view__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 16px 16px;
+}

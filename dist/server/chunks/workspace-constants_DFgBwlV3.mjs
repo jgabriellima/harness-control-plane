@@ -1,0 +1,4 @@
+const DEFAULT_WORKSPACE_ID = "default";
+const LEGACY_DEFAULT_WORKSPACE_ID = "business-workflows";
+
+export { DEFAULT_WORKSPACE_ID as D, LEGACY_DEFAULT_WORKSPACE_ID as L };

@@ -24,17 +24,38 @@ function syncPathnameFromWindow(): void {
 }
 
 export function conversationIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/conversation\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  const harnessMatch = pathname.match(/^\/conversation\/([^/]+)/);
+  if (harnessMatch?.[1]) {
+    return decodeURIComponent(harnessMatch[1]);
+  }
+  const designMatch = pathname.match(/^\/design\/conversation\/([^/]+)/);
+  if (designMatch?.[1]) {
+    return decodeURIComponent(designMatch[1]);
+  }
+  return null;
 }
 
 export function isChatRoute(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/conversation/');
+  return (
+    pathname.startsWith('/conversation/') ||
+    pathname.startsWith('/design/conversation/')
+  );
+}
+
+export function isLibraryRoute(pathname: string): boolean {
+  return pathname === '/library' || pathname.startsWith('/library/');
+}
+
+export function isDesignRoute(pathname: string): boolean {
+  return pathname === '/design' || pathname.startsWith('/design/');
 }
 
 export function isShellClientRoute(path: string): boolean {
   return (
     isChatRoute(path) ||
+    isLibraryRoute(path) ||
+    isDesignRoute(path) ||
+    path.startsWith('/design/conversation/') ||
     path === '/executions' ||
     path.startsWith('/execution/') ||
     path === '/scheduled' ||

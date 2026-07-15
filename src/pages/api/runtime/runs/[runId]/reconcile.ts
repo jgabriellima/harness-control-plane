@@ -3,7 +3,15 @@ import type { APIRoute } from 'astro';
 import { jsonError, jsonOk } from '../../../../../lib/api-json';
 import { appendRunInterrupted } from '../../../../../lib/runtime-run-interrupt';
 import { findActiveRunEntry } from '../../../../../lib/runtime-run-registry';
-import { broadcastRunInterrupted } from '../../../../../lib/runtime-hub-stream';
+import {
+  broadcastRunInterrupted,
+  broadcastRunRecoveredComplete,
+} from '../../../../../lib/runtime-hub-stream';
+import {
+  isSuccessfulTerminalStatus,
+  probeRunLivenessAcrossWorkspaces,
+} from '../../../../../lib/runtime-run-liveness';
+import { findRunRegistryMetadata } from '../../../../../lib/runtime-run-recovery';
 
 export const POST: APIRoute = async ({ params }) => {
   const runId = params.runId?.trim();
@@ -13,6 +21,25 @@ export const POST: APIRoute = async ({ params }) => {
 
   const located = await findActiveRunEntry(runId);
   if (!located) {
+    const probe = await probeRunLivenessAcrossWorkspaces(runId);
+    if (
+      probe.liveness === 'terminal' &&
+      probe.run &&
+      isSuccessfulTerminalStatus(probe.run.status) &&
+      probe.workspaceRoot
+    ) {
+      const metadata = await findRunRegistryMetadata(runId, probe.workspaceRoot);
+      if (metadata) {
+        broadcastRunRecoveredComplete({
+          runId,
+          agentId: metadata.agentId,
+          conversationId: metadata.conversationId,
+          status: probe.run.status,
+        });
+        return jsonOk({ ok: true, purged: false, recovered: 'completed', runId });
+      }
+    }
+
     return jsonOk({ ok: true, purged: false, reason: 'not_indexed' });
   }
 

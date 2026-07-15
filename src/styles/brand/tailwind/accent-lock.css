@@ -1,0 +1,43 @@
+/**
+ * Last-resort accent lock — hardcoded Tailwind blue on OD selectors.
+ * Loaded after all design CSS. Does not rely on --accent cascade.
+ */
+html[data-brand="tailwind"] .entry-nav-rail__btn.is-active,
+html[data-brand="tailwind"] .entry-nav-rail__btn.is-active:hover {
+  background: #eaf7fd !important;
+  color: #2589b6 !important;
+  border-color: #eaf7fd !important;
+}
+
+html[data-brand="tailwind"] .home-hero__rail-chip.is-active,
+html[data-brand="tailwind"] .home-hero__rail-chip.is-active:hover:not(:disabled) {
+  background: #6cc9ef !important;
+  border-color: #3aa9d8 !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(34, 33, 33, 0.08) !important;
+}
+
+html[data-brand="tailwind"] .recent-projects__card-glyph,
+html[data-brand="tailwind"] .recent-projects__card-initial {
+  color: #2589b6 !important;
+}
+
+html[data-brand="tailwind"] .recent-projects__card-thumb {
+  background: linear-gradient(135deg, #eaf7fd 0%, #eef2f5 100%) !important;
+}
+
+html[data-brand="tailwind"] .automations-hero__eyebrow {
+  background: #eaf7fd !important;
+  color: #2589b6 !important;
+}
+
+html[data-brand="tailwind"] .studio-turn-files__item.is-active,
+html[data-brand="tailwind"] .studio-turn-files__item:hover {
+  border-color: #6cc9ef !important;
+  background: #eaf7fd !important;
+  color: #222121 !important;
+}
+
+html[data-brand="tailwind"] .entry-nav-rail__btn:focus-visible {
+  outline-color: #6cc9ef !important;
+}

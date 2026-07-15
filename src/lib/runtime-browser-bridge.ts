@@ -7,6 +7,10 @@ import { chromium } from 'playwright';
 
 import { resolveAppRoot } from './app-root';
 import { resolveHarnessBinding } from './harness-binding';
+import {
+  broadcastBrowserSessionClosed,
+  broadcastBrowserUrlChanged,
+} from './runtime-hub-stream';
 import { normalizeBrowserUrl, resolveBrowserPanelTarget } from './runtime-browser-types';
 
 export type BrowserSessionStatus = 'starting' | 'ready' | 'closed' | 'error';
@@ -35,6 +39,8 @@ interface BrowserSessionHandle {
   lastFrameBase64: string | null;
   screencastTimer: ReturnType<typeof setInterval> | null;
   streamSubscribers: Set<(frame: string) => void>;
+  urlSubscribers: Set<(url: string) => void>;
+  navigationBound: boolean;
 }
 
 const sessions = new Map<string, BrowserSessionHandle>();
@@ -146,6 +152,55 @@ function stopScreencast(handle: BrowserSessionHandle): void {
     handle.screencastTimer = null;
   }
   handle.streamSubscribers.clear();
+  handle.urlSubscribers.clear();
+}
+
+function commitSessionUrl(
+  handle: BrowserSessionHandle,
+  nextUrl: string,
+  options?: { broadcast?: boolean },
+): boolean {
+  const trimmed = nextUrl.trim();
+  if (!trimmed || handle.record.url === trimmed) {
+    return false;
+  }
+
+  handle.record.url = trimmed;
+  handle.record.updatedAt = new Date().toISOString();
+  void persistCdpManifest(handle.record);
+
+  if (options?.broadcast !== false) {
+    broadcastBrowserUrlChanged({
+      conversationId: handle.record.conversationId,
+      sessionId: handle.record.sessionId,
+      url: trimmed,
+    });
+  }
+
+  for (const subscriber of handle.urlSubscribers) {
+    subscriber(trimmed);
+  }
+
+  return true;
+}
+
+function bindPageNavigationWatcher(handle: BrowserSessionHandle): void {
+  if (handle.navigationBound) {
+    return;
+  }
+  handle.navigationBound = true;
+
+  handle.page.on('framenavigated', (frame) => {
+    if (frame !== handle.page.mainFrame()) {
+      return;
+    }
+
+    try {
+      commitSessionUrl(handle, handle.page.url());
+    } catch {
+      // Page may be closing.
+    }
+  });
 }
 
 async function disposeSession(handle: BrowserSessionHandle): Promise<void> {
@@ -164,11 +219,16 @@ async function disposeSession(handle: BrowserSessionHandle): Promise<void> {
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 
+export interface CreateBrowserSessionResult {
+  session: RuntimeBrowserSession;
+  created: boolean;
+}
+
 export async function createBrowserSession(input: {
   url: string;
   conversationId?: string;
   interactive?: boolean;
-}): Promise<RuntimeBrowserSession> {
+}): Promise<CreateBrowserSessionResult> {
   const conversationId = input.conversationId?.trim() || 'default';
   const url = sanitizePlaywrightNavigationUrl(input.url);
   const interactive = Boolean(input.interactive);
@@ -181,7 +241,7 @@ export async function createBrowserSession(input: {
         await disposeSession(existing);
       } else {
         await navigateBrowserSession(existingId, url);
-        return existing.record;
+        return { session: existing.record, created: false };
       }
     }
   }
@@ -227,17 +287,20 @@ export async function createBrowserSession(input: {
       lastFrameBase64: null,
       screencastTimer: null,
       streamSubscribers: new Set(),
+      urlSubscribers: new Set(),
+      navigationBound: false,
     };
 
     sessions.set(sessionId, handle);
     sessionsByConversation.set(conversationId, sessionId);
+    bindPageNavigationWatcher(handle);
     startScreencast(handle);
     await persistCdpManifest(record);
 
     const initialFrame = await page.screenshot({ type: 'jpeg', quality: 72 });
     handle.lastFrameBase64 = initialFrame.toString('base64');
 
-    return record;
+    return { session: record, created: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start browser session';
     record.status = 'error';
@@ -254,9 +317,7 @@ export async function navigateBrowserSession(sessionId: string, url: string): Pr
 
   const normalized = sanitizePlaywrightNavigationUrl(url);
   await handle.page.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  handle.record.url = handle.page.url();
-  handle.record.updatedAt = new Date().toISOString();
-  await persistCdpManifest(handle.record);
+  commitSessionUrl(handle, handle.page.url());
   return handle.record;
 }
 
@@ -267,9 +328,7 @@ export async function refreshBrowserSession(sessionId: string): Promise<RuntimeB
   }
 
   await handle.page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
-  handle.record.url = handle.page.url();
-  handle.record.updatedAt = new Date().toISOString();
-  await persistCdpManifest(handle.record);
+  commitSessionUrl(handle, handle.page.url());
   return handle.record;
 }
 
@@ -281,11 +340,7 @@ export function getBrowserSession(sessionId: string): RuntimeBrowserSession | nu
 
   try {
     const liveUrl = handle.page.url();
-    if (liveUrl !== handle.record.url) {
-      handle.record.url = liveUrl;
-      handle.record.updatedAt = new Date().toISOString();
-      void persistCdpManifest(handle.record);
-    }
+    commitSessionUrl(handle, liveUrl, { broadcast: false });
   } catch {
     // Page may be navigating or closed.
   }
@@ -306,7 +361,10 @@ export async function closeBrowserSession(sessionId: string): Promise<boolean> {
   if (!handle) {
     return false;
   }
+
+  const { conversationId, sessionId: closedSessionId } = handle.record;
   await disposeSession(handle);
+  broadcastBrowserSessionClosed({ conversationId, sessionId: closedSessionId });
   return true;
 }
 
@@ -336,6 +394,25 @@ export function subscribeBrowserScreencast(
   handle.streamSubscribers.add(onFrame);
   return () => {
     handle.streamSubscribers.delete(onFrame);
+  };
+}
+
+export function subscribeBrowserUrl(
+  sessionId: string,
+  onUrl: (url: string) => void,
+): (() => void) | null {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    return null;
+  }
+
+  if (handle.record.url) {
+    onUrl(handle.record.url);
+  }
+
+  handle.urlSubscribers.add(onUrl);
+  return () => {
+    handle.urlSubscribers.delete(onUrl);
   };
 }
 
@@ -398,7 +475,8 @@ export async function enableUserBrowserWindow(sessionId: string): Promise<Runtim
 
   const { url, conversationId } = handle.record;
   await disposeSession(handle);
-  return createBrowserSession({ url, conversationId, interactive: true });
+  const { session } = await createBrowserSession({ url, conversationId, interactive: true });
+  return session;
 }
 
 export async function performBrowserType(sessionId: string, text: string): Promise<void> {
@@ -425,6 +503,22 @@ export async function performBrowserKeyPress(sessionId: string, key: string): Pr
     throw new Error('Browser control is with the agent — switch to User control to type');
   }
   await handle.page.keyboard.press(key);
+  handle.record.updatedAt = new Date().toISOString();
+}
+
+export async function performBrowserScroll(
+  sessionId: string,
+  x: number,
+  y: number,
+  deltaX: number,
+  deltaY: number,
+): Promise<void> {
+  const handle = sessions.get(sessionId);
+  if (!handle) {
+    throw new Error(`Browser session ${sessionId} not found`);
+  }
+  await handle.page.mouse.move(x, y);
+  await handle.page.mouse.wheel(deltaX, deltaY);
   handle.record.updatedAt = new Date().toISOString();
 }
 

@@ -8,12 +8,15 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 4321);
 const baseURL = `http://127.0.0.1:${port}`;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const defaultPlatformRoot = path.resolve(repoRoot, '../business-workflow/app');
+const worktreePlatformRoot = path.resolve(repoRoot, '../worktrees/BUSIN-61-open-design-absorption/app');
 
 const platformRoot =
   process.env.CONTROL_PLANE_PLATFORM_ROOT?.trim() ??
-  (existsSync(path.join(defaultPlatformRoot, '.cursor', 'runtime-binding.yaml'))
-    ? defaultPlatformRoot
-    : repoRoot);
+  (existsSync(path.join(worktreePlatformRoot, '.cursor', 'runtime-binding.yaml'))
+    ? worktreePlatformRoot
+    : existsSync(path.join(defaultPlatformRoot, '.cursor', 'runtime-binding.yaml'))
+      ? defaultPlatformRoot
+      : repoRoot);
 
 export default defineConfig({
   testDir: './e2e',

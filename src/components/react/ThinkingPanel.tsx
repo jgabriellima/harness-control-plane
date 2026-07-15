@@ -130,17 +130,10 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
   }
 
   return (
-    <div
-      className={`rounded-lg border pl-11 ${
-        streaming
-          ? 'border-gray-200 bg-gray-50'
-          : 'border-gray-200 bg-gray-50/80'
-      }`}
-      data-testid="chat-message-thinking"
-    >
+    <div className="thought-block" data-testid="chat-message-thinking">
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        className="thought-block__toggle"
         onClick={() => setCollapsed((current) => !current)}
         aria-expanded={!collapsed}
       >
@@ -152,10 +145,12 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
         {streaming ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-500" aria-hidden />
         ) : null}
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-          Reasoning
-          {streaming ? ' · active' : ''}
-          {!streaming && durationMs !== undefined ? ` · ${formatDuration(durationMs)}` : ''}
+        <span>
+          {streaming
+            ? 'Thinking…'
+            : durationMs !== undefined
+              ? `Thought for ${formatDuration(durationMs)}`
+              : 'Thought'}
         </span>
         {streaming ? (
           <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-gray-400" aria-hidden />
@@ -165,13 +160,11 @@ export default function ThinkingPanel({ content, streaming = false, durationMs }
         <>
           <div
             ref={contentRef}
-            className="overflow-y-auto border-t border-gray-200/80 px-3 py-2"
+            className="thought-block__content overflow-y-auto"
             style={{ height: contentHeight }}
             data-testid="chat-message-thinking-content"
           >
-            <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-500">
-              {hasContent ? content : streaming ? 'Processing…' : ''}
-            </p>
+            {hasContent ? content : streaming ? 'Processing…' : ''}
           </div>
           {showResizeHandle ? (
             <div

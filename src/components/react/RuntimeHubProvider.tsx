@@ -76,6 +76,7 @@ import type {
   WorkspaceLayoutMode,
 } from '@/lib/runtime-hub-types';
 import { conversationIdFromPath, navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import { appConversationPath } from '@/lib/shell-paths';
 import { buildPanesForLayoutTransition } from '@/lib/workspace-layout-transition';
 const RuntimeHubContext = createContext<RuntimeHubContextValue | null>(null);
 
@@ -961,7 +962,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
           window.location.pathname !== '/scheduled' &&
           draftKey !== SCHEDULE_INTERVIEW_CONVERSATION_ID
         ) {
-          navigateShell(`/conversation/${encodeURIComponent(persistedId)}`);
+          navigateShell(appConversationPath(persistedId));
         }
       } else {
         setPaneConversationIdsState((current) => {
@@ -1533,7 +1534,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
 
       if (paneIndex === 0) {
         setForegroundConversationId(conversationId);
-        navigateShell(`/conversation/${encodeURIComponent(conversationId)}`);
+        navigateShell(appConversationPath(conversationId));
       }
 
       void hydrateConversation(conversationId);
@@ -1546,7 +1547,7 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
       const paneIndex = options?.paneIndex ?? 0;
 
       if (layoutMode === 'single') {
-        navigateShell(`/conversation/${encodeURIComponent(conversationId)}`);
+        navigateShell(appConversationPath(conversationId));
         setForegroundConversationId(conversationId);
         void hydrateConversation(conversationId);
         return;
@@ -1590,7 +1591,39 @@ export function RuntimeHubProvider({ children }: { children: React.ReactNode }) 
     [layoutMode],
   );
 
-  const activeRunCount = useMemo(() => countStreamingConversations(conversations), [conversations]);
+  const [registryExecutingCount, setRegistryExecutingCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshExecutingCount = async (): Promise<void> => {
+      try {
+        const snapshot = await fetchRunSessionSnapshot();
+        if (!cancelled) {
+          setRegistryExecutingCount(snapshot.executing.length);
+        }
+      } catch {
+        if (!cancelled) {
+          setRegistryExecutingCount(0);
+        }
+      }
+    };
+
+    void refreshExecutingCount();
+    const intervalId = window.setInterval(() => {
+      void refreshExecutingCount();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const activeRunCount = useMemo(() => {
+    const hubCount = countStreamingConversations(conversations);
+    return Math.max(hubCount, registryExecutingCount);
+  }, [conversations, registryExecutingCount]);
 
   const getConversationPhase = useCallback(
     (conversationId: string): RunPhase => {

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 import * as Sentry from '@sentry/astro';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 import { buildExecutionViewModel, type ExecutionArtifact } from './execution-events';
 import { getExecutionDetail, listExecutions } from './harness-reader';
 
@@ -67,8 +67,8 @@ async function readArtifactPreview(
   }
 }
 
-async function collectArtifacts(): Promise<ExecutionArtifact[]> {
-  const executions = await listExecutions();
+async function collectArtifacts(workspaceRoot?: string): Promise<ExecutionArtifact[]> {
+  const executions = await listExecutions(workspaceRoot);
   const artifacts: ExecutionArtifact[] = [];
 
   for (const execution of executions) {
@@ -98,9 +98,9 @@ function buildVersionHistory(target: ExecutionArtifact, allArtifacts: ExecutionA
   }));
 }
 
-export async function listArtifactSummaries(): Promise<ArtifactSummary[]> {
+export async function listArtifactSummaries(workspaceRoot?: string): Promise<ArtifactSummary[]> {
   return Sentry.startSpan({ name: 'listArtifactSummaries', op: 'fs.read' }, async () => {
-    const artifacts = await collectArtifacts();
+    const artifacts = await collectArtifacts(workspaceRoot);
     return artifacts.map((artifact) => ({
       id: artifact.id,
       name: artifact.name,
@@ -112,12 +112,15 @@ export async function listArtifactSummaries(): Promise<ArtifactSummary[]> {
   });
 }
 
-export async function getArtifactDetail(artifactId: string): Promise<ArtifactDetail | null> {
+export async function getArtifactDetail(
+  artifactId: string,
+  workspaceRoot?: string,
+): Promise<ArtifactDetail | null> {
   return Sentry.startSpan(
     { name: 'getArtifactDetail', op: 'fs.read', attributes: { artifactId } },
     async () => {
-      const binding = await resolveHarnessBinding();
-      const allArtifacts = await collectArtifacts();
+      const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
+      const allArtifacts = await collectArtifacts(workspaceRoot);
       const artifact = allArtifacts.find((entry) => entry.id === artifactId);
 
       if (!artifact) {

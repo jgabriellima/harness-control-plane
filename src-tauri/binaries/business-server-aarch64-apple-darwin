@@ -26,6 +26,13 @@ resolve_node() {
     printf '%s\n' "$NODE_BINARY"
     return 0
   fi
+  if [ -n "${CONTROL_PLANE_PROJECT_ROOT:-}" ]; then
+    vendored="${CONTROL_PLANE_PROJECT_ROOT}/.business/runtime/node/current/bin/node"
+    if [ -x "$vendored" ]; then
+      printf '%s\n' "$vendored"
+      return 0
+    fi
+  fi
   export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
   for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
     if [ -x "$candidate" ]; then

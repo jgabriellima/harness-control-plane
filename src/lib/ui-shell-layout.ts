@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 import {
   SHELL_LAYOUT_DEFAULTS,
   SHELL_LAYOUT_MIN,
@@ -48,8 +48,8 @@ function normalizeManifest(raw: unknown): ShellLayoutManifest {
   };
 }
 
-async function layoutPaths() {
-  const binding = await resolveHarnessBinding();
+async function layoutPaths(workspaceRoot?: string) {
+  const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
   const uiDir = join(binding.harnessRoot, 'ui');
   return {
     uiDir,
@@ -57,8 +57,8 @@ async function layoutPaths() {
   };
 }
 
-export async function readShellLayoutManifest(): Promise<ShellLayoutManifest> {
-  const paths = await layoutPaths();
+export async function readShellLayoutManifest(workspaceRoot?: string): Promise<ShellLayoutManifest> {
+  const paths = await layoutPaths(workspaceRoot);
   try {
     const raw = await readFile(paths.manifestPath, 'utf8');
     const normalized = normalizeManifest(parseYaml(raw));
@@ -66,19 +66,20 @@ export async function readShellLayoutManifest(): Promise<ShellLayoutManifest> {
       normalized.sidebarSize < SHELL_LAYOUT_MIN.sidebar ||
       normalized.contextSize < SHELL_LAYOUT_MIN.context
     ) {
-      return writeShellLayoutManifest(DEFAULT_SHELL_LAYOUT);
+      return writeShellLayoutManifest(DEFAULT_SHELL_LAYOUT, workspaceRoot);
     }
     return normalized;
   } catch {
-    await writeShellLayoutManifest(DEFAULT_SHELL_LAYOUT);
+    await writeShellLayoutManifest(DEFAULT_SHELL_LAYOUT, workspaceRoot);
     return DEFAULT_SHELL_LAYOUT;
   }
 }
 
 export async function writeShellLayoutManifest(
   manifest: ShellLayoutManifest,
+  workspaceRoot?: string,
 ): Promise<ShellLayoutManifest> {
-  const paths = await layoutPaths();
+  const paths = await layoutPaths(workspaceRoot);
   await mkdir(paths.uiDir, { recursive: true });
   const normalized = normalizeManifest(manifest);
   await writeFile(paths.manifestPath, stringifyYaml(normalized), 'utf8');
@@ -87,10 +88,11 @@ export async function writeShellLayoutManifest(
 
 export async function patchShellLayoutManifest(
   patch: Partial<ShellLayoutManifest>,
+  workspaceRoot?: string,
 ): Promise<ShellLayoutManifest> {
-  const current = await readShellLayoutManifest();
+  const current = await readShellLayoutManifest(workspaceRoot);
   return writeShellLayoutManifest({
     ...current,
     ...patch,
-  });
+  }, workspaceRoot);
 }

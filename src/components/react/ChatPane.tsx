@@ -8,6 +8,9 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 
 import { useChatArtifact } from '@/components/react/ChatArtifactProvider';
 import AgentMessageStack from '@/components/react/AgentMessageStack';
+import AmrGuidance from '@/components/react/chat/AmrGuidance';
+import RunErrorCard from '@/components/react/chat/RunErrorCard';
+import SessionModeToggle from '@/components/react/chat/SessionModeToggle';
 import ComposerOptionsMenu from '@/components/react/ComposerOptionsMenu';
 import ComputerUseSessionBadge from '@/components/react/ComputerUseSessionBadge';
 import { useRuntimeBrowser } from '@/components/react/RuntimeBrowserProvider';
@@ -28,6 +31,7 @@ import {
   PromptInput,
   PromptInputTextarea,
 } from '@/components/ui/prompt-input';
+import type { ChatSessionMode } from '@/lib/chat-types';
 import type { HarnessCommand, ReadinessSlot } from '@/lib/harness-types';
 import type { ChatMessage } from '@/lib/runtime-hub-types';
 import { useRuntimeConversation } from '@/hooks/useRuntimeConversation';
@@ -65,9 +69,13 @@ import { collectThreadFileActivity } from '@/lib/thread-file-paths';
 import ChatPaneHeader from './ChatPaneHeader';
 import CommandCard from './CommandCard';
 import EmptyStateHero from './EmptyStateHero';
-import RunDiagnosticsPanel from './RunDiagnosticsPanel';
 import ScheduleTipCard from './ScheduleTipCard';
 import SdkHealthBanner from './SdkHealthBanner';
+import {
+  HOSTED_MODEL_CONSOLE_URL,
+  inferFailureCodeFromMessage,
+  resolveRunFailureUi,
+} from '@/runtime/amr-guidance';
 import {
   clientSdkMessageContext,
   sdkHealthBannerTitle,
@@ -311,6 +319,10 @@ export default function ChatPane({
   const error = state.error;
   const runPhase = state.runPhase;
   const activeRunId = state.activeRunId;
+  const sessionMode = state.sessionMode;
+  const runFailureCode = state.runFailureCode;
+  const runFailureDetail = state.runFailureDetail;
+  const [sessionModeLocal, setSessionModeLocal] = useState<ChatSessionMode>(sessionMode ?? 'design');
   const continuableRun = state.continuableRun;
   const lastRequestId = state.lastRequestId;
   const sdkHealth = state.sdkHealth;
@@ -432,6 +444,21 @@ export default function ChatPane({
     () => threadFileItems.map((item) => item.path),
     [threadFileItems],
   );
+
+  const lastAssistantMessage = useMemo(() => {
+    for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
+      const message = displayMessages[index];
+      if (message?.role === 'assistant') {
+        return message;
+      }
+    }
+    return null;
+  }, [displayMessages]);
+
+  const resolvedFailureCode =
+    runFailureCode ?? (error ? inferFailureCodeFromMessage(error) : null);
+  const failureUi = resolveRunFailureUi(resolvedFailureCode, runFailureDetail, agentId);
+  const displayErrorMessage = failureUi.message ?? error ?? 'The assistant run failed.';
 
   useEffect(() => {
     setThreadMessages(displayMessages);
@@ -1042,6 +1069,69 @@ export default function ChatPane({
     setInput('');
   }, []);
 
+  const handleSessionModeChange = useCallback((mode: ChatSessionMode) => {
+    setSessionModeLocal(mode);
+  }, []);
+
+  const handlePromptAction = useCallback(
+    (prompt: string, options?: { sessionMode?: ChatSessionMode }) => {
+      if (options?.sessionMode) {
+        handleSessionModeChange(options.sessionMode);
+      }
+      setInput(prompt);
+    },
+    [handleSessionModeChange],
+  );
+
+  const handleRetryFailedRun = useCallback(async () => {
+    if (!conversationId || isLoading) {
+      return;
+    }
+    const lastUser = [...displayMessages].reverse().find((message) => message.role === 'user');
+    if (!lastUser?.content.trim()) {
+      return;
+    }
+    await dispatchMessage({
+      message: lastUser.content,
+      projectId,
+      mode: deepResearch ? ('deep_research' as const) : ('default' as const),
+      integrationSlots: selectedIntegrations,
+      computerUseEnabled: computerUseMode !== null,
+      computerUseMode: computerUseMode ?? undefined,
+      scheduleInterview: isScheduleVariant,
+    });
+  }, [
+    computerUseMode,
+    conversationId,
+    deepResearch,
+    dispatchMessage,
+    displayMessages,
+    isLoading,
+    isScheduleVariant,
+    projectId,
+    selectedIntegrations,
+  ]);
+
+  const handleRunErrorPrimaryAction = useCallback(() => {
+    if (failureUi.primaryAction === 'recharge' || failureUi.primaryAction === 'upgrade') {
+      window.open(HOSTED_MODEL_CONSOLE_URL, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (failureUi.primaryAction === 'authorize') {
+      window.open(HOSTED_MODEL_CONSOLE_URL, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    void handleRetryFailedRun();
+  }, [failureUi.primaryAction, handleRetryFailedRun]);
+
+  const handleSwitchToHostedModel = useCallback(() => {
+    void handleRetryFailedRun();
+  }, [handleRetryFailedRun]);
+
+  useEffect(() => {
+    setSessionModeLocal(sessionMode);
+  }, [sessionMode, conversationId]);
+
   useEffect(() => {
     if (!isScheduleVariant || isLoading || !onScheduleRegistered) {
       return;
@@ -1206,8 +1296,13 @@ export default function ChatPane({
         ) : (
           <>
             <AgentMessageStack
-              messages={displayMessages}
+              messages={displayMessages.map((message) => ({
+                ...message,
+                sessionMode: message.sessionMode ?? sessionModeLocal,
+              }))}
               streaming={isStreaming}
+              producedFileCount={threadFileItems.length}
+              onPromptAction={handlePromptAction}
               onFileClick={(filePath) => {
                 void openArtifact(filePath, projectId);
               }}
@@ -1480,6 +1575,11 @@ export default function ChatPane({
                   onToggle={voiceInput.toggle}
                 />
               ) : null}
+              <SessionModeToggle
+                mode={sessionModeLocal}
+                onChange={handleSessionModeChange}
+                disabled={isLoading || dispatchBlocked}
+              />
               <Button
                 type="button"
                 size="icon"
@@ -1568,12 +1668,29 @@ export default function ChatPane({
           ) : null}
 
           {error && !isDraftConversationId(conversationId) && runPhase === 'failed' ? (
-            <RunDiagnosticsPanel
-              runId={activeRunId}
-              projectId={projectId}
-              requestId={lastRequestId}
-              errorMessage={error}
-            />
+            <div className="mt-3 space-y-2" data-testid="chat-run-error-region">
+              <RunErrorCard
+                title={failureUi.title}
+                message={displayErrorMessage}
+                rawMessage={error}
+                primaryAction={failureUi.primaryAction}
+                secondaryRetry={failureUi.secondaryRetry}
+                traceId={lastRequestId}
+                runId={activeRunId}
+                errorCode={resolvedFailureCode}
+                projectId={projectId}
+                conversationId={conversationId}
+                assistantMessageId={lastAssistantMessage?.id ?? null}
+                agentId={agentId}
+                onPrimaryAction={handleRunErrorPrimaryAction}
+                onRetry={() => {
+                  void handleRetryFailedRun();
+                }}
+              />
+              {failureUi.showSwitchCard ? (
+                <AmrGuidance onActivate={handleSwitchToHostedModel} />
+              ) : null}
+            </div>
           ) : error && !isDraftConversationId(conversationId) ? (
             <p className="mt-2 text-xs text-red-600" role="alert">
               {error}

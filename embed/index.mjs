@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
 
+import { buildNodeRuntimeEnv, ensureNodeRuntime } from '../scripts/node-runtime.mjs';
+
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const UI_CONFIG_FILENAME = 'ui.config.yaml';
 
@@ -243,11 +245,14 @@ export async function createHarnessUI(options = {}) {
         });
       }
 
-      const env = {
-        ...process.env,
-        ...startOptions.env,
-        CONTROL_PLANE_PROJECT_ROOT: projectRoot,
-      };
+      const env = buildNodeRuntimeEnv(
+        await ensureNodeRuntime({ logPrefix: '[embed]' }),
+        {
+          ...process.env,
+          ...startOptions.env,
+          CONTROL_PLANE_PROJECT_ROOT: projectRoot,
+        },
+      );
 
       if (runtimeSurface === 'desktop') {
         return runCommand('npm', ['run', 'tauri:dev', ...passthroughArgs], {

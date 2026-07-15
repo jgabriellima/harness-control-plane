@@ -18,8 +18,10 @@ interface SessionListItemProps {
   onSessionChanged: () => void;
 }
 
+import { appConversationPath } from '@/lib/shell-paths';
+
 function sessionHref(sessionId: string): string {
-  return `/conversation/${encodeURIComponent(sessionId)}`;
+  return appConversationPath(sessionId);
 }
 
 function formatSessionTitle(session: SessionListItemData): string {

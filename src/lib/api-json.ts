@@ -3,6 +3,9 @@ export interface ApiErrorBody {
   request_id?: string;
   phase?: string;
   detail?: string;
+  code?: string;
+  expected_subdomain?: string;
+  received_subdomain?: string;
 }
 
 export function jsonOk(body: unknown, status = 200): Response {
@@ -14,7 +17,7 @@ export function jsonOk(body: unknown, status = 200): Response {
 
 export function jsonError(
   message: string,
-  status: 400 | 403 | 404 | 409 | 410 | 500 | 502 | 503 | 504,
+  status: 400 | 403 | 404 | 409 | 410 | 422 | 500 | 502 | 503 | 504,
   extras?: Omit<ApiErrorBody, 'error'>,
 ): Response {
   const body: ApiErrorBody = {

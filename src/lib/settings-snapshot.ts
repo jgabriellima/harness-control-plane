@@ -4,11 +4,13 @@ import { parse as parseYaml } from 'yaml';
 
 import * as Sentry from '@sentry/astro';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 import { loadBusinessConfig } from './harness-reader';
 import { loadComputerUseStatus } from './runtime-computer-use-preferences';
 import type { ComputerUsePreferences } from './runtime-computer-use-types';
 import { loadIdentityMigrationSummary, type IdentityMigrationSummary } from './bundle-identity';
+import type { ReaderPreferences } from './reader-preferences';
+import { readReaderPreferences } from './ui-reader-preferences';
 
 export interface IntegrationSlotSummary {
   slotId: string;
@@ -53,6 +55,7 @@ export interface SettingsSnapshot {
   integrations: IntegrationSlotSummary[];
   computerUse: ComputerUseSettingsSummary | null;
   identityMigration: IdentityMigrationSummary | null;
+  readerPreferences: ReaderPreferences;
   generatedAt: string;
 }
 
@@ -158,9 +161,9 @@ function buildComputerUseSummary(
   };
 }
 
-export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
+export async function loadSettingsSnapshot(workspaceRoot?: string): Promise<SettingsSnapshot> {
   return Sentry.startSpan({ name: 'loadSettingsSnapshot', op: 'fs.read' }, async () => {
-    const binding = await resolveHarnessBinding();
+    const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
     const [config, rawYaml] = await Promise.all([
       loadBusinessConfig(binding.workspaceRoot),
       readFile(binding.dslPath, 'utf8'),
@@ -205,6 +208,7 @@ export async function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
       integrations: parseIntegrations(root),
       computerUse: buildComputerUseSummary(computerUseContract, computerUseStatus),
       identityMigration,
+      readerPreferences: await readReaderPreferences(),
       generatedAt: new Date().toISOString(),
     };
   });

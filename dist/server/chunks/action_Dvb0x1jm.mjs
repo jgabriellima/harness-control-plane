@@ -1,0 +1,64 @@
+import { j as jsonError, a as jsonOk } from './api-json_NZ1Md3KT.mjs';
+import { p as performComputerUsePreviewClick, s as setComputerUsePreviewControlMode, a as performComputerUsePreviewType, b as performComputerUsePreviewKeyPress } from './runtime-computer-use-panel-bridge_BjPU812J.mjs';
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+function parseControlMode(value) {
+  if (value === "user" || value === "agent") {
+    return value;
+  }
+  return null;
+}
+const POST = async ({ request }) => {
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
+  if (!isRecord(body)) {
+    return jsonError("Request body must be a JSON object", 400);
+  }
+  const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+  const action = typeof body.action === "string" ? body.action.trim() : "";
+  const x = typeof body.x === "number" ? body.x : null;
+  const y = typeof body.y === "number" ? body.y : null;
+  const controlMode = parseControlMode(body.control_mode);
+  const text = typeof body.text === "string" ? body.text : "";
+  const key = typeof body.key === "string" ? body.key.trim() : "";
+  if (!sessionId) {
+    return jsonError("session_id is required", 400);
+  }
+  try {
+    if (action === "click" && x !== null && y !== null) {
+      await performComputerUsePreviewClick(sessionId, x, y);
+      return jsonOk({ ok: true, action: "click" });
+    }
+    if (action === "set_control_mode" && controlMode) {
+      const session = await setComputerUsePreviewControlMode(sessionId, controlMode);
+      return jsonOk({ ok: true, action: "set_control_mode", session });
+    }
+    if (action === "type" && text) {
+      await performComputerUsePreviewType(sessionId, text);
+      return jsonOk({ ok: true, action: "type" });
+    }
+    if (action === "keydown" && key) {
+      await performComputerUsePreviewKeyPress(sessionId, key);
+      return jsonOk({ ok: true, action: "keydown" });
+    }
+    return jsonError("Unsupported action", 400);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Computer-use preview action failed";
+    return jsonError(message, 500);
+  }
+};
+
+const _page = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  POST
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const page = () => _page;
+
+export { page };

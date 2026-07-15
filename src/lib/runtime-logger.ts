@@ -7,22 +7,47 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   error: 40,
 };
 
+function readProcessEnv(name: string): string | undefined {
+  if (typeof process === 'undefined') {
+    return undefined;
+  }
+
+  try {
+    const value = process.env[name];
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveLogLevel(): LogLevel {
-  const raw = process.env.CONTROL_PLANE_LOG_LEVEL?.trim().toLowerCase();
+  const raw = readProcessEnv('CONTROL_PLANE_LOG_LEVEL')?.toLowerCase();
   if (raw === 'debug' || raw === 'info' || raw === 'warn' || raw === 'error') {
     return raw;
   }
-  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+  return readProcessEnv('NODE_ENV') === 'production' ? 'info' : 'debug';
 }
 
-let activeLevel = resolveLogLevel();
+let activeLevel: LogLevel | undefined;
+
+function getActiveLevel(): LogLevel {
+  if (activeLevel === undefined) {
+    activeLevel = resolveLogLevel();
+  }
+  return activeLevel;
+}
 
 export function setRuntimeLogLevel(level: LogLevel): void {
   activeLevel = level;
 }
 
 function shouldLog(level: LogLevel): boolean {
-  return LEVEL_RANK[level] >= LEVEL_RANK[activeLevel];
+  return LEVEL_RANK[level] >= LEVEL_RANK[getActiveLevel()];
 }
 
 export function createRequestId(prefix = 'req'): string {
@@ -90,12 +115,12 @@ export function errorFields(error: unknown): RuntimeLogFields {
     return {
       error_name: error.name,
       error_message: error.message,
-      ...(activeLevel === 'debug' && error.stack ? { stack: error.stack.split('\n').slice(0, 8).join('\n') } : {}),
+      ...(getActiveLevel() === 'debug' && error.stack ? { stack: error.stack.split('\n').slice(0, 8).join('\n') } : {}),
     };
   }
   return { error_message: String(error) };
 }
 
 export function isDebugLogLevel(): boolean {
-  return activeLevel === 'debug';
+  return getActiveLevel() === 'debug';
 }

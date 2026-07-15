@@ -1,56 +1,13 @@
 ---
-import RuntimeShell from '../components/react/RuntimeShell';
-import { loadPageBranding } from '../lib/ui-branding-server';
+import AppLayout from './AppLayout.astro';
 
 interface Props {
   title: string;
   description?: string;
-  projectName?: string;
   seedArtifactE2e?: boolean;
 }
 
-const branding = await loadPageBranding();
-
-const {
-  title,
-  description,
-  projectName = branding.presentationTitle,
-  seedArtifactE2e = false,
-} = Astro.props;
+const { title, description, seedArtifactE2e = false } = Astro.props;
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="generator" content={Astro.generator} />
-    <link rel="icon" type="image/png" href="/brand/icon-light.png" media="(prefers-color-scheme: light)" />
-    <link rel="icon" type="image/png" href="/brand/icon-dark.png" media="(prefers-color-scheme: dark)" />
-    <title>{title} · {branding.presentationTitle}</title>
-    {description ? <meta name="description" content={description} /> : null}
-  </head>
-  <body class="bg-primary text-gray-900">
-    <script is:inline>
-      document.addEventListener(
-        'contextmenu',
-        (event) => event.preventDefault(),
-        { capture: true },
-      );
-    </script>
-    <RuntimeShell
-      client:load
-      projectName={projectName}
-      presentationTitle={branding.presentationTitle}
-      brandAssets={branding.assets}
-      initialPathname={Astro.url.pathname}
-      seedArtifactE2e={seedArtifactE2e}
-    >
-      <slot />
-    </RuntimeShell>
-  </body>
-</html>
-
-<style is:global>
-  @import "../styles/global.css";
-</style>
+<AppLayout title={title} description={description} seedArtifactE2e={seedArtifactE2e} />

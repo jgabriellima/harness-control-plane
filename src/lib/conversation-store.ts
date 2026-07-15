@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { resolveHarnessBinding } from './harness-binding';
-import { resolveAppRoot } from './app-root';
+import { resolveActiveWorkspaceRoot } from './workspace-manager';
 import type { ConversationSummary } from './harness-types';
 import {
   bindSession,
@@ -25,8 +25,8 @@ export interface StoredChatMessage {
   toolResult?: unknown;
 }
 
-function resolveWorkspaceRoot(workspaceRoot?: string): string {
-  return workspaceRoot?.trim() || resolveAppRoot();
+async function resolveWorkspaceRoot(workspaceRoot?: string): Promise<string> {
+  return workspaceRoot?.trim() || (await resolveActiveWorkspaceRoot());
 }
 
 function generateConversationId(): string {
@@ -39,7 +39,7 @@ async function writeSessionIndex(
   conversations: ConversationSummary[],
   workspaceRoot?: string,
 ): Promise<void> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const { harnessRoot } = await resolveHarnessBinding({ workspaceRoot: root });
   const sessionsDir = join(harnessRoot, 'runtime-sessions');
   const indexPath = join(sessionsDir, 'index.json');
@@ -56,7 +56,7 @@ async function writeSessionIndex(
 }
 
 async function readIndexConversations(workspaceRoot?: string): Promise<ConversationSummary[]> {
-  const index = await readSessionIndex(resolveWorkspaceRoot(workspaceRoot));
+  const index = await readSessionIndex(await resolveWorkspaceRoot(workspaceRoot));
   return index.conversations.map((conversation) => ({
     id: conversation.id,
     title: conversation.title,
@@ -79,7 +79,7 @@ export async function listProfileConversations(
   projectId?: string,
   options?: { includeArchived?: boolean },
 ): Promise<ConversationSummary[]> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const sessionIndex = await readSessionIndex(root);
   const [conversations, bindings] = await Promise.all([
     readIndexConversations(root),
@@ -180,10 +180,10 @@ export async function updateConversationAgent(
   await bindSession({
     harnessConversationId: conversationId,
     vendorAgentId: agentId,
-    workspaceRoot: resolveWorkspaceRoot(workspaceRoot),
+    workspaceRoot: await resolveWorkspaceRoot(workspaceRoot),
   });
 
-  const index = await rebuildSessionIndex(resolveWorkspaceRoot(workspaceRoot));
+  const index = await rebuildSessionIndex(await resolveWorkspaceRoot(workspaceRoot));
   const conversation = index.conversations.find((item) => item.id === conversationId);
   if (!conversation) {
     return null;
@@ -203,7 +203,7 @@ export async function getConversationById(
   workspaceRoot: string,
   conversationId: string,
 ): Promise<ConversationSummary | null> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const [conversations, bindings] = await Promise.all([
     readIndexConversations(root),
     import('./runtime-session-registry').then((module) => module.readLatestBindings(root)),
@@ -224,7 +224,7 @@ export async function loadConversationTranscript(
   workspaceRoot: string,
   conversationId: string,
 ): Promise<StoredChatMessage[]> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const conversation = await getConversationById(root, conversationId);
   if (!conversation?.agentId) {
     return [];
@@ -251,7 +251,7 @@ export async function deriveAndUpdateSessionTitle(
   agentId?: string | null,
 ): Promise<void> {
   try {
-    const root = resolveWorkspaceRoot(workspaceRoot);
+    const root = await resolveWorkspaceRoot(workspaceRoot);
     const index = await readSessionIndex(root);
     const conv = index.conversations.find((c) => c.id === conversationId);
     const updatedConversations = index.conversations.map((c) => ({ ...c }));
@@ -283,7 +283,7 @@ export async function patchConversation(
   conversationId: string,
   input: { title?: string | undefined; archived?: boolean | undefined; projectId?: string | undefined },
 ): Promise<ConversationSummary | null> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const index = await readSessionIndex(root);
   const idx = index.conversations.findIndex((c) => c.id === conversationId);
   if (idx === -1) return null;
@@ -310,7 +310,7 @@ export async function deleteConversation(
   workspaceRoot: string,
   conversationId: string,
 ): Promise<boolean> {
-  const root = resolveWorkspaceRoot(workspaceRoot);
+  const root = await resolveWorkspaceRoot(workspaceRoot);
   const index = await readSessionIndex(root);
   const idx = index.conversations.findIndex((c) => c.id === conversationId);
   if (idx === -1) return false;
