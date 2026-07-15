@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowUp,
   ChevronLeft,
   ChevronRight,
@@ -9,8 +10,8 @@ import {
   Download,
   Eye,
   Loader2,
-  Maximize2,
   Monitor,
+  Paperclip,
   RefreshCw,
   Share2,
 } from 'lucide-react';
@@ -37,6 +38,8 @@ import {
   resolveOrCreateHarnessConversation,
   storeHarnessConversationId,
 } from '@/lib/design-harness-context';
+import { designPathForView } from '@/lib/design-navigation';
+import { navigateDesign } from '@/lib/design-shell-navigation';
 import DesignStudioOrchestratorPane, {
   shouldUseOrchestratorPane,
 } from './DesignStudioOrchestratorPane';
@@ -78,11 +81,105 @@ function activeFileRecord(files: DesignProjectFile[], activeFile: string | null)
   return files.find((file) => file.path === activeFile) ?? null;
 }
 
+function projectKindLabel(record: DesignProjectRecord | null): string {
+  const skillId = record?.skillId ?? '';
+  if (skillId.includes('prototype') || record?.metadata?.kind === 'prototype') {
+    return 'Web Prototype';
+  }
+  if (skillId.includes('deck') || record?.metadata?.kind === 'deck') {
+    return 'Deck';
+  }
+  if (record?.metadata?.kind) {
+    return String(record.metadata.kind);
+  }
+  return 'Design project';
+}
+
 function postDeckSlideAction(
   iframe: HTMLIFrameElement | null,
   action: 'next' | 'prev' | 'first' | 'last',
 ): void {
   iframe?.contentWindow?.postMessage({ type: 'od:slide', action }, '*');
+}
+
+function StudioChatHeader({
+  projectName,
+  kindLabel,
+}: {
+  projectName: string;
+  kindLabel: string;
+}) {
+  return (
+    <div className="design-studio-chat__header">
+      <button
+        type="button"
+        className="design-studio-chat__back"
+        aria-label="Back to projects"
+        onClick={() => navigateDesign(designPathForView('projects'))}
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+      <div className="design-studio-chat__title-wrap">
+        <h2 className="design-studio-chat__title">{projectName}</h2>
+        <span className="design-studio-chat__tag">{kindLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function StudioTurnFilesSidebar({
+  files,
+  activeFile,
+  projectId,
+  onSelectFile,
+}: {
+  files: DesignProjectFile[];
+  activeFile: string | null;
+  projectId: string;
+  onSelectFile: (path: string) => void;
+}) {
+  if (files.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="studio-turn-files studio-turn-files--sidebar" data-testid="design-studio-turn-files">
+      <p className="studio-turn-files__label">FILES FROM THIS TURN</p>
+      <div className="studio-turn-files__list" role="list">
+        {files.map((file) => {
+          const label = fileLabel(file);
+          const active = activeFile === file.path;
+          return (
+            <div key={`turn-${file.path}`} className="studio-turn-files__row" role="listitem">
+              <button
+                type="button"
+                className={`studio-turn-files__row-name${active ? ' is-active' : ''}`}
+                onClick={() => onSelectFile(file.path)}
+              >
+                {label}
+              </button>
+              <div className="studio-turn-files__row-actions">
+                <button
+                  type="button"
+                  className="studio-turn-files__row-btn"
+                  onClick={() => onSelectFile(file.path)}
+                >
+                  Open
+                </button>
+                <a
+                  className="studio-turn-files__row-btn"
+                  href={projectRawFileUrl(projectId, file.path)}
+                  download={label}
+                >
+                  Download
+                </a>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
@@ -109,6 +206,7 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
   const deckFrameRef = useRef<HTMLDivElement | null>(null);
 
   const usesDeckCanvas = studioSurfaceUsesDeckBridge(studioSurface);
+  const kindLabel = projectKindLabel(projectRecord);
   useDeckStudioScale(deckFrameRef, usesDeckCanvas && mode === 'preview');
 
   const refreshFiles = useCallback(async () => {
@@ -350,269 +448,285 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
     }
   }
 
+  const activeLabel = activeFile ? fileLabel(activeFileRecord(files, activeFile) ?? { path: activeFile, name: activeFile }) : null;
+
   return (
-    <div className="flex h-full min-h-0 bg-[var(--bg)]" data-testid="design-studio-view">
-      <aside className="flex w-[360px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
-        {projectLoading ? (
-          <p
-            className="px-4 py-3 text-[13px] text-[var(--text-muted)]"
-            data-testid="design-studio-project-loading"
-          >
-            Loading project…
-          </p>
-        ) : usesOrchestratorPane && projectRecord ? (
-          <DesignStudioOrchestratorPane projectId={projectId} projectRecord={projectRecord} />
-        ) : (
-          <>
-        <div className="border-b border-[var(--border)] px-4 py-3">
-          <p className="truncate text-[14px] font-semibold text-[var(--text)]">{projectName}</p>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">Describe changes to refine this artifact.</p>
-        </div>
-
-        <div className="flex-1 space-y-3 overflow-auto px-4 py-4" data-testid="design-studio-messages">
-          {messages.length === 0 ? (
-            <p className="text-[13px] leading-6 text-[var(--text-muted)]">
-              Send a prompt to generate or refine design files for this project.
-            </p>
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={[
-                  'rounded-2xl px-3 py-2 text-[13px] leading-6',
-                  message.role === 'user'
-                    ? 'ml-8 bg-[var(--bg-subtle)] text-[var(--text)]'
-                    : 'mr-4 border border-[var(--border-soft)] bg-[var(--bg-panel)] text-[var(--text-muted)]',
-                ].join(' ')}
+    <div className="app h-full min-h-0" data-testid="design-studio-view">
+      <div className="split h-full min-h-0">
+        <div className="split-chat-slot">
+          <div className="pane design-studio-chat">
+            {projectLoading ? (
+              <p
+                className="px-4 py-3 text-[13px] text-[var(--text-muted)]"
+                data-testid="design-studio-project-loading"
               >
-                <p className="whitespace-pre-wrap">{message.content || (message.streaming ? '...' : '')}</p>
-              </div>
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {runError ? (
-          <p className="px-4 pb-2 text-[12px] text-[var(--red)]" data-testid="design-studio-run-error">
-            {runError}
-          </p>
-        ) : null}
-
-        <div className="border-t border-[var(--border-soft)] p-4">
-          <textarea
-            value={composer}
-            onChange={(event) => setComposer(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Describe what you want to generate..."
-            className="min-h-[88px] w-full resize-none rounded-2xl border border-[var(--border-soft)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--border)]"
-            data-testid="design-studio-composer"
-          />
-          <div className="mt-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={!composer.trim() || runBusy}
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--text-strong)] px-4 py-2 text-[12px] font-medium text-[var(--bg-elevated)] disabled:opacity-40"
-              data-testid="design-studio-send"
-            >
-              {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
-              Send
-            </button>
-          </div>
-        </div>
-          </>
-        )}
-      </aside>
-
-      <div className="workspace min-w-0 flex-1">
-        <div className="ws-tabs-shell">
-          <div className="ws-tabs-bar" role="tablist">
-            <button type="button" className="ws-tab pages-tab active" data-testid="design-studio-design-files-tab">
-              <span className="tab-icon" aria-hidden>
-                <Monitor className="h-3.5 w-3.5" />
-              </span>
-              <span className="ws-tab-label">Design Files</span>
-            </button>
-            {loadingFiles ? (
-              <span className="ws-tab-meta">Loading...</span>
+                Loading project…
+              </p>
+            ) : usesOrchestratorPane && projectRecord ? (
+              <>
+                <StudioChatHeader projectName={projectName} kindLabel={kindLabel} />
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <DesignStudioOrchestratorPane projectId={projectId} projectRecord={projectRecord} />
+                </div>
+                <StudioTurnFilesSidebar
+                  files={files}
+                  activeFile={activeFile}
+                  projectId={projectId}
+                  onSelectFile={setActiveFile}
+                />
+              </>
             ) : (
-              files.map((file) => {
-                const label = fileLabel(file);
-                const active = activeFile === file.path;
-                return (
-                  <button
-                    key={file.path}
-                    type="button"
-                    onClick={() => setActiveFile(file.path)}
-                    className={`ws-tab browser-tab${active ? ' active' : ''}`}
-                    data-testid="design-studio-file-tab"
-                  >
-                    <span className="ws-tab-label">{label}</span>
-                  </button>
-                );
-              })
+              <>
+                <StudioChatHeader projectName={projectName} kindLabel={kindLabel} />
+
+                <div className="design-studio-chat__messages" data-testid="design-studio-messages">
+                  {messages.length === 0 ? (
+                    <p className="text-[13px] leading-6 text-[var(--text-muted)]">
+                      Send a prompt to generate or refine design files for this project.
+                    </p>
+                  ) : (
+                    messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`design-studio-chat__message design-studio-chat__message--${message.role}`}
+                      >
+                        {message.content || (message.streaming ? '...' : '')}
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                <StudioTurnFilesSidebar
+                  files={files}
+                  activeFile={activeFile}
+                  projectId={projectId}
+                  onSelectFile={setActiveFile}
+                />
+
+                {runError ? (
+                  <p className="px-4 pb-2 text-[12px] text-[var(--red)]" data-testid="design-studio-run-error">
+                    {runError}
+                  </p>
+                ) : null}
+
+                <div className="design-studio-composer">
+                  <textarea
+                    value={composer}
+                    onChange={(event) => setComposer(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                        event.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    placeholder="Describe what you want to generate..."
+                    className="design-studio-composer__input"
+                    data-testid="design-studio-composer"
+                  />
+                  <div className="design-studio-composer__footer">
+                    <span className="design-studio-composer__hints">
+                      <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                      Attach
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleSend()}
+                      disabled={!composer.trim() || runBusy}
+                      className="design-studio-composer__send"
+                      data-testid="design-studio-send"
+                    >
+                      {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+                      Send
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
-          <div className="ws-tabs-actions">
-            <div className="ws-tabs-file-actions">
-              <button type="button" onClick={() => void refreshFiles()} className="icon-only" aria-label="Refresh">
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" className="present-btn design-studio-share" data-testid="design-studio-share">
-                <Share2 className="h-3.5 w-3.5" />
-                Share
-              </button>
-              <button type="button" className="icon-only" aria-label="Download">
-                <Download className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
         </div>
 
-        {files.length > 0 ? (
-          <section className="studio-turn-files" data-testid="design-studio-turn-files">
-            <p className="studio-turn-files__label">FILES FROM THIS TURN</p>
-            <div className="studio-turn-files__list" role="list">
-              {files.map((file) => (
+        <div className="split-resize-handle" role="separator" aria-orientation="vertical" aria-hidden />
+
+        <div className="workspace min-w-0">
+          <div className="ws-tabs-shell">
+            <div className="ws-tabs-bar" role="tablist">
+              <button type="button" className="ws-tab pages-tab active" data-testid="design-studio-design-files-tab">
+                <span className="tab-icon" aria-hidden>
+                  <Monitor className="h-3.5 w-3.5" />
+                </span>
+                <span className="ws-tab-label">Design Files</span>
+              </button>
+              {activeLabel ? (
+                <>
+                  <span className="ws-tab-sep" aria-hidden>
+                    ›
+                  </span>
+                  <button
+                    type="button"
+                    className="ws-tab browser-tab active has-meta"
+                    data-testid="design-studio-file-tab"
+                  >
+                    <span className="ws-tab-label">{activeLabel}</span>
+                  </button>
+                </>
+              ) : loadingFiles ? (
+                <span className="ws-tab-meta">Loading...</span>
+              ) : null}
+            </div>
+            <div className="ws-tabs-actions">
+              <div className="ws-tabs-file-actions">
                 <button
-                  key={`turn-${file.path}`}
                   type="button"
-                  role="listitem"
-                  className={`studio-turn-files__item${activeFile === file.path ? ' is-active' : ''}`}
-                  onClick={() => setActiveFile(file.path)}
+                  onClick={() => void refreshFiles()}
+                  className="icon-only"
+                  aria-label="Refresh files"
                 >
-                  {fileLabel(file)}
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <div className="ws-body">
-          <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
-            <div className="inline-flex rounded-xl bg-[var(--bg-subtle)] p-1">
-              <button
-                type="button"
-                onClick={() => setMode('preview')}
-                className={`ws-tab${mode === 'preview' ? ' active' : ''}`}
-                data-testid="design-studio-preview-toggle"
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Preview
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('code')}
-                className={`ws-tab${mode === 'code' ? ' active' : ''}`}
-                data-testid="design-studio-code-toggle"
-              >
-                <Code2 className="h-3.5 w-3.5" />
-                Code
-              </button>
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[12px] text-[var(--text-muted)]">
-              <Monitor className="h-3.5 w-3.5" />
-              {usesDeckCanvas ? `${DECK_STUDIO_WIDTH}×${DECK_STUDIO_HEIGHT}` : 'Desktop'}
-            </div>
-            <div className="ml-auto flex items-center gap-2 text-[var(--text-soft)]">
-              <Maximize2 className="h-4 w-4" />
-              <span className="text-[12px]">100%</span>
+                <div className="present-wrap">
+                  <button
+                    type="button"
+                    className="chrome-action chrome-action-primary chrome-action-with-label present-trigger design-studio-share"
+                    data-testid="design-studio-share"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    Share
+                  </button>
+                </div>
+                {activeFile ? (
+                  <a
+                    className="icon-only"
+                    href={projectRawFileUrl(projectId, activeFile)}
+                    download={activeLabel ?? 'file'}
+                    aria-label="Download file"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                ) : (
+                  <button type="button" className="icon-only" aria-label="Download" disabled>
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 items-center justify-center p-8">
-          {mode === 'preview' ? (
-            studioSurface === 'image' && activeFile ? (
-              <img
-                src={projectRawFileUrl(projectId, activeFile)}
-                alt={fileLabel(activeFileRecord(files, activeFile) ?? { path: activeFile, name: activeFile })}
-                className="max-h-full max-w-[1100px] rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] object-contain shadow-[var(--shadow-lg)]"
-                data-testid="design-studio-image-preview"
-              />
-            ) : studioSurface === 'video' && activeFile ? (
-              <video
-                src={projectRawFileUrl(projectId, activeFile)}
-                controls
-                className="max-h-full max-w-[1100px] rounded-xl border border-[var(--border)] bg-black shadow-[var(--shadow-lg)]"
-                data-testid="design-studio-video-preview"
-              />
-            ) : studioSurface === 'audio' && activeFile ? (
-              <audio
-                src={projectRawFileUrl(projectId, activeFile)}
-                controls
-                className="w-full max-w-[640px]"
-                data-testid="design-studio-audio-preview"
-              />
-            ) : usesDeckCanvas ? (
-              <div
-                ref={deckFrameRef}
-                className="relative flex h-full w-full max-w-[1100px] items-start justify-center overflow-hidden"
-                style={{ aspectRatio: `${DECK_STUDIO_WIDTH} / ${DECK_STUDIO_HEIGHT}` }}
-                data-testid="design-studio-deck-frame"
-              >
-                <iframe
-                  ref={previewFrameRef}
-                  title="Design deck preview"
-                  sandbox="allow-scripts"
-                  srcDoc={previewHtml}
-                  className="origin-top-left rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)]"
-                  style={{
-                    width: `${DECK_STUDIO_WIDTH}px`,
-                    height: `${DECK_STUDIO_HEIGHT}px`,
-                    transform: 'scale(var(--deck-studio-scale, 1))',
-                  }}
-                  data-testid="design-studio-preview-frame"
-                />
+          <div className="ws-body">
+            <div className="design-studio-viewer">
+              <div className="viewer-toolbar">
+                <div className="viewer-toolbar__modes">
+                  <button
+                    type="button"
+                    onClick={() => setMode('preview')}
+                    className={`viewer-toolbar__mode${mode === 'preview' ? ' active' : ''}`}
+                    data-testid="design-studio-preview-toggle"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('code')}
+                    className={`viewer-toolbar__mode${mode === 'code' ? ' active' : ''}`}
+                    data-testid="design-studio-code-toggle"
+                  >
+                    <Code2 className="h-3.5 w-3.5" />
+                    Code
+                  </button>
+                </div>
+                <div className="viewer-toolbar__viewport">
+                  <Monitor className="h-3.5 w-3.5" />
+                  {usesDeckCanvas ? `${DECK_STUDIO_WIDTH}×${DECK_STUDIO_HEIGHT}` : 'Desktop'}
+                </div>
+                <div className="viewer-toolbar__spacer" />
+                <div className="viewer-toolbar__zoom">
+                  <span>100%</span>
+                </div>
               </div>
-            ) : (
-              <iframe
-                ref={previewFrameRef}
-                title="Design preview"
-                sandbox="allow-scripts"
-                srcDoc={previewHtml}
-                className="h-full w-full max-w-[1100px] rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)]"
-                data-testid="design-studio-preview-frame"
-              />
-            )
-          ) : (
-            <pre className="h-full w-full max-w-[1100px] overflow-auto rounded-xl border border-[var(--border)] bg-[#111] p-4 text-left text-[12px] leading-6 text-[#d6d6d6]">
-              {fileContent || '<!-- source will appear after generation -->'}
-            </pre>
-          )}
-        </div>
 
-        <div className="flex items-center justify-center gap-3 border-t border-[var(--border)] bg-[var(--bg-panel)] py-3 text-[12px] text-[var(--text-muted)]">
-          <button
-            type="button"
-            className="rounded p-1 hover:bg-[var(--bg-subtle)] disabled:opacity-30"
-            disabled={!usesDeckCanvas || slideState.active <= 0}
-            onClick={() => postDeckSlideAction(previewFrameRef.current, 'prev')}
-            aria-label="Previous slide"
-            data-testid="design-studio-slide-prev"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {usesDeckCanvas && slideState.count > 0
-            ? `${slideState.active + 1} / ${slideState.count}`
-            : files.length > 0
-              ? `${files.findIndex((file) => file.path === activeFile) + 1 || 1} / ${files.length}`
-              : '0 / 0'}
-          <button
-            type="button"
-            className="rounded p-1 hover:bg-[var(--bg-subtle)] disabled:opacity-30"
-            disabled={!usesDeckCanvas || slideState.count === 0 || slideState.active >= slideState.count - 1}
-            onClick={() => postDeckSlideAction(previewFrameRef.current, 'next')}
-            aria-label="Next slide"
-            data-testid="design-studio-slide-next"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+              {mode === 'preview' ? (
+                studioSurface === 'image' && activeFile ? (
+                  <div className="html-viewer design-studio-preview design-studio-preview--media">
+                    <img
+                      src={projectRawFileUrl(projectId, activeFile)}
+                      alt={activeLabel ?? 'Preview'}
+                      data-testid="design-studio-image-preview"
+                    />
+                  </div>
+                ) : studioSurface === 'video' && activeFile ? (
+                  <div className="html-viewer design-studio-preview design-studio-preview--media">
+                    <video
+                      src={projectRawFileUrl(projectId, activeFile)}
+                      controls
+                      data-testid="design-studio-video-preview"
+                    />
+                  </div>
+                ) : studioSurface === 'audio' && activeFile ? (
+                  <div className="html-viewer design-studio-preview design-studio-preview--media">
+                    <audio
+                      src={projectRawFileUrl(projectId, activeFile)}
+                      controls
+                      data-testid="design-studio-audio-preview"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className={`html-viewer design-studio-preview${usesDeckCanvas ? ' design-studio-preview--deck' : ''}`}
+                    ref={usesDeckCanvas ? deckFrameRef : undefined}
+                  >
+                    <div className="preview-frame-clip">
+                      <iframe
+                        ref={previewFrameRef}
+                        title="Design preview"
+                        sandbox="allow-scripts"
+                        srcDoc={previewHtml}
+                        style={
+                          usesDeckCanvas
+                            ? {
+                                width: `${DECK_STUDIO_WIDTH}px`,
+                                height: `${DECK_STUDIO_HEIGHT}px`,
+                              }
+                            : undefined
+                        }
+                        data-testid="design-studio-preview-frame"
+                      />
+                    </div>
+                  </div>
+                )
+              ) : (
+                <pre className="design-studio-code-panel">
+                  {fileContent || '<!-- source will appear after generation -->'}
+                </pre>
+              )}
+
+              <div className="design-studio-slide-nav">
+                <button
+                  type="button"
+                  disabled={!usesDeckCanvas || slideState.active <= 0}
+                  onClick={() => postDeckSlideAction(previewFrameRef.current, 'prev')}
+                  aria-label="Previous slide"
+                  data-testid="design-studio-slide-prev"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {usesDeckCanvas && slideState.count > 0
+                  ? `${slideState.active + 1} / ${slideState.count}`
+                  : files.length > 0
+                    ? `${files.findIndex((file) => file.path === activeFile) + 1 || 1} / ${files.length}`
+                    : '0 / 0'}
+                <button
+                  type="button"
+                  disabled={!usesDeckCanvas || slideState.count === 0 || slideState.active >= slideState.count - 1}
+                  onClick={() => postDeckSlideAction(previewFrameRef.current, 'next')}
+                  aria-label="Next slide"
+                  data-testid="design-studio-slide-next"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
