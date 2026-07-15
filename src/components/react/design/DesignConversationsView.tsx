@@ -84,6 +84,8 @@ export default function DesignConversationsView() {
                   type="button"
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-[var(--bg-subtle)]"
                   onClick={() => {
+                    hub.setLayoutMode('single');
+                    hub.setPaneConversationIds(['']);
                     hub.navigateToConversation(conversation.id);
                     navigateDesign(
                       designPathForView('conversation-chat', { conversationId: conversation.id }),
