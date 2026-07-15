@@ -96,7 +96,6 @@ function usesHarnessSurface(view: DesignView): boolean {
 /** Catalog views with hero actions — hide EntryTopBar to avoid overlap at 1280px (B-02). */
 const HERO_ACTION_VIEWS = new Set<DesignView>([
   'automations',
-  'plugins',
   'plugin-detail',
   'design-systems',
   'design-system-create',
