@@ -1,3 +1,5 @@
+const BUILTIN_SLASH_COMMANDS = ['/openui'] as const;
+
 export function isKnownSlashCommand(message: string, knownCommands: readonly string[]): boolean {
   const trimmed = message.trim();
   if (!trimmed.startsWith('/')) {
@@ -7,6 +9,10 @@ export function isKnownSlashCommand(message: string, knownCommands: readonly str
   const firstToken = trimmed.split(/\s/)[0] ?? '';
   if (firstToken === '/') {
     return false;
+  }
+
+  if (BUILTIN_SLASH_COMMANDS.some((cmd) => cmd === firstToken || firstToken.startsWith(cmd))) {
+    return true;
   }
 
   return knownCommands.some(

@@ -188,6 +188,8 @@ export async function releaseBlockingAgentRuns(input: {
   conversationId: string;
   workspaceRoot: string;
   requestId: string;
+  /** When true, only reconcile registry-indexed runs — skip SDK list/cancel. */
+  indexedOnly?: boolean;
 }): Promise<number> {
   const index = await readAggregatedActiveRuns();
   const indexedCandidates = index.active.filter((entry) => entry.agentId === input.agentId);
@@ -201,7 +203,7 @@ export async function releaseBlockingAgentRuns(input: {
     }
   }
 
-  if (releasedCount === 0) {
+  if (releasedCount === 0 && !input.indexedOnly) {
     const sdkReleased = await releaseSdkRunningRuns(
       input.agentId,
       input.workspaceRoot,
@@ -216,7 +218,10 @@ export async function releaseBlockingAgentRuns(input: {
 }
 
 export async function sendAgentPromptWithRelease(input: {
-  agent: { agentId: string; send: (message: string) => Promise<Run> };
+  agent: {
+    agentId: string;
+    send: (message: string, options?: { local?: { force?: boolean } }) => Promise<Run>;
+  };
   prompt: string;
   conversationId: string;
   workspaceRoot: string;
@@ -229,10 +234,17 @@ export async function sendAgentPromptWithRelease(input: {
     conversationId: input.conversationId,
     workspaceRoot: input.workspaceRoot,
     requestId: input.requestId,
+    indexedOnly: true,
   });
 
+  const sendOptions = { local: { force: true } as const };
+
   try {
-    return await input.withTimeout(input.agent.send(input.prompt), input.timeoutMs, input.requestId);
+    return await input.withTimeout(
+      input.agent.send(input.prompt, sendOptions),
+      input.timeoutMs,
+      input.requestId,
+    );
   } catch (error) {
     if (!isAgentBusyError(error)) {
       throw error;
@@ -252,6 +264,10 @@ export async function sendAgentPromptWithRelease(input: {
       requestId: input.requestId,
     });
 
-    return input.withTimeout(input.agent.send(input.prompt), input.timeoutMs, input.requestId);
+    return input.withTimeout(
+      input.agent.send(input.prompt, sendOptions),
+      input.timeoutMs,
+      input.requestId,
+    );
   }
 }

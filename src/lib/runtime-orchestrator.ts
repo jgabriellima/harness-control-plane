@@ -9,8 +9,10 @@ import {
   RuntimeGatewayError,
 } from './runtime-gateway';
 import { appendDispatchLog } from './runtime-dispatch-log';
+import { assertRuntimeAvailable } from './runtime-availability';
 import { startRunHubFanout } from './runtime-hub-stream';
 import { appendRunStarted } from './runtime-run-registry';
+import { markRunExecutingInProcessSession } from './runtime-process-session';
 import { bindSession, readLatestBindings } from './runtime-session-registry';
 import { resolveHarnessRoot } from './app-root';
 import { createRequestId, errorFields, runtimeLogger } from './runtime-logger';
@@ -36,6 +38,8 @@ export async function orchestrateChatDispatch(
     project_id: request.project_id,
     cwd,
   });
+
+  await assertRuntimeAvailable(cwd, requestId);
 
   let result: ChatDispatchResponse;
 
@@ -88,6 +92,7 @@ export async function orchestrateChatDispatch(
   }
 
   startRunHubFanout(result.run_id, result.agent_id, conversationKey, cwd, requestId);
+  markRunExecutingInProcessSession(result.run_id);
 
   if (request.conversation_id) {
     void (async () => {

@@ -20,6 +20,16 @@ export const SHELL_LAYOUT_MIN = {
   context: 16,
 } as const;
 
+/** Sidebar width contract — collapsed icon rail vs expanded labeled panel. */
+export const SIDEBAR_WIDTH = {
+  collapsed: '56px',
+  /** Default width when expanding from collapsed or restoring a too-narrow size. */
+  expandedDefault: '280px',
+  /** Drag below this threshold collapses the panel to the icon rail. */
+  expandedMin: '240px',
+  expandedMax: '38%',
+} as const;
+
 export interface ShellLayoutSizes {
   sidebarSize: number;
   contextSize: number;

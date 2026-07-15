@@ -29,8 +29,17 @@ import {
 import {
   dispatchOrchestratorChat,
   isOrchestratorWorkspaceProject,
+  resolveOrchestratorHarnessProjectId,
   resolveOrchestratorWorkspaceRoot,
 } from '@/lib/design-runtime-bridge';
+import {
+  fetchHarnessWorkspaceContext,
+  resolveOrCreateHarnessConversation,
+  storeHarnessConversationId,
+} from '@/lib/design-harness-context';
+import DesignStudioOrchestratorPane, {
+  shouldUseOrchestratorPane,
+} from './DesignStudioOrchestratorPane';
 import {
   DECK_STUDIO_HEIGHT,
   DECK_STUDIO_WIDTH,
@@ -80,6 +89,7 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
   const [mode, setMode] = useState<StudioMode>('preview');
   const [projectName, setProjectName] = useState('Design project');
   const [projectRecord, setProjectRecord] = useState<DesignProjectRecord | null>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
   const [files, setFiles] = useState<DesignProjectFile[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
@@ -120,11 +130,17 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
     let cancelled = false;
 
     async function loadProject() {
-      const project = await getDesignProject(projectId);
-      if (!cancelled && project) {
-        setProjectRecord(project);
-        if (project.name) {
-          setProjectName(project.name);
+      try {
+        const project = await getDesignProject(projectId);
+        if (!cancelled && project) {
+          setProjectRecord(project);
+          if (project.name) {
+            setProjectName(project.name);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setProjectLoading(false);
         }
       }
     }
@@ -209,6 +225,8 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const usesOrchestratorPane = shouldUseOrchestratorPane(projectRecord);
+
   async function handleSend() {
     const prompt = composer.trim();
     if (!prompt || runBusy) {
@@ -238,11 +256,21 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
           throw new Error('Orchestrator workspace root is missing');
         }
 
-        await dispatchOrchestratorChat(
+        const harnessContext = await fetchHarnessWorkspaceContext();
+        const conversationId = await resolveOrCreateHarnessConversation({
+          projectId,
+          projectName: projectRecord.name,
+          harnessProjectId:
+            harnessContext?.harnessProjectId ?? resolveOrchestratorHarnessProjectId(workspaceRoot),
+          existingConversationId: projectRecord.metadata?.harnessConversationId,
+        });
+
+        const dispatchResult = await dispatchOrchestratorChat(
           {
             projectId,
             message: prompt,
             workspaceRoot,
+            conversationId,
             signal: controller.signal,
           },
           {
@@ -266,6 +294,10 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
             },
           },
         );
+
+        if (dispatchResult.conversationId) {
+          storeHarnessConversationId(projectId, dispatchResult.conversationId);
+        }
       } else {
         const { runId } = await createDesignRun({
           projectId,
@@ -319,9 +351,20 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0" data-testid="design-studio-view">
-      <aside className="flex w-[360px] shrink-0 flex-col border-r border-[var(--border-soft)] bg-[var(--bg-elevated)]">
-        <div className="border-b border-[var(--border-soft)] px-4 py-3">
+    <div className="flex h-full min-h-0 bg-[var(--bg)]" data-testid="design-studio-view">
+      <aside className="flex w-[360px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-panel)]">
+        {projectLoading ? (
+          <p
+            className="px-4 py-3 text-[13px] text-[var(--text-muted)]"
+            data-testid="design-studio-project-loading"
+          >
+            Loading project…
+          </p>
+        ) : usesOrchestratorPane && projectRecord ? (
+          <DesignStudioOrchestratorPane projectId={projectId} projectRecord={projectRecord} />
+        ) : (
+          <>
+        <div className="border-b border-[var(--border)] px-4 py-3">
           <p className="truncate text-[14px] font-semibold text-[var(--text)]">{projectName}</p>
           <p className="mt-1 text-[12px] text-[var(--text-muted)]">Describe changes to refine this artifact.</p>
         </div>
@@ -382,18 +425,21 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
             </button>
           </div>
         </div>
+          </>
+        )}
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg-subtle)]">
-        <div className="flex items-center justify-between border-b border-[var(--border-soft)] bg-[var(--bg-elevated)] px-4 py-2">
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
-            <span className="shrink-0 rounded-lg bg-[var(--bg-subtle)] px-2.5 py-1 text-[12px] font-medium text-[var(--text-muted)]">
-              Design Files
-            </span>
+      <div className="workspace min-w-0 flex-1">
+        <div className="ws-tabs-shell">
+          <div className="ws-tabs-bar" role="tablist">
+            <button type="button" className="ws-tab pages-tab active" data-testid="design-studio-design-files-tab">
+              <span className="tab-icon" aria-hidden>
+                <Monitor className="h-3.5 w-3.5" />
+              </span>
+              <span className="ws-tab-label">Design Files</span>
+            </button>
             {loadingFiles ? (
-              <span className="text-[12px] text-[var(--text-soft)]">Loading...</span>
-            ) : files.length === 0 ? (
-              <span className="text-[12px] text-[var(--text-soft)]">No files yet</span>
+              <span className="ws-tab-meta">Loading...</span>
             ) : (
               files.map((file) => {
                 const label = fileLabel(file);
@@ -403,103 +449,83 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
                     key={file.path}
                     type="button"
                     onClick={() => setActiveFile(file.path)}
-                    className={[
-                      'shrink-0 rounded-lg border px-2.5 py-1 text-[12px] transition',
-                      active
-                        ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--text)]'
-                        : 'border-[var(--border-soft)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text)]',
-                    ].join(' ')}
+                    className={`ws-tab browser-tab${active ? ' active' : ''}`}
                     data-testid="design-studio-file-tab"
                   >
-                    {label}
+                    <span className="ws-tab-label">{label}</span>
                   </button>
                 );
               })
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void refreshFiles()}
-              className="rounded-lg border border-[var(--border-soft)] px-3 py-1.5 text-[12px] text-[var(--text-muted)]"
-            >
-              <RefreshCw className="mr-1 inline h-3.5 w-3.5" />
-              Refresh
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-[var(--border-soft)] px-3 py-1.5 text-[12px] text-[var(--text-muted)]"
-            >
-              <Share2 className="mr-1 inline h-3.5 w-3.5" />
-              Share
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-[var(--border-soft)] px-3 py-1.5 text-[12px] text-[var(--text-muted)]"
-            >
-              <Download className="mr-1 inline h-3.5 w-3.5" />
-              Download
-            </button>
+          <div className="ws-tabs-actions">
+            <div className="ws-tabs-file-actions">
+              <button type="button" onClick={() => void refreshFiles()} className="icon-only" aria-label="Refresh">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="present-btn design-studio-share" data-testid="design-studio-share">
+                <Share2 className="h-3.5 w-3.5" />
+                Share
+              </button>
+              <button type="button" className="icon-only" aria-label="Download">
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 border-b border-[var(--border-soft)] bg-[var(--bg-elevated)] px-4 py-2">
-          <div className="inline-flex rounded-xl bg-[var(--bg-subtle)] p-1">
-            <button
-              type="button"
-              onClick={() => setMode('preview')}
-              className={[
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-medium',
-                mode === 'preview'
-                  ? 'bg-[var(--bg-elevated)] text-[var(--text)] shadow-[var(--shadow-xs)]'
-                  : 'text-[var(--text-muted)]',
-              ].join(' ')}
-              data-testid="design-studio-preview-toggle"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              Preview
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('code')}
-              className={[
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-medium',
-                mode === 'code'
-                  ? 'bg-[var(--bg-elevated)] text-[var(--text)] shadow-[var(--shadow-xs)]'
-                  : 'text-[var(--text-muted)]',
-              ].join(' ')}
-              data-testid="design-studio-code-toggle"
-            >
-              <Code2 className="h-3.5 w-3.5" />
-              Code
-            </button>
-          </div>
-          <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-soft)] px-2.5 py-1.5 text-[12px] text-[var(--text-muted)]">
-            <Monitor className="h-3.5 w-3.5" />
-            {usesDeckCanvas ? `${DECK_STUDIO_WIDTH}×${DECK_STUDIO_HEIGHT}` : 'Desktop'}
-          </div>
-          {studioSurface === 'hyperframes' ? (
-            <span className="rounded-full bg-[var(--accent-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent)]">
-              HyperFrames
-            </span>
-          ) : null}
-          {studioSurface === 'image' ? (
-            <span className="rounded-full bg-[var(--accent-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent)]">
-              Image studio
-            </span>
-          ) : null}
-          {studioSurface === 'video' ? (
-            <span className="rounded-full bg-[var(--accent-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent)]">
-              Video studio
-            </span>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2 text-[var(--text-soft)]">
-            <Maximize2 className="h-4 w-4" />
-            <span className="text-[12px]">100%</span>
-          </div>
-        </div>
+        {files.length > 0 ? (
+          <section className="studio-turn-files" data-testid="design-studio-turn-files">
+            <p className="studio-turn-files__label">FILES FROM THIS TURN</p>
+            <div className="studio-turn-files__list" role="list">
+              {files.map((file) => (
+                <button
+                  key={`turn-${file.path}`}
+                  type="button"
+                  role="listitem"
+                  className={`studio-turn-files__item${activeFile === file.path ? ' is-active' : ''}`}
+                  onClick={() => setActiveFile(file.path)}
+                >
+                  {fileLabel(file)}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+        <div className="ws-body">
+          <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
+            <div className="inline-flex rounded-xl bg-[var(--bg-subtle)] p-1">
+              <button
+                type="button"
+                onClick={() => setMode('preview')}
+                className={`ws-tab${mode === 'preview' ? ' active' : ''}`}
+                data-testid="design-studio-preview-toggle"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('code')}
+                className={`ws-tab${mode === 'code' ? ' active' : ''}`}
+                data-testid="design-studio-code-toggle"
+              >
+                <Code2 className="h-3.5 w-3.5" />
+                Code
+              </button>
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[12px] text-[var(--text-muted)]">
+              <Monitor className="h-3.5 w-3.5" />
+              {usesDeckCanvas ? `${DECK_STUDIO_WIDTH}×${DECK_STUDIO_HEIGHT}` : 'Desktop'}
+            </div>
+            <div className="ml-auto flex items-center gap-2 text-[var(--text-soft)]">
+              <Maximize2 className="h-4 w-4" />
+              <span className="text-[12px]">100%</span>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           {mode === 'preview' ? (
             studioSurface === 'image' && activeFile ? (
               <img
@@ -560,7 +586,7 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
           )}
         </div>
 
-        <div className="flex items-center justify-center gap-3 border-t border-[var(--border-soft)] bg-[var(--bg-elevated)] py-3 text-[12px] text-[var(--text-muted)]">
+        <div className="flex items-center justify-center gap-3 border-t border-[var(--border)] bg-[var(--bg-panel)] py-3 text-[12px] text-[var(--text-muted)]">
           <button
             type="button"
             className="rounded p-1 hover:bg-[var(--bg-subtle)] disabled:opacity-30"
@@ -587,7 +613,8 @@ export default function DesignStudioView({ projectId }: DesignStudioViewProps) {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-      </section>
+        </div>
+      </div>
     </div>
   );
 }

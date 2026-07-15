@@ -7,7 +7,11 @@ import {
   wireFromSdkMessage,
   type RuntimeStreamWireEvent,
 } from './runtime-hub-stream';
+import { wireOpenUIAssistantMessage } from './openui-wire';
+import { getRunContext } from './runtime-run-context';
 import { localGetRunOptions } from './runtime-sdk-local';
+import { markRuntimeAuthUnavailable } from './runtime-sdk-auth-gate';
+import { invalidateSdkProbeCache } from './runtime-sdk-probe';
 import { consumeRunStream, resolveRunTerminalStatus } from './runtime-sdk-stream';
 import {
   releaseAgentSlot,
@@ -23,7 +27,17 @@ function wireFromSdkMessageSingleSession(
   runId: string,
   agentId: string,
 ): RuntimeStreamWireEvent | null {
-  const hubWire = wireFromSdkMessage(message, runId, agentId, '');
+  const runContext = getRunContext(runId);
+  const hubWire =
+    runContext?.wireMode === 'rich' && message.type === 'assistant'
+      ? wireOpenUIAssistantMessage(
+          message,
+          runId,
+          agentId,
+          '',
+          runContext.surfaceId,
+        )
+      : wireFromSdkMessage(message, runId, agentId, '');
   if (!hubWire) {
     return null;
   }
@@ -70,14 +84,14 @@ export function createRuntimeEventStream(
       let retained = false;
 
       try {
-        localGetRunOptions(workspaceCwd());
+        await localGetRunOptions(workspaceCwd());
 
         let run = retainRuntimeRun(runId);
         retained = Boolean(run);
 
         if (!run) {
           const { Agent } = await import('@cursor/sdk');
-          run = await Agent.getRun(runId, localGetRunOptions(workspaceCwd()));
+          run = await Agent.getRun(runId, await localGetRunOptions(workspaceCwd()));
         }
 
         const outcome = await consumeRunStream(run, (message) => {
@@ -93,6 +107,8 @@ export function createRuntimeEventStream(
 
         if (closed || outcome === 'cancelled' || outcome === 'auth_failed') {
           if (outcome === 'auth_failed' && !closed) {
+            markRuntimeAuthUnavailable('stream_auth_failed');
+            invalidateSdkProbeCache(workspaceCwd());
             controller.enqueue(
               encodeRuntimeSseData({
                 type: 'error',
@@ -108,21 +124,28 @@ export function createRuntimeEventStream(
           return;
         }
 
-        const { status, cancelled, authFailed } = await resolveRunTerminalStatus(run);
-        if (closed || authFailed) {
-          if (authFailed && !closed) {
-            controller.enqueue(
-              encodeRuntimeSseData({
-                type: 'error',
-                run_id: runId,
-                agent_id: agentId,
-                timestamp: new Date().toISOString(),
-                payload: {
-                  message: formatRuntimeConnectError(new Error('[unauthenticated] Error')),
-                },
-              }),
-            );
-          }
+        const terminal = await resolveRunTerminalStatus(run, { workspaceCwd: workspaceCwd() });
+        if (closed) {
+          return;
+        }
+
+        if (terminal.authFailed) {
+          markRuntimeAuthUnavailable('stream_run_auth_failed');
+          invalidateSdkProbeCache(workspaceCwd());
+        }
+
+        if (terminal.failed) {
+          controller.enqueue(
+            encodeRuntimeSseData({
+              type: 'error',
+              run_id: runId,
+              agent_id: agentId,
+              timestamp: new Date().toISOString(),
+              payload: {
+                message: terminal.errorMessage ?? 'Runtime run failed',
+              },
+            }),
+          );
           return;
         }
 
@@ -132,7 +155,7 @@ export function createRuntimeEventStream(
             run_id: runId,
             agent_id: agentId,
             timestamp: new Date().toISOString(),
-            payload: { status: cancelled ? 'cancelled' : status },
+            payload: { status: terminal.cancelled ? 'cancelled' : terminal.status },
           }),
         );
       } catch (error) {

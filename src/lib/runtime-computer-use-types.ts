@@ -110,6 +110,9 @@ export function buildComputerUsePromptInjection(input: {
         .filter(Boolean)
         .join(' ');
       lines.push(`[computer_use_sandbox: ready] ${attrs}`);
+      lines.push(
+        'sandbox_tools=sandbox_open_url,sandbox_screenshot,sandbox_shell (injected custom tools — use ONLY these)',
+      );
       if (input.sandboxOpenUrlRecipe) {
         lines.push(`open_url_recipe=${input.sandboxOpenUrlRecipe}`);
       }
@@ -119,11 +122,12 @@ export function buildComputerUsePromptInjection(input: {
 
     lines.push(
       'Sandbox mode is ACTIVE for this chat turn. You are NOT on the operator Mac.',
-      'Execute ALL desktop/shell work INSIDE the CUA Sandbox Linux VM only — via cua_sandbox_action.py, /run:cua --sandbox, or CUA Sandbox SDK one-shot Python.',
-      'FORBIDDEN in sandbox mode: custom-user-tools, cua-driver, launch_app, get_desktop_state, host Terminal, host Shell, opening apps on macOS.',
-      'do not write manifest files or read runtime-sessions state from within a chat turn.',
-      'do not run docker ps or inspect host Docker state — sandbox isolation does not use the host daemon.',
-      'The operator preview panel shows the sandbox noVNC stream — never confuse it with the host desktop.',
+      'MANDATORY: execute ALL web and shell work via sandbox_open_url, sandbox_screenshot, sandbox_shell — one project sandbox shared by every chat in this project.',
+      'To browse a site: (1) sandbox_open_url { url }, (2) sandbox_shell { command: "curl -sL ..." } or sandbox_screenshot for visual verification.',
+      'FORBIDDEN in sandbox mode: WebSearch, WebFetch, host Shell, host curl/wget, cua-driver, custom-user-tools, launch_app, get_desktop_state, docker ps, script discovery, guessing sandbox names.',
+      'Do NOT substitute web search or host HTTP for sandbox browser actions — the operator preview panel must reflect real sandbox activity.',
+      'Do not write manifest files or probe runtime-sessions from within a chat turn.',
+      'The operator preview panel shows the project sandbox noVNC stream — never confuse it with the host desktop.',
     );
 
     return lines.join('\n');

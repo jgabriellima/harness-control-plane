@@ -2,10 +2,12 @@ import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
 import { loadCredentialManifest } from '../../../lib/credential-manifest';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const manifest = await loadCredentialManifest();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const manifest = await loadCredentialManifest(workspaceRoot);
     if (!manifest) {
       return jsonOk({
         generated_at: null,

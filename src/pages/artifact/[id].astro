@@ -1,6 +1,5 @@
 ---
-import ArtifactView from '../../components/react/ArtifactView';
-import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
 
 export const prerender = false;
 
@@ -9,6 +8,4 @@ const artifactId = id ?? '';
 const title = artifactId ? `Artifact — ${artifactId}` : 'Artifact';
 ---
 
-<OrchestrationLayout title={title}>
-  <ArtifactView client:load artifactId={artifactId} />
-</OrchestrationLayout>
+<AppLayout title={title} />

@@ -9,6 +9,7 @@
     "core:default",
     "allow-secrets",
     "allow-sidecar",
+    "shell:allow-open",
     {
       "identifier": "shell:allow-execute",
       "allow": [

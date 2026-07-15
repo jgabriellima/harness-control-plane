@@ -2,8 +2,8 @@ import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../../lib/api-json';
 import {
-  readActiveSandboxManifest,
-  readSandboxManifest,
+  normalizeProjectId,
+  resolveSandboxManifestForProject,
   runSandboxActionScript,
 } from '../../../../../lib/runtime-computer-use-sandbox-bridge';
 import { isComputerUseContractEnabled } from '../../../../../lib/runtime-computer-use-preferences';
@@ -42,8 +42,8 @@ export const POST: APIRoute = async ({ request }) => {
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   const command = typeof body.command === 'string' ? body.command : '';
   const timeout = typeof body.timeout === 'number' ? body.timeout : undefined;
-  const conversationId =
-    typeof body.conversation_id === 'string' ? body.conversation_id.trim() : '';
+  const projectIdParam =
+    typeof body.project_id === 'string' ? normalizeProjectId(body.project_id) : 'default';
 
   if (action === 'open-url' && !url) {
     return jsonError('url is required for open_url', 400);
@@ -53,21 +53,17 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    const projectId =
-      typeof body.project_id === 'string' ? body.project_id.trim() : undefined;
-    const { workspaceRoot } = await resolveRequestWorkspace(request, projectId);
+    const { workspaceRoot } = await resolveRequestWorkspace(request, projectIdParam);
     const contractEnabled = await isComputerUseContractEnabled(workspaceRoot);
     if (!contractEnabled) {
       return jsonError('Computer use contract is not enabled for this workspace', 403);
     }
 
-    const manifest = conversationId
-      ? await readSandboxManifest(conversationId, workspaceRoot)
-      : await readActiveSandboxManifest(workspaceRoot);
+    const manifest = await resolveSandboxManifestForProject(projectIdParam, workspaceRoot);
 
     if (!manifest || manifest.phase !== 'ready' || !manifest.sandboxName) {
       return jsonError(
-        'Sandbox is not ready — wait for computer-use-sandbox.json phase=ready',
+        'Sandbox is not ready — wait for computer-use-sandbox.json phase=ready in the active project workspace',
         409,
       );
     }

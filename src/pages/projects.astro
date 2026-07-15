@@ -1,13 +1,10 @@
 ---
-import ProjectsListView from '../components/react/ProjectsListView';
-import OrchestrationLayout from '../layouts/OrchestrationLayout.astro';
+import AppLayout from '../layouts/AppLayout.astro';
 
 export const prerender = false;
 ---
 
-<OrchestrationLayout
+<AppLayout
   title="Projects"
   description="Jambu project scopes."
->
-  <ProjectsListView client:load />
-</OrchestrationLayout>
+/>

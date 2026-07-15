@@ -1,0 +1,29 @@
+:root {
+  --font-display: "Poppins", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --fs-display: 56px;
+  --lh-display: 1.05;
+  --fs-h1: 40px;
+  --lh-h1: 1.1;
+  --fs-h2: 30px;
+  --lh-h2: 1.15;
+  --fs-h3: 22px;
+  --lh-h3: 1.25;
+  --fs-lead: 19px;
+  --lh-lead: 1.5;
+  --fs-body: 16px;
+  --lh-body: 1.6;
+  --fs-small: 14px;
+  --lh-small: 1.5;
+  --fs-eyebrow: 13px;
+  --lh-eyebrow: 1.3;
+
+  --ls-eyebrow: 0.14em;
+  --ls-tight: -0.01em;
+}

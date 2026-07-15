@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import {
@@ -14,7 +14,9 @@ import {
 import { designPathForView } from '@/lib/design-navigation';
 import { navigateDesign } from '@/lib/design-shell-navigation';
 
-function PluginCard({
+type PluginsTab = 'installed' | 'available' | 'sources' | 'team';
+
+function PluginRow({
   plugin,
   onUse,
   using,
@@ -24,33 +26,33 @@ function PluginCard({
   using: boolean;
 }) {
   return (
-    <article
-      className="flex flex-col rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] p-5 shadow-[var(--shadow-sm)]"
-      data-testid="design-plugin-card"
-    >
-      <h3 className="text-[16px] font-semibold text-[var(--text)]">{plugin.title}</h3>
-      <p className="mt-2 flex-1 text-[14px] leading-6 text-[var(--text-muted)]">
-        {pluginDescription(plugin)}
-      </p>
-      <div className="mt-4 flex gap-2">
+    <article className="plugins-view__card" data-testid="design-plugin-card">
+      <div className="plugins-view__card-main">
+        <div className="plugins-view__card-head">
+          <h3 className="plugins-view__card-title">{plugin.title}</h3>
+        </div>
+        <p className="plugins-view__card-desc">{pluginDescription(plugin)}</p>
+        <div className="plugins-view__card-tags">
+          <span className="plugins-view__tag">community/registry</span>
+        </div>
+      </div>
+      <div className="plugins-view__card-actions">
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-lg bg-[var(--text-strong)] px-3 py-2 text-[12px] font-medium text-[var(--bg-elevated)] disabled:opacity-40"
+          className="plugins-view__ghost-btn"
+          onClick={() => navigateDesign(designPathForView('plugin-detail', { pluginId: plugin.id }))}
+        >
+          Details
+        </button>
+        <button
+          type="button"
+          className="plugins-view__primary-btn"
           onClick={() => onUse(plugin.id)}
           disabled={using}
           data-testid="design-plugin-use"
         >
           {using ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          Use plugin
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-[var(--border-soft)] px-3 py-2 text-[12px] font-medium text-[var(--text-muted)]"
-          onClick={() =>
-            navigateDesign(designPathForView('plugin-detail', { pluginId: plugin.id }))
-          }
-        >
-          Details
+          Install
         </button>
       </div>
     </article>
@@ -64,6 +66,7 @@ export default function DesignPluginsView() {
   const [installSource, setInstallSource] = useState('');
   const [installing, setInstalling] = useState(false);
   const [usingPluginId, setUsingPluginId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<PluginsTab>('available');
 
   const refresh = useCallback(async () => {
     const rows = await listPlugins();
@@ -97,11 +100,35 @@ export default function DesignPluginsView() {
     };
   }, []);
 
+  const stats = useMemo(() => {
+    const installed = plugins.filter(
+      (plugin) => plugin.sourceKind === 'user' || plugin.sourceKind === 'installed',
+    ).length;
+    const available = plugins.length;
+    return { installed, available, sources: 2 };
+  }, [plugins]);
+
+  const visiblePlugins = useMemo(() => {
+    switch (activeTab) {
+      case 'installed':
+        return plugins.filter(
+          (plugin) => plugin.sourceKind === 'user' || plugin.sourceKind === 'installed',
+        );
+      case 'available':
+        return plugins;
+      case 'sources':
+      case 'team':
+        return [];
+      default:
+        return plugins;
+    }
+  }, [activeTab, plugins]);
+
+  const showInstallRow = activeTab === 'available';
+
   async function handleInstall() {
     const source = installSource.trim();
-    if (!source || installing) {
-      return;
-    }
+    if (!source || installing) return;
 
     setInstalling(true);
     setError(null);
@@ -141,63 +168,137 @@ export default function DesignPluginsView() {
   }
 
   return (
-    <div className="h-full overflow-auto bg-[var(--bg)] px-8 py-10" data-testid="design-plugins-view">
-      <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--text-soft)]">Plugins</p>
-      <h1 className="mt-2 font-serif text-[36px] text-[var(--text)]">Plugins</h1>
-      <p className="mt-2 max-w-2xl text-[15px] text-[var(--text-muted)]">
-        Browse installed workflows, install from a registry source, and apply plugins to the Home composer.
-      </p>
+    <div className="plugins-view" data-testid="design-plugins-view">
+      <header className="plugins-view__hero">
+        <div>
+          <p className="plugins-view__kicker">Plugins</p>
+          <h1 className="entry-page-title">Plugins</h1>
+          <p className="plugins-view__lede">
+            Browse installed workflows, install from a registry source, and apply plugins to the Home composer.
+          </p>
+        </div>
+        <div className="plugins-view__hero-actions">
+          <button type="button" className="plugins-view__primary-btn">
+            Create plugin
+          </button>
+          <button type="button" className="plugins-view__ghost-btn">
+            Import plugin
+          </button>
+        </div>
+      </header>
 
-      <div className="mt-8 flex max-w-3xl flex-col gap-3 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] p-5 sm:flex-row sm:items-end">
-        <label className="flex-1">
-          <span className="text-[13px] font-medium text-[var(--text)]">Install from source</span>
-          <input
-            type="text"
-            value={installSource}
-            onChange={(event) => setInstallSource(event.target.value)}
-            placeholder="github:org/repo or marketplace URL"
-            className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg)] px-3 py-2 text-[14px] text-[var(--text)] outline-none focus:border-[var(--border)]"
-            data-testid="design-plugin-install-source"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void handleInstall()}
-          disabled={!installSource.trim() || installing}
-          className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-[12px] font-medium text-[var(--bg-elevated)] disabled:opacity-40"
-          data-testid="design-plugin-install-submit"
-        >
-          {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          Install
-        </button>
+      <div className="plugins-view__stats">
+        <div className="plugins-view__stat">
+          <span className="plugins-view__stat-value">{stats.installed}</span>
+          <span className="plugins-view__stat-label">Installed</span>
+        </div>
+        <div className="plugins-view__stat">
+          <span className="plugins-view__stat-value">{stats.available}</span>
+          <span className="plugins-view__stat-label">Available</span>
+        </div>
+        <div className="plugins-view__stat">
+          <span className="plugins-view__stat-value">{stats.sources}</span>
+          <span className="plugins-view__stat-label">Sources</span>
+        </div>
       </div>
 
-      {error ? (
-        <p className="mt-4 text-[13px] text-[var(--red)]" data-testid="design-plugins-error">
-          {error}
-        </p>
+      <div className="plugins-view__tabs" role="tablist">
+        {(
+          [
+            ['installed', 'Installed', 'Your plugins'],
+            ['available', 'Available', 'From sources'],
+            ['sources', 'Sources', 'Catalogs'],
+            ['team', 'Team', 'Enterprise'],
+          ] as const
+        ).map(([id, label, meta]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === id}
+            className={`plugins-view__tab${activeTab === id ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(id)}
+          >
+            <span className="plugins-view__tab-label">{label}</span>
+            <span className="plugins-view__tab-meta">{meta}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="plugins-view__install-row">
+        {showInstallRow ? (
+          <>
+            <input
+              type="text"
+              value={installSource}
+              onChange={(event) => setInstallSource(event.target.value)}
+              placeholder="github:org/repo or marketplace URL"
+              className="plugins-view__search-input"
+              data-testid="design-plugin-install-source"
+            />
+            <button
+              type="button"
+              onClick={() => void handleInstall()}
+              disabled={!installSource.trim() || installing}
+              className="plugins-view__primary-btn"
+              data-testid="design-plugin-install-submit"
+            >
+              {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Install
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      {activeTab === 'sources' && !loading ? (
+        <div className="plugins-view__list">
+          <article className="plugins-view__card">
+            <div className="plugins-view__card-main">
+              <h3 className="plugins-view__card-title">Open Design official registry</h3>
+              <p className="plugins-view__card-desc">Bundled community and official plugin catalog from the local daemon vendor tree.</p>
+            </div>
+          </article>
+          <article className="plugins-view__card">
+            <div className="plugins-view__card-main">
+              <h3 className="plugins-view__card-title">GitHub marketplace</h3>
+              <p className="plugins-view__card-desc">Install additional plugins from `github:org/repo` sources on the Available tab.</p>
+            </div>
+          </article>
+        </div>
       ) : null}
 
-      {loading ? (
-        <div className="mt-8 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] px-6 py-12 text-[14px] text-[var(--text-muted)]">
-          Loading plugins...
+      {activeTab === 'team' && !loading ? (
+        <div className="plugins-view__empty">
+          Team plugin governance requires an enterprise workspace. Connect integrations to enable shared catalogs.
         </div>
-      ) : plugins.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg-elevated)] px-6 py-12 text-[14px] text-[var(--text-muted)]">
-          No plugins installed yet. Install from a source above.
-        </div>
-      ) : (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {plugins.map((plugin) => (
-            <PluginCard
-              key={plugin.id}
-              plugin={plugin}
-              onUse={(id) => void handleUse(id)}
-              using={usingPluginId === plugin.id}
-            />
-          ))}
-        </div>
-      )}
+      ) : null}
+
+      {activeTab === 'installed' || activeTab === 'available' ? (
+        error ? (
+          <p className="plugins-view__error" data-testid="design-plugins-error">
+            {error}
+          </p>
+        ) : null
+      ) : null}
+
+      {activeTab === 'installed' || activeTab === 'available' ? (
+        loading ? (
+          <div className="plugins-view__empty">Loading plugins...</div>
+        ) : visiblePlugins.length === 0 ? (
+          <div className="plugins-view__empty">No plugins in this tab yet.</div>
+        ) : (
+          <div className="plugins-view__list">
+            {visiblePlugins.map((plugin) => (
+              <PluginRow
+                key={plugin.id}
+                plugin={plugin}
+                onUse={(id) => void handleUse(id)}
+                using={usingPluginId === plugin.id}
+              />
+            ))}
+          </div>
+        )
+      ) : null}
     </div>
   );
 }

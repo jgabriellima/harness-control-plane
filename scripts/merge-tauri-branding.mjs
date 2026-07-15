@@ -96,6 +96,34 @@ function resolveBranding(uiConfig, existingTauri) {
   };
 }
 
+function escapeXml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function writeInfoPlist(harnessRoot, productName) {
+  const infoPlistPath = join(harnessRoot, 'src-tauri', 'Info.plist');
+  const microphoneCopy = `${productName} uses the microphone for voice input in the runtime chat composer.`;
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>${escapeXml(productName)}</string>
+  <key>CFBundleDisplayName</key>
+  <string>${escapeXml(productName)}</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>${escapeXml(microphoneCopy)}</string>
+</dict>
+</plist>
+`;
+  writeFileSync(infoPlistPath, plist);
+}
+
 function mergeTauriConfig(tauri, branding) {
   const merged = structuredClone(tauri);
   merged.productName = branding.productName;
@@ -106,22 +134,32 @@ function mergeTauriConfig(tauri, branding) {
   }
 
   merged.app.windows[0].title = branding.windowTitle;
-  // Distribution builds must not expose WebView devtools or browser chrome affordances.
-  merged.app.windows[0].devtools = false;
-  if ('zoomHotkeysEnabled' in merged.app.windows[0]) {
-    merged.app.windows[0].zoomHotkeysEnabled = false;
+  if (process.env.TAURI_ENV !== 'dev') {
+    // Distribution builds must not expose WebView devtools or browser chrome affordances.
+    merged.app.windows[0].devtools = false;
+    if ('zoomHotkeysEnabled' in merged.app.windows[0]) {
+      merged.app.windows[0].zoomHotkeysEnabled = false;
+    }
   }
+
+  merged.bundle = merged.bundle ?? {};
+  merged.bundle.macOS = merged.bundle.macOS ?? {};
+  merged.bundle.macOS.bundleName = branding.productName;
+  merged.bundle.macOS.infoPlist = 'Info.plist';
+
   return merged;
 }
 
 function main() {
   const { projectRoot: explicitRoot, tauriPath, stdout } = parseArgs(process.argv.slice(2));
   const projectRoot = resolveProjectRoot(explicitRoot);
+  const harnessRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
   const uiConfig = readUiConfig(projectRoot);
   const tauri = JSON.parse(readFileSync(tauriPath, 'utf8'));
   const branding = resolveBranding(uiConfig, tauri);
   const merged = mergeTauriConfig(tauri, branding);
+  writeInfoPlist(harnessRoot, branding.productName);
 
   if (stdout) {
     process.stdout.write(`${JSON.stringify(merged, null, 2)}\n`);

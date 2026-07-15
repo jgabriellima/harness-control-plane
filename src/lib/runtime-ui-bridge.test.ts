@@ -16,8 +16,9 @@ describe('runtime-ui-bridge', () => {
 
   it('exposes browserPanel in UI manifest', () => {
     const manifest = buildUiControlManifest('http://127.0.0.1:4321') as {
-      surfaces?: { browserPanel?: { open?: unknown } };
+      surfaces?: { browserPanel?: { open?: unknown }; toolActivityPanel?: { open?: unknown } };
     };
     assert.ok(manifest.surfaces?.browserPanel?.open);
+    assert.ok(manifest.surfaces?.toolActivityPanel?.open);
   });
 });

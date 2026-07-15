@@ -25,6 +25,27 @@ export type MessageContentProps = {
   onLinkClick?: (url: string) => void;
 };
 
+function extractMarkdownText(children: React.ReactNode): string | null {
+  const nodes = React.Children.toArray(children);
+  const strings: string[] = [];
+
+  for (const node of nodes) {
+    if (typeof node === 'string') {
+      strings.push(node);
+      continue;
+    }
+
+    if (node === null || node === undefined || typeof node === 'boolean') {
+      continue;
+    }
+
+    return null;
+  }
+
+  const text = strings.join('');
+  return text.length > 0 ? text : null;
+}
+
 export function MessageContent({
   children,
   markdown = false,
@@ -33,12 +54,13 @@ export function MessageContent({
   onLinkClick,
 }: MessageContentProps) {
   const classNames = cn('rounded-2xl px-4 py-3 text-sm', className);
+  const markdownText = markdown ? extractMarkdownText(children) : null;
 
-  if (markdown && typeof children === 'string') {
+  if (markdown && markdownText !== null) {
     return (
       <div className={classNames}>
         <Markdown onFileClick={onFileClick} onLinkClick={onLinkClick}>
-          {children}
+          {markdownText}
         </Markdown>
       </div>
     );

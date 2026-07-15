@@ -1,6 +1,5 @@
 ---
-import ProjectDetailView from '../../components/react/ProjectDetailView';
-import OrchestrationLayout from '../../layouts/OrchestrationLayout.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
 
 export const prerender = false;
 
@@ -11,9 +10,7 @@ if (!id) {
 }
 ---
 
-<OrchestrationLayout
+<AppLayout
   title={`Project ${id}`}
   description="Jambu project detail."
->
-  <ProjectDetailView client:load projectId={id} />
-</OrchestrationLayout>
+/>

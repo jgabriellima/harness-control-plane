@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { fetchActiveRunsIndex } from '@/lib/active-run-sync';
+import { fetchRunSessionSnapshot } from '@/lib/active-run-sync';
 import { isTauriDesktopShell } from '@/lib/runtime-surface';
 
 interface DesktopCloseGuardProps {
@@ -14,7 +14,10 @@ export default function DesktopCloseGuard({ activeRunCount }: DesktopCloseGuardP
   const [open, setOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const closingRef = useRef(false);
+  const activeRunCountRef = useRef(activeRunCount);
   const dialogRef = useRef<HTMLDialogElement>(null);
+
+  activeRunCountRef.current = activeRunCount;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -48,7 +51,8 @@ export default function DesktopCloseGuard({ activeRunCount }: DesktopCloseGuardP
 
     if (isTauriDesktopShell()) {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().close();
+      // destroy() bypasses onCloseRequested — required after a prior preventDefault().
+      await getCurrentWindow().destroy();
       return;
     }
 
@@ -58,7 +62,7 @@ export default function DesktopCloseGuard({ activeRunCount }: DesktopCloseGuardP
   useEffect(() => {
     if (!isTauriDesktopShell()) {
       const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
-        if (closingRef.current || activeRunCount <= 0) {
+        if (closingRef.current || activeRunCountRef.current <= 0) {
           return;
         }
         event.preventDefault();
@@ -71,18 +75,22 @@ export default function DesktopCloseGuard({ activeRunCount }: DesktopCloseGuardP
       };
     }
 
+    let disposed = false;
     let unlisten: (() => void) | undefined;
 
     void (async () => {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const appWindow = getCurrentWindow();
-      unlisten = await appWindow.onCloseRequested(async (event) => {
+      const stopListening = await appWindow.onCloseRequested(async (event) => {
         if (closingRef.current) {
           return;
         }
 
-        const indexed = await fetchActiveRunsIndex();
-        const count = Math.max(indexed.length, activeRunCount);
+        const snapshot = await fetchRunSessionSnapshot();
+        const count = Math.max(
+          snapshot.executing.length + snapshot.continuable.length,
+          activeRunCountRef.current,
+        );
         if (count <= 0) {
           return;
         }
@@ -91,16 +99,20 @@ export default function DesktopCloseGuard({ activeRunCount }: DesktopCloseGuardP
         setPendingCount(count);
         setOpen(true);
       });
+
+      if (disposed) {
+        stopListening();
+        return;
+      }
+
+      unlisten = stopListening;
     })();
 
     return () => {
+      disposed = true;
       unlisten?.();
     };
-  }, [activeRunCount]);
-
-  if (!open) {
-    return null;
-  }
+  }, []);
 
   return (
     <dialog

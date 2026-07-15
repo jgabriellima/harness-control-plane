@@ -7,6 +7,7 @@ import {
   type WidgetManifestEntry,
   type WidgetId,
 } from '../../../lib/ui-panel-manifest';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -37,9 +38,10 @@ function parseWidgets(raw: unknown): WidgetManifestEntry[] | undefined {
   return widgets.length > 0 ? widgets : undefined;
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const manifest = await readRightPanelManifest();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const manifest = await readRightPanelManifest(workspaceRoot);
     return jsonOk(manifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load panel manifest';
@@ -47,7 +49,7 @@ export const GET: APIRoute = async () => {
   }
 };
 
-export const PATCH: APIRoute = async ({ request }) => {
+export const PATCH: APIRoute = async ({ request, url }) => {
   let body: unknown;
 
   try {
@@ -61,10 +63,11 @@ export const PATCH: APIRoute = async ({ request }) => {
   }
 
   try {
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
     const manifest = await patchRightPanelManifest({
       collapsed: typeof body.collapsed === 'boolean' ? body.collapsed : undefined,
       widgets: parseWidgets(body.widgets),
-    });
+    }, workspaceRoot);
     return jsonOk(manifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update panel manifest';

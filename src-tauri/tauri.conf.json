@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ACME Workflow",
+  "productName": "Tailwind",
   "version": "0.1.0",
-  "identifier": "com.acme.workflow",
+  "identifier": "com.tailwindsw.workflow",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "node scripts/before-tauri-build.mjs",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ACME Workflow",
+        "title": "Tailwind",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
@@ -22,7 +22,8 @@
         "resizable": true,
         "fullscreen": false,
         "devtools": false,
-        "visible": true
+        "visible": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
@@ -48,6 +49,10 @@
       "../node_modules",
       "resources/shell",
       "resources/harness-baseline"
-    ]
+    ],
+    "macOS": {
+      "bundleName": "Tailwind",
+      "infoPlist": "Info.plist"
+    }
   }
 }

@@ -1,0 +1,47 @@
+:root {
+  --tw-blue: #6cc9ef;
+  --tw-blue-600: #3aa9d8;
+  --tw-blue-700: #2589b6;
+  --tw-blue-50: #eaf7fd;
+
+  --tw-green: #94c756;
+  --tw-green-600: #74a83a;
+  --tw-green-700: #5c8a2c;
+  --tw-green-50: #f0f7e6;
+
+  --tw-ink: #222121;
+  --tw-ink-soft: #3a3939;
+
+  --tw-white: #ffffff;
+  --tw-paper: #f7f9fb;
+  --tw-mist: #eef2f5;
+  --tw-line: #dde4ea;
+  --tw-line-strong: #c3cdd6;
+  --tw-slate-500: #6b7783;
+  --tw-slate-700: #414c56;
+
+  --tw-success: #94c756;
+  --tw-info: #6cc9ef;
+  --tw-warning: #f2b134;
+  --tw-danger: #e2574c;
+
+  --color-bg: var(--tw-paper);
+  --color-surface: var(--tw-white);
+  --color-surface-muted: var(--tw-mist);
+  --color-border: var(--tw-line);
+  --color-border-strong: var(--tw-line-strong);
+
+  --text-primary: var(--tw-ink);
+  --text-secondary: var(--tw-slate-700);
+  --text-muted: var(--tw-slate-500);
+  --text-on-brand: #ffffff;
+
+  --color-primary: var(--tw-blue);
+  --color-primary-hover: var(--tw-blue-600);
+  --color-primary-press: var(--tw-blue-700);
+  --color-accent: var(--tw-green);
+  --color-accent-hover: var(--tw-green-600);
+
+  --color-link: var(--tw-blue-700);
+  --color-link-hover: var(--tw-blue-600);
+}

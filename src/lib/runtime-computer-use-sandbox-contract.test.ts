@@ -3,22 +3,45 @@ import { describe, it } from 'node:test';
 
 import {
   buildSandboxOpenUrlRecipe,
+  normalizeProjectId,
+  sandboxNameForProject,
   sandboxNameForConversation,
 } from './runtime-computer-use-sandbox-bridge.ts';
 import { buildComputerUsePromptInjection } from './runtime-computer-use-types.ts';
+import { isSandboxToolName } from './runtime-computer-use-sandbox-tools.ts';
 
-describe('sandboxNameForConversation', () => {
-  it('proposes deterministic jambu-cua-{slug} from conversation id', () => {
+describe('sandboxNameForProject', () => {
+  it('proposes deterministic jambu-cua-proj-{slug} from project id', () => {
+    const id = 'default';
+    const proposed = sandboxNameForProject(id);
+    assert.equal(proposed, 'jambu-cua-proj-default');
+    assert.ok(proposed.startsWith('jambu-cua-proj-'));
+  });
+
+  it('shares one name per project regardless of conversation', () => {
+    const a = sandboxNameForProject('acme-corp');
+    const b = sandboxNameForProject('acme-corp');
+    assert.equal(a, b);
+    assert.notEqual(a, sandboxNameForProject('other'));
+  });
+});
+
+describe('sandboxNameForConversation (legacy alias)', () => {
+  it('delegates to project naming', () => {
     const id = 'conv-20260708T161221-6c8ol3';
-    const proposed = sandboxNameForConversation(id);
-    const slug = id.replace(/[^a-zA-Z0-9-]/g, '').slice(-24).toLowerCase();
-    assert.equal(proposed, `jambu-cua-${slug}`);
-    assert.ok(proposed.startsWith('jambu-cua-'));
+    assert.equal(sandboxNameForConversation(id), sandboxNameForProject(id));
+  });
+});
+
+describe('normalizeProjectId', () => {
+  it('defaults empty to default', () => {
+    assert.equal(normalizeProjectId(''), 'default');
+    assert.equal(normalizeProjectId(undefined), 'default');
   });
 });
 
 describe('buildComputerUsePromptInjection sandbox', () => {
-  it('injects open_url_recipe and forbids manifest write when ready', () => {
+  it('injects sandbox tools and forbids web search when ready', () => {
     const text = buildComputerUsePromptInjection({
       capabilityAvailable: true,
       sessionEnabled: true,
@@ -26,20 +49,19 @@ describe('buildComputerUsePromptInjection sandbox', () => {
       allowForegroundCursor: false,
       consentedAt: null,
       sandboxReady: true,
-      sandboxName: 'jambu-cua-v-20260708t161221-6c8ol3',
+      sandboxName: 'jambu-cua-v-proj-default',
       sandboxApiPort: 62495,
       sandboxVncPort: 62496,
       sandboxOpenUrlRecipe:
-        'python3 /hcp/scripts/cua_sandbox_action.py open-url --sandbox jambu-cua-v-20260708t161221-6c8ol3 --url <url>',
+        'python3 /hcp/scripts/cua_sandbox_action.py open-url --sandbox jambu-cua-v-proj-default --url <url>',
     });
 
     assert.ok(text);
     assert.ok(text.includes('[computer_use_sandbox: ready]'));
-    assert.ok(text.includes('sandbox_name=jambu-cua-v-20260708t161221-6c8ol3'));
-    assert.ok(text.includes('open_url_recipe='));
-    assert.ok(text.includes('cua_sandbox_action.py open-url'));
+    assert.ok(text.includes('sandbox_name=jambu-cua-v-proj-default'));
+    assert.ok(text.includes('sandbox_tools=sandbox_open_url,sandbox_screenshot,sandbox_shell'));
+    assert.ok(text.includes('FORBIDDEN in sandbox mode: WebSearch'));
     assert.equal(text.includes('Register sandbox state'), false);
-    assert.ok(text.includes('do not write'));
     assert.ok(text.includes('docker ps'));
   });
 
@@ -65,5 +87,12 @@ describe('buildSandboxOpenUrlRecipe', () => {
       recipe,
       'python3 /opt/hcp/scripts/cua_sandbox_action.py open-url --sandbox jambu-cua-v-abc --url <url>',
     );
+  });
+});
+
+describe('isSandboxToolName', () => {
+  it('recognizes sandbox custom tools', () => {
+    assert.equal(isSandboxToolName('sandbox_open_url'), true);
+    assert.equal(isSandboxToolName('WebSearch'), false);
   });
 });

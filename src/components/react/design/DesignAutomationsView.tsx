@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Loader2, Play, Plus } from 'lucide-react';
+import { Loader2, Play, Plus, Workflow } from 'lucide-react';
 
 import {
   createDesignRoutine,
@@ -11,53 +11,38 @@ import {
   type DesignRoutineRecord,
 } from '@/lib/design-api';
 
-function routineStatusLabel(routine: DesignRoutineRecord): string {
-  if (!routine.enabled) {
-    return 'Disabled';
-  }
+const TEMPLATE_CARDS = [
+  {
+    id: 'extract-ds',
+    title: 'Extract design system',
+    description: 'Pull tokens and components from a reference site into a new design system.',
+  },
+  {
+    id: 'crystallize',
+    title: 'Crystallize successful run into skill',
+    description: 'Turn a completed project workflow into a reusable skill for the Home composer.',
+  },
+  {
+    id: 'orbit-digest',
+    title: 'Orbit digest',
+    description: 'Summarize workspace activity on a recurring schedule.',
+  },
+] as const;
+
+function routineStatusClass(routine: DesignRoutineRecord): string {
+  if (!routine.enabled) return 'is-paused';
   const lastStatus = routine.lastRun?.status;
-  if (lastStatus) {
-    return lastStatus.charAt(0).toUpperCase() + lastStatus.slice(1);
-  }
-  return 'Ready';
+  if (lastStatus === 'running' || lastStatus === 'queued') return 'is-running';
+  if (lastStatus === 'failed') return 'is-failed';
+  if (lastStatus === 'succeeded') return 'is-succeeded';
+  return '';
 }
 
-function RoutineCard({
-  routine,
-  onRun,
-  running,
-}: {
-  routine: DesignRoutineRecord;
-  onRun: (id: string) => void;
-  running: boolean;
-}) {
-  return (
-    <article
-      className="flex flex-col rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] p-5 shadow-[var(--shadow-sm)]"
-      data-testid="design-routine-card"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[16px] font-semibold text-[var(--text)]">{routine.name}</h3>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">{formatRoutineSchedule(routine.schedule)}</p>
-        </div>
-        <span className="rounded-full bg-[var(--bg-subtle)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
-          {routineStatusLabel(routine)}
-        </span>
-      </div>
-      <p className="mt-3 flex-1 text-[14px] leading-6 text-[var(--text-muted)]">{routine.prompt}</p>
-      <button
-        type="button"
-        onClick={() => onRun(routine.id)}
-        disabled={running || !routine.enabled}
-        className="mt-4 inline-flex items-center gap-2 self-start rounded-lg bg-[var(--accent)] px-3 py-2 text-[12px] font-medium text-[var(--bg-elevated)] disabled:opacity-40"
-        data-testid="design-routine-run"
-      >
-        {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-        Run now
-      </button>
-    </article>
-  );
+function routineStatusLabel(routine: DesignRoutineRecord): string {
+  if (!routine.enabled) return 'Paused';
+  const lastStatus = routine.lastRun?.status;
+  if (lastStatus) return lastStatus.charAt(0).toUpperCase() + lastStatus.slice(1);
+  return 'Ready';
 }
 
 export default function DesignAutomationsView() {
@@ -70,6 +55,7 @@ export default function DesignAutomationsView() {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [scheduleTime, setScheduleTime] = useState('09:00');
+  const [templateFilter, setTemplateFilter] = useState('all');
 
   async function refresh() {
     try {
@@ -103,13 +89,10 @@ export default function DesignAutomationsView() {
   async function handleCreate() {
     const trimmedName = name.trim();
     const trimmedPrompt = prompt.trim();
-    if (!trimmedName || !trimmedPrompt || creating) {
-      return;
-    }
+    if (!trimmedName || !trimmedPrompt || creating) return;
 
     setCreating(true);
     setError(null);
-
     try {
       await createDesignRoutine({
         name: trimmedName,
@@ -127,58 +110,75 @@ export default function DesignAutomationsView() {
     }
   }
 
+  const activeCount = routines.filter((routine) => routine.enabled).length;
+  const pausedCount = routines.filter((routine) => !routine.enabled).length;
+
   return (
-    <div className="h-full overflow-auto bg-[var(--bg)] px-8 py-10" data-testid="design-automations-view">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--text-soft)]">
-            Scheduled agent sessions
-          </p>
-          <h1 className="mt-2 font-serif text-[36px] text-[var(--text)]">Automations</h1>
-          <p className="mt-2 max-w-2xl text-[15px] text-[var(--text-muted)]">
+    <div className="automations-view" data-testid="design-automations-view">
+      <header className="automations-hero">
+        <div className="automations-hero__copy">
+          <span className="automations-hero__eyebrow">Scheduled agent sessions</span>
+          <h1 className="automations-hero__title">Automations</h1>
+          <p className="automations-hero__lede">
             Plan recurring conversations for project work, Orbit digests, and live artifacts.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate((current) => !current)}
-          className="inline-flex items-center gap-2 rounded-full bg-[var(--text-strong)] px-4 py-2 text-[12px] font-medium text-[var(--bg-elevated)]"
-          data-testid="design-automation-create-toggle"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New automation
-        </button>
-      </div>
+        <div className="automations-hero__actions">
+          <div className="automations-metrics">
+            <div className="automations-metric">
+              <span className="automations-metric__value">{activeCount}</span>
+              <span className="automations-metric__label">Active</span>
+            </div>
+            <div className="automations-metric">
+              <span className="automations-metric__value">{pausedCount}</span>
+              <span className="automations-metric__label">Paused</span>
+            </div>
+            <div className="automations-metric">
+              <span className="automations-metric__value">{TEMPLATE_CARDS.length}</span>
+              <span className="automations-metric__label">Templates</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreate((current) => !current)}
+            className="automations-view__new"
+            data-testid="design-automation-create-toggle"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New automation
+          </button>
+        </div>
+      </header>
 
       {showCreate ? (
-        <div className="mt-6 max-w-2xl space-y-3 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] p-5">
+        <div className="automations-create-panel">
           <input
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Automation name"
-            className="w-full rounded-xl border border-[var(--border-soft)] px-3 py-2 text-[14px]"
+            className="automations-create-input"
             data-testid="design-automation-create-name"
           />
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             placeholder="What should the agent do on each run?"
-            className="min-h-[96px] w-full rounded-xl border border-[var(--border-soft)] px-3 py-2 text-[14px]"
+            className="automations-create-textarea"
             data-testid="design-automation-create-prompt"
           />
           <input
             type="time"
             value={scheduleTime}
             onChange={(event) => setScheduleTime(event.target.value)}
-            className="rounded-xl border border-[var(--border-soft)] px-3 py-2 text-[14px]"
+            className="automations-create-input"
             data-testid="design-automation-create-time"
           />
           <button
             type="button"
             onClick={() => void handleCreate()}
             disabled={creating || !name.trim() || !prompt.trim()}
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-[12px] font-medium text-[var(--bg-elevated)] disabled:opacity-40"
+            className="automations-view__new"
             data-testid="design-automation-create-submit"
           >
             {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -188,31 +188,125 @@ export default function DesignAutomationsView() {
       ) : null}
 
       {error ? (
-        <p className="mt-4 text-[13px] text-[var(--red)]" data-testid="design-automations-error">
+        <p className="automations-view__error" data-testid="design-automations-error">
           {error}
         </p>
       ) : null}
 
-      {loading ? (
-        <div className="mt-8 rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-elevated)] px-6 py-12 text-[14px] text-[var(--text-muted)]">
-          Loading automations...
+      <section className="automations-saved">
+        <div className="automations-section-head">
+          <h2 className="automations-section__label">Your automations</h2>
         </div>
-      ) : routines.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg-elevated)] px-6 py-12 text-[14px] text-[var(--text-muted)]">
-          No automations configured yet.
+        {loading ? (
+          <div className="automations-templates__empty">
+            <span className="automations-templates__empty-icon" aria-hidden>
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </span>
+            <div>
+              <strong>Loading automations</strong>
+              <p>Fetching your scheduled sessions…</p>
+            </div>
+          </div>
+        ) : routines.length === 0 ? (
+          <button type="button" className="automation-empty" onClick={() => setShowCreate(true)}>
+            <span className="automation-empty__icon" aria-hidden>
+              <Workflow className="h-4 w-4" />
+            </span>
+            <span className="automation-empty__body">
+              <strong>No automations yet</strong>
+              <span>Create your first scheduled agent session.</span>
+            </span>
+          </button>
+        ) : (
+          <ul className="automations-saved__list">
+            {routines.map((routine) => (
+              <li
+                key={routine.id}
+                className={`automation-row${!routine.enabled ? ' is-paused' : ''}`}
+                data-testid="design-routine-card"
+              >
+                <div className="automation-row__main">
+                  <span className="automation-row__icon" aria-hidden>
+                    <Workflow className="h-4 w-4" />
+                  </span>
+                  <div className="automation-row__content">
+                    <span className="automation-row__title">{routine.name}</span>
+                    <span className="automation-row__meta">{formatRoutineSchedule(routine.schedule)}</span>
+                    <p className="automation-row__prompt">{routine.prompt}</p>
+                    <span className={`automation-status ${routineStatusClass(routine)}`}>
+                      {routineStatusLabel(routine)}
+                    </span>
+                  </div>
+                </div>
+                <div className="automation-row__actions">
+                  <button
+                    type="button"
+                    onClick={() => void handleRun(routine.id)}
+                    disabled={runningId === routine.id || !routine.enabled}
+                    className="automation-row__btn"
+                    data-testid="design-routine-run"
+                  >
+                    {runningId === routine.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
+                    Run
+                  </button>
+                  <button type="button" className="automation-row__btn">
+                    History
+                  </button>
+                  <button type="button" className="automation-row__btn">
+                    Edit
+                  </button>
+                  <button type="button" className="automation-row__btn automation-row__btn--danger">
+                    Pause
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="automations-templates">
+        <div className="automations-templates__head">
+          <div className="automations-templates__head-copy">
+            <h2 className="automations-section__label">Templates</h2>
+          </div>
         </div>
-      ) : (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          {routines.map((routine) => (
-            <RoutineCard
-              key={routine.id}
-              routine={routine}
-              onRun={(id) => void handleRun(id)}
-              running={runningId === routine.id}
-            />
+        <div className="automations-template-tabs" role="tablist">
+          <button
+            type="button"
+            className={`automations-template-tab${templateFilter === 'all' ? ' is-active' : ''}`}
+            onClick={() => setTemplateFilter('all')}
+          >
+            <span className="automations-template-tab__label">All</span>
+            <span className="automations-template-tab__count">{TEMPLATE_CARDS.length}</span>
+          </button>
+          <button type="button" className="automations-template-tab">
+            <span className="automations-template-tab__label">Orbit</span>
+          </button>
+          <button type="button" className="automations-template-tab">
+            <span className="automations-template-tab__label">Design systems</span>
+          </button>
+        </div>
+        <div className="automations-templates__grid">
+          {TEMPLATE_CARDS.map((template) => (
+            <button key={template.id} type="button" className="automation-template-card">
+              <span className="automation-template-card__icon" aria-hidden>
+                <Workflow className="h-4 w-4" />
+              </span>
+              <span className="automation-template-card__body">
+                <span className="automation-template-card__kicker">Automation</span>
+                <span className="automation-template-card__title">{template.title}</span>
+                <span className="automation-template-card__desc">{template.description}</span>
+                <span className="automation-template-card__cta">Use template</span>
+              </span>
+            </button>
           ))}
         </div>
-      )}
+      </section>
     </div>
   );
 }

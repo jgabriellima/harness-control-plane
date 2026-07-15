@@ -63,11 +63,14 @@ export function isTransientHydrateFailure(status: number | null): boolean {
 
 export async function fetchDispatchHealth(
   projectId: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; execution?: boolean },
 ): Promise<SdkDispatchHealth> {
   const params = new URLSearchParams({ project_id: projectId });
   if (options?.force) {
     params.set('force', '1');
+  }
+  if (options?.execution) {
+    params.set('execution', '1');
   }
 
   const response = await fetch(`${DISPATCH_HEALTH_PATH}?${params.toString()}`, {

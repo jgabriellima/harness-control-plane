@@ -125,6 +125,8 @@ export interface ReadinessSlot {
   status: string;
   secretsMissing: string[];
   ready: boolean;
+  oauthConnected?: boolean;
+  oauthVerified?: boolean;
 }
 
 export interface ReadinessSnapshot {

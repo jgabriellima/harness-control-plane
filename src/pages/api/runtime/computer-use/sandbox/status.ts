@@ -2,8 +2,8 @@ import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../../../lib/api-json';
 import {
-  readActiveSandboxManifest,
-  readSandboxManifest,
+  normalizeProjectId,
+  resolveSandboxManifestForProject,
 } from '../../../../../lib/runtime-computer-use-sandbox-bridge';
 import { isComputerUseContractEnabled } from '../../../../../lib/runtime-computer-use-preferences';
 import { runSandboxPreflight } from '../../../../../lib/runtime-computer-use-sandbox-preflight';
@@ -11,13 +11,10 @@ import { resolveRequestWorkspace } from '../../../../../lib/workspace-request';
 
 export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const projectId = url.searchParams.get('project_id')?.trim() || undefined;
-    const conversationId = url.searchParams.get('conversation_id')?.trim() || '';
+    const projectId = normalizeProjectId(url.searchParams.get('project_id') ?? undefined);
     const { workspaceRoot } = await resolveRequestWorkspace(request, projectId);
     const contractEnabled = await isComputerUseContractEnabled(workspaceRoot);
-    const manifest = conversationId
-      ? await readSandboxManifest(conversationId, workspaceRoot)
-      : await readActiveSandboxManifest(workspaceRoot);
+    const manifest = await resolveSandboxManifestForProject(projectId, workspaceRoot);
     const preflight = await runSandboxPreflight({ local: true });
 
     return jsonOk({
@@ -25,6 +22,7 @@ export const GET: APIRoute = async ({ request, url }) => {
       ready: Boolean(manifest && manifest.phase === 'ready' && manifest.sandboxName),
       manifest,
       preflight,
+      workspace_root: workspaceRoot,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Sandbox status probe failed';

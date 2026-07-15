@@ -5,6 +5,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import RuntimeComputerUsePanel from '@/components/react/RuntimeComputerUsePanel';
 import { useRuntimeHub } from '@/components/react/RuntimeHubProvider';
 import { conversationIdFromPath, useShellPathname } from '@/lib/shell-navigation';
+import { DEFAULT_WORKSPACE_ID } from '@/lib/workspace-constants';
 import type { ComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
 import { isCuaToolName, parseComputerUseTargetMode } from '@/lib/runtime-computer-use-types';
 import {
@@ -107,6 +108,7 @@ async function deletePreviewSession(sessionId: string): Promise<void> {
 
 async function createPreviewSession(input: {
   conversationId: string;
+  projectId: string;
   targetMode: ComputerUseTargetMode;
   forceRestart?: boolean;
 }): Promise<RuntimeComputerUseSelection> {
@@ -115,6 +117,7 @@ async function createPreviewSession(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       conversation_id: input.conversationId,
+      project_id: input.projectId,
       target_mode: input.targetMode,
       force_restart: input.forceRestart === true,
     }),
@@ -143,6 +146,13 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
   const hub = useRuntimeHub();
   const foregroundConversationId =
     hub.foregroundConversationId ?? conversationIdFromPath(pathname);
+
+  const resolveProjectId = useCallback(
+    (conversationId?: string | null): string =>
+      hub.getConversationState(conversationId?.trim() || foregroundConversationId || '')?.projectId ??
+      DEFAULT_WORKSPACE_ID,
+    [foregroundConversationId, hub],
+  );
 
   const [selection, setSelection] = useState<RuntimeComputerUseSelection | null>(null);
   const selectionRef = useRef(selection);
@@ -173,6 +183,7 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
       options?: OpenPreviewOptions,
     ): Promise<void> => {
       const resolvedConversationId = conversationId ?? foregroundConversationId ?? 'default';
+      const resolvedProjectId = resolveProjectId(resolvedConversationId);
       const forceRestart = options?.forceRestart === true;
 
       if (!forceRestart) {
@@ -197,6 +208,7 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
       try {
         const nextSelection = await createPreviewSession({
           conversationId: resolvedConversationId,
+          projectId: resolvedProjectId,
           targetMode,
           forceRestart,
         });
@@ -213,7 +225,7 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
         });
       }
     },
-    [attachExistingSession, foregroundConversationId],
+    [attachExistingSession, foregroundConversationId, resolveProjectId],
   );
 
   const restartPreview = useCallback(async (): Promise<void> => {
@@ -257,6 +269,13 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
   useEffect(() => {
     function onOpenPreview(event: Event): void {
       const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
+      if (
+        detail?.conversationId &&
+        foregroundConversationId &&
+        detail.conversationId !== foregroundConversationId
+      ) {
+        return;
+      }
       void openPreview(detail?.conversationId ?? foregroundConversationId);
     }
 
@@ -360,28 +379,41 @@ export function RuntimeComputerUseProvider({ children }: { children: React.React
   ]);
 
   useEffect(() => {
-    if (selection !== null || !foregroundConversationId) {
+    if (!foregroundConversationId) {
       return;
     }
 
     let cancelled = false;
-    async function syncExistingSession(): Promise<void> {
+    async function reconcilePreviewForForeground(): Promise<void> {
       if (cancelled) {
         return;
       }
+
+      const current = selectionRef.current;
+      if (current && current.conversationId !== foregroundConversationId) {
+        // Hide preview from another chat — do not delete the server-side session.
+        setSelection(null);
+        await attachExistingSession(foregroundConversationId);
+        return;
+      }
+
+      if (current?.conversationId === foregroundConversationId) {
+        return;
+      }
+
       await attachExistingSession(foregroundConversationId);
     }
 
-    void syncExistingSession();
+    void reconcilePreviewForForeground();
     const timer = window.setInterval(() => {
-      void syncExistingSession();
+      void reconcilePreviewForForeground();
     }, 2000);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [attachExistingSession, foregroundConversationId, selection]);
+  }, [attachExistingSession, foregroundConversationId]);
 
   const value = useMemo(
     () => ({

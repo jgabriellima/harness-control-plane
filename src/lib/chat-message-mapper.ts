@@ -2,8 +2,8 @@ import type { StoredChatMessage } from './conversation-store';
 import type { ChatMessage } from './runtime-hub-types';
 import type { NormalizedMessage } from './runtime-adapters/types';
 import { normalizeInspectablePayload } from './format-inspect';
-import { stripCursorPromptEnvelope } from './strip-cursor-prompt-envelope';
 import { stripRedactedReasoningContent } from './strip-redacted-content';
+import { formatUserMessageForDisplay } from './user-message-display';
 
 function serializeToolPayload(value: unknown): string | undefined {
   if (value === undefined || value === null) {
@@ -40,9 +40,19 @@ export function mapNormalizedMessageToChatMessage(message: NormalizedMessage): C
   const content =
     message.role === 'assistant' || message.role === 'thinking'
       ? stripRedactedReasoningContent(message.content)
-      : message.role === 'user'
-        ? stripCursorPromptEnvelope(message.content)
-        : message.content;
+      : message.content;
+
+  if (message.role === 'user') {
+    const display = formatUserMessageForDisplay(content);
+    return {
+      id: message.id,
+      role: message.role,
+      content: display.body,
+      contextBadges: display.badges.length > 0 ? display.badges : undefined,
+      recordedAt: message.recordedAt,
+      durationMs: message.durationMs,
+    };
+  }
 
   return {
     id: message.id,

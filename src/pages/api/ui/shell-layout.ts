@@ -2,14 +2,16 @@ import type { APIRoute } from 'astro';
 
 import { jsonError, jsonOk } from '../../../lib/api-json';
 import { patchShellLayoutManifest, readShellLayoutManifest } from '../../../lib/ui-shell-layout';
+import { resolveRequestWorkspace } from '../../../lib/workspace-request';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, url }) => {
   try {
-    const manifest = await readShellLayoutManifest();
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
+    const manifest = await readShellLayoutManifest(workspaceRoot);
     return jsonOk(manifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load shell layout';
@@ -17,7 +19,7 @@ export const GET: APIRoute = async () => {
   }
 };
 
-export const PATCH: APIRoute = async ({ request }) => {
+export const PATCH: APIRoute = async ({ request, url }) => {
   let body: unknown;
 
   try {
@@ -31,12 +33,13 @@ export const PATCH: APIRoute = async ({ request }) => {
   }
 
   try {
+    const { workspaceRoot } = await resolveRequestWorkspace(request, url.searchParams.get('project_id'));
     const manifest = await patchShellLayoutManifest({
       sidebarSize: typeof body.sidebarSize === 'number' ? body.sidebarSize : undefined,
       contextSize: typeof body.contextSize === 'number' ? body.contextSize : undefined,
       sidebarExpanded:
         typeof body.sidebarExpanded === 'boolean' ? body.sidebarExpanded : undefined,
-    });
+    }, workspaceRoot);
     return jsonOk(manifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update shell layout';

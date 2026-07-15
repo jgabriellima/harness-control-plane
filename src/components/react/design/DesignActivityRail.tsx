@@ -1,16 +1,20 @@
 import React from 'react';
 import {
   Blocks,
+  Calendar,
   Home,
   LayoutGrid,
+  Library,
   Link2,
+  MessageSquare,
   Palette,
+  Play,
   Plus,
   Workflow,
 } from 'lucide-react';
-
 import { designPathForView, type DesignView } from '@/lib/design-navigation';
 import { navigateDesign, useDesignRoute } from '@/lib/design-shell-navigation';
+import { useShellPathname } from '@/lib/shell-navigation';
 
 interface RailItem {
   view: DesignView;
@@ -27,14 +31,27 @@ const RAIL_ITEMS: RailItem[] = [
   { view: 'integrations', label: 'Integrations', icon: <Link2 className="h-[18px] w-[18px]" strokeWidth={1.75} /> },
 ];
 
-function isActiveView(current: DesignView, item: DesignView): boolean {
-  if (item === 'projects' && current === 'studio') {
+const HARNESS_RAIL_ITEMS: RailItem[] = [
+  { view: 'conversations', label: 'Conversations', icon: <MessageSquare className="h-[18px] w-[18px]" strokeWidth={1.75} /> },
+  { view: 'library', label: 'Library', icon: <Library className="h-[18px] w-[18px]" strokeWidth={1.75} /> },
+  { view: 'executions', label: 'Executions', icon: <Play className="h-[18px] w-[18px]" strokeWidth={1.75} /> },
+  { view: 'scheduled', label: 'Scheduled', icon: <Calendar className="h-[18px] w-[18px]" strokeWidth={1.75} /> },
+];
+
+function isActiveView(current: DesignView, item: DesignView, pathname: string): boolean {
+  if (item === 'home' && (current === 'home' || (current === 'projects' && pathname === '/'))) {
     return true;
   }
-  if (item === 'design-systems' && current === 'design-system-detail') {
+  if (item === 'projects' && (current === 'studio' || (current === 'projects' && pathname !== '/'))) {
+    return true;
+  }
+  if (item === 'design-systems' && (current === 'design-system-detail' || current === 'design-system-create')) {
     return true;
   }
   if (item === 'plugins' && current === 'plugin-detail') {
+    return true;
+  }
+  if (item === 'conversations' && current === 'conversation-chat') {
     return true;
   }
   return current === item;
@@ -43,36 +60,41 @@ function isActiveView(current: DesignView, item: DesignView): boolean {
 function NavButton({
   active,
   label,
+  href,
   onClick,
   children,
 }: {
   active: boolean;
   label: string;
+  href: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <a
+      href={href}
       className={`entry-nav-rail__btn${active ? ' is-active' : ''}`}
       title={label}
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       data-tooltip={label}
-      onClick={onClick}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick();
+      }}
     >
       {children}
-    </button>
+    </a>
   );
 }
 
 export default function DesignActivityRail() {
   const route = useDesignRoute();
+  const pathname = useShellPathname();
 
   return (
     <nav
-      className="entry-nav-rail is-open shrink-0"
-      style={{ width: 'var(--entry-rail-width, 56px)' }}
+      className="entry-nav-rail is-open"
       aria-label="Primary"
       data-testid="design-activity-rail"
     >
@@ -80,18 +102,36 @@ export default function DesignActivityRail() {
         <NavButton
           active={false}
           label="New design project"
+          href={designPathForView('home')}
           onClick={() => navigateDesign(designPathForView('home'))}
         >
           <Plus className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </NavButton>
 
         {RAIL_ITEMS.map((item) => {
-          const active = isActiveView(route.view, item.view);
+          const active = isActiveView(route.view, item.view, pathname);
           return (
             <NavButton
               key={item.view}
               active={active}
               label={item.label}
+              href={designPathForView(item.view)}
+              onClick={() => navigateDesign(designPathForView(item.view))}
+            >
+              {item.icon}
+            </NavButton>
+          );
+        })}
+      </div>
+      <div className="entry-nav-rail__group entry-nav-rail__group--harness" data-testid="design-harness-rail">
+        {HARNESS_RAIL_ITEMS.map((item) => {
+          const active = isActiveView(route.view, item.view, pathname);
+          return (
+            <NavButton
+              key={item.view}
+              active={active}
+              label={item.label}
+              href={designPathForView(item.view)}
               onClick={() => navigateDesign(designPathForView(item.view))}
             >
               {item.icon}

@@ -6,6 +6,7 @@ import {
   Library,
   MessageSquare,
   PanelLeftClose,
+  Palette,
   Pin,
   Search,
   SquarePen,
@@ -18,6 +19,7 @@ import type { PresentationAssets } from '@/lib/ui-branding';
 import { homeAriaLabel, runtimeSubtitle } from '@/lib/ui-branding';
 import BrandLogo from './BrandLogo';
 import ChatSearchModal from './ChatSearchModal';
+import NewChatChooser from './NewChatChooser';
 import SidebarProfileMenu from './SidebarProfileMenu';
 import {
   invalidateSidebarCache,
@@ -26,7 +28,19 @@ import {
   writeSidebarCache,
 } from '../../lib/sidebar-cache';
 import { DRAFT_CONVERSATION_ID } from '@/lib/draft-conversation';
-import { navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import { isDesignRoute, navigateShell, useShellPathname } from '@/lib/shell-navigation';
+import {
+  conversationIdFromShellPath,
+  isShellDesignStudioActive,
+  isShellExecutionsActive,
+  isShellLibraryActive,
+  isShellScheduledActive,
+  shellConversationPath,
+  shellExecutionsPath,
+  shellHomePath,
+  shellLibraryPath,
+  shellScheduledPath,
+} from '@/lib/shell-paths';
 import { SCHEDULE_INTERVIEW_CONVERSATION_ID } from '@/lib/schedule-tips';
 import { sidebarLayoutStore, useSidebarExpanded } from '@/lib/sidebar-layout-store';
 import { useConversationStreamingPhase } from '@/hooks/useRuntimeConversation';
@@ -74,25 +88,24 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function conversationHref(conversationId: string): string {
-  return `/conversation/${encodeURIComponent(conversationId)}`;
+function conversationHref(pathname: string, conversationId: string): string {
+  return shellConversationPath(pathname, conversationId);
 }
 
 function projectsHref(): string {
   return '/projects';
 }
 
-function libraryHref(): string {
-  return '/library';
+function libraryHref(pathname: string): string {
+  return shellLibraryPath(pathname);
 }
 
 function activeConversationFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/conversation\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  return conversationIdFromShellPath(pathname);
 }
 
 function isRunsSectionActive(pathname: string): boolean {
-  return pathname === '/executions' || pathname.startsWith('/execution/');
+  return isShellExecutionsActive(pathname);
 }
 
 function filterSidebarConversations(conversations: ConversationItem[]): ConversationItem[] {
@@ -100,11 +113,11 @@ function filterSidebarConversations(conversations: ConversationItem[]): Conversa
 }
 
 function isScheduledActive(pathname: string): boolean {
-  return pathname === '/scheduled';
+  return isShellScheduledActive(pathname);
 }
 
 function isLibraryActive(pathname: string): boolean {
-  return pathname === '/library' || pathname.startsWith('/library/');
+  return isShellLibraryActive(pathname);
 }
 
 function toggleSidebarExpanded(expanded: boolean): void {
@@ -446,6 +459,7 @@ function ConversationSidebarLink({
   isActive: boolean;
 }) {
   const hub = useRuntimeHub();
+  const pathname = useShellPathname();
   const isStreaming = useConversationStreamingPhase(conversation.id);
   const isDraggable = hub.layoutMode !== 'single';
 
@@ -464,10 +478,12 @@ function ConversationSidebarLink({
       }
 
       hub.navigateToConversation(conversation.id, { paneIndex: emptyIndex ?? 0 });
+      navigateShell(shellConversationPath(pathname, conversation.id));
       return;
     }
 
     hub.navigateToConversation(conversation.id);
+    navigateShell(shellConversationPath(pathname, conversation.id));
   }
 
   function handleDragStart(event: React.DragEvent<HTMLAnchorElement>): void {
@@ -485,7 +501,7 @@ function ConversationSidebarLink({
 
   return (
     <a
-      href={conversationHref(conversation.id)}
+      href={conversationHref(pathname, conversation.id)}
       draggable={isDraggable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -615,6 +631,7 @@ function CollapsedSidebarRail({
   presentationTitle: string;
   brandAssets?: PresentationAssets;
 }) {
+  const pathname = useShellPathname();
   const [pinnedOpen, setPinnedOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -799,7 +816,7 @@ function CollapsedSidebarRail({
           label="Library"
           testId="sidebar-rail-library"
           active={libraryActive}
-          onClick={() => navigateShell(libraryHref())}
+          onClick={() => navigateShell(libraryHref(pathname))}
         >
           <Library className="h-4 w-4" />
         </SidebarIconButton>
@@ -808,7 +825,7 @@ function CollapsedSidebarRail({
           label="Scheduled"
           testId="sidebar-rail-scheduled"
           active={scheduledActive}
-          onClick={() => navigateShell('/scheduled')}
+          onClick={() => navigateShell(shellScheduledPath(pathname))}
         >
           <Calendar className="h-4 w-4" />
         </SidebarIconButton>
@@ -838,7 +855,11 @@ function CollapsedSidebarRail({
                     className="flex w-full flex-col px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
                     onClick={() => {
                       closeFlyouts();
-                      navigateShell(`/execution/${encodeURIComponent(execution.id)}`);
+                      navigateShell(
+                        isDesignRoute(pathname)
+                          ? `/design/execution/${encodeURIComponent(execution.id)}`
+                          : `/execution/${encodeURIComponent(execution.id)}`,
+                      );
                     }}
                   >
                     <span className="truncate font-medium">{execution.intent || execution.workflowId}</span>
@@ -852,7 +873,7 @@ function CollapsedSidebarRail({
                 className="block w-full border-t border-gray-100 px-3 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-50"
                 onClick={() => {
                   closeFlyouts();
-                  navigateShell('/executions');
+                  navigateShell(shellExecutionsPath(pathname));
                 }}
               >
                 View all runs
@@ -904,7 +925,9 @@ export default function SidebarPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [newChatChooserOpen, setNewChatChooserOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [designStudioEnabled, setDesignStudioEnabled] = useState(false);
 
   const runsSectionActive = isRunsSectionActive(pathname);
   const scheduledActive = isScheduledActive(pathname);
@@ -999,6 +1022,18 @@ export default function SidebarPanel({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    void fetch('/api/ui/composer-config')
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { features?: { design_studio?: boolean } };
+        setDesignStudioEnabled(payload.features?.design_studio === true);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -1114,8 +1149,32 @@ export default function SidebarPanel({
   }, [activeProject?.id]);
 
   async function handleNewChat(): Promise<void> {
+    if (designStudioEnabled && !isDesignRoute(pathname)) {
+      setNewChatChooserOpen(true);
+      return;
+    }
     hub.navigateToConversation(DRAFT_CONVERSATION_ID);
+    navigateShell(isDesignRoute(pathname) ? '/design/conversation/new' : '/');
   }
+
+  function startHarnessChat(): void {
+    hub.navigateToConversation(DRAFT_CONVERSATION_ID);
+    navigateShell('/');
+  }
+
+  function startDesignProject(): void {
+    navigateShell('/design/projects');
+  }
+
+  const newChatChooser = (
+    <NewChatChooser
+      open={newChatChooserOpen}
+      presentationTitle={presentationTitle}
+      onClose={() => setNewChatChooserOpen(false)}
+      onHarnessChat={startHarnessChat}
+      onDesignProject={startDesignProject}
+    />
+  );
 
   async function handleActivateProject(projectId: string): Promise<void> {
     try {
@@ -1161,9 +1220,11 @@ export default function SidebarPanel({
                 }
               }
               hub.navigateToConversation(conversationId, { paneIndex: emptyIndex ?? 0 });
+              navigateShell(shellConversationPath(pathname, conversationId));
               return;
             }
             hub.navigateToConversation(conversationId);
+            navigateShell(shellConversationPath(pathname, conversationId));
           }}
           onActivateProject={(projectId) => {
             void handleActivateProject(projectId);
@@ -1176,6 +1237,7 @@ export default function SidebarPanel({
           brandAssets={brandAssets}
         />
         {chatSearchModal}
+        {newChatChooser}
       </>
     );
   }
@@ -1191,7 +1253,7 @@ export default function SidebarPanel({
           type="button"
           className="truncate text-sm font-semibold tracking-tight text-gray-900"
           aria-label={homeAriaLabel(presentationTitle)}
-          onClick={() => navigateShell('/')}
+          onClick={() => navigateShell(shellHomePath(pathname))}
         >
           {presentationTitle}
         </button>
@@ -1225,16 +1287,27 @@ export default function SidebarPanel({
             label="Library"
             testId="sidebar-library"
             active={libraryActive}
-            onClick={() => navigateShell(libraryHref())}
+            onClick={() => navigateShell(libraryHref(pathname))}
             icon={<Library className="h-4 w-4" />}
           />
           <SidebarNavRow
             label="Scheduled"
             testId="sidebar-scheduled"
             active={scheduledActive}
-            onClick={() => navigateShell('/scheduled')}
+            onClick={() => navigateShell(shellScheduledPath(pathname))}
             icon={<Calendar className="h-4 w-4" />}
           />
+          {designStudioEnabled ? (
+            <SidebarNavRow
+              label="Design studio"
+              testId="sidebar-design-studio"
+              active={isShellDesignStudioActive(pathname)}
+              onClick={() => {
+                navigateShell('/design/projects');
+              }}
+              icon={<Palette className="h-4 w-4" />}
+            />
+          ) : null}
         </div>
 
         {pinnedConversations.length > 0 ? (
@@ -1334,6 +1407,7 @@ export default function SidebarPanel({
       </div>
       </aside>
       {chatSearchModal}
+      {newChatChooser}
     </>
   );
 }

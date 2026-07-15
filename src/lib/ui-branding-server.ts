@@ -5,6 +5,8 @@ import {
   resolveUIBranding,
   type UIBranding,
 } from './ui-branding';
+import { brandThemeDataAttribute, resolveBrandThemePack } from './brand-theme';
+import { resolvePresentationAssets } from './presentation-assets';
 import { loadUIConfig } from './ui-config';
 import { resolveProjectRoot } from './project-root';
 
@@ -34,12 +36,15 @@ export async function loadPageBranding(projectRoot?: string): Promise<UIBranding
   try {
     const config = await loadUIConfig(root);
     const branding = resolveUIBranding(config);
+    const themePack = resolveBrandThemePack(config);
 
     return {
       presentationTitle: branding.presentationTitle || envPresentationTitle() || DEFAULT_PRESENTATION_TITLE,
       windowTitle: branding.windowTitle || envWindowTitle() || DEFAULT_WINDOW_TITLE,
       desktopIdentifier: branding.desktopIdentifier || envDesktopIdentifier() || DEFAULT_DESKTOP_IDENTIFIER,
-      assets: branding.assets,
+      productId: config.metadata?.product_id,
+      themePack: brandThemeDataAttribute(themePack),
+      assets: resolvePresentationAssets(branding.assets),
     };
   } catch {
     return defaultUIBranding();

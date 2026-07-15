@@ -1,0 +1,68 @@
+---
+import DesignShell from '../components/react/design/DesignShell';
+import { loadPageBranding } from '../lib/ui-branding-server';
+
+interface Props {
+  title: string;
+  description?: string;
+  seedArtifactE2e?: boolean;
+}
+
+const branding = await loadPageBranding();
+const themePack = branding.themePack ?? 'open-design';
+const favicon =
+  branding.assets?.icon_light ?? '/brand/icon-light.png';
+
+const { title, description, seedArtifactE2e = false } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" data-brand={themePack} data-theme={themePack === 'tailwind' ? 'light' : undefined}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/png" href={favicon} />
+    <title>{title} · {branding.presentationTitle}</title>
+    {description ? <meta name="description" content={description} /> : null}
+  </head>
+  <body
+    class:list={[
+      'bg-[var(--bg)] text-[var(--text)]',
+      themePack === 'tailwind' ? 'design-harness-surface' : '',
+    ]}
+    data-brand={themePack}
+  >
+    <DesignShell
+      client:load
+      presentationTitle={branding.presentationTitle}
+      brandAssets={branding.assets}
+      themePack={themePack}
+      initialPathname={Astro.url.pathname}
+      seedArtifactE2e={seedArtifactE2e}
+    />
+  </body>
+</html>
+
+<style is:global>
+  @import "../styles/design/tokens.css";
+  @import "../styles/design/shell.css";
+  @import "../styles/design/entry-layout.css";
+  @import "../styles/design/home-hero.css";
+  @import "../styles/design/recent-projects.css";
+  @import "../styles/design/plugins-view.css";
+  @import "../styles/design/tasks.css";
+  @import "../styles/design/harness-page-header.css";
+  @import "../styles/design/use-everywhere.css";
+  @import "../styles/design/design-files.css";
+  @import "../styles/design/workspace-drawer.css";
+  @import "../styles/design/design-system-flow.css";
+  @import "../styles/global.css";
+  @import "../styles/brand/tailwind/fonts.css";
+  @import "../styles/brand/tailwind/colors.css";
+  @import "../styles/brand/tailwind/typography.css";
+  @import "../styles/brand/tailwind/spacing.css";
+  @import "../styles/brand/tailwind/bridge.css";
+  @import "../styles/brand/tailwind/design-surfaces.css";
+  @import "../styles/brand/tailwind/accent-lock.css";
+</style>

@@ -20,6 +20,7 @@ export interface UIConfig {
     title?: string;
     theme?: ControlPlaneTheme;
     locale?: string;
+    theme_pack?: string;
     assets?: {
       icon_light?: string;
       icon_dark?: string;
@@ -51,6 +52,9 @@ export interface UIConfig {
       language?: string;
       auto_submit?: boolean;
       engine?: 'browser' | 'media';
+    };
+    presentation?: {
+      rich_ui?: 'off' | 'adaptive' | 'always';
     };
   };
 }
@@ -108,6 +112,7 @@ function parseAndValidateUIConfig(raw: unknown): UIConfig {
   if (raw.presentation) {
     assertOptionalString(raw.presentation.title, 'presentation.title');
     assertOptionalString(raw.presentation.locale, 'presentation.locale');
+    assertOptionalString(raw.presentation.theme_pack, 'presentation.theme_pack');
     if (
       raw.presentation.theme !== undefined &&
       raw.presentation.theme !== 'system' &&
@@ -185,6 +190,19 @@ function parseAndValidateUIConfig(raw: unknown): UIConfig {
         voiceInput.engine !== 'media'
       ) {
         throw new Error('composer.voice_input.engine must be one of: browser, media');
+      }
+    }
+
+    assertOptionalRecord(raw.composer.presentation, 'composer.presentation');
+    if (raw.composer.presentation) {
+      const richUi = raw.composer.presentation.rich_ui;
+      if (
+        richUi !== undefined &&
+        richUi !== 'off' &&
+        richUi !== 'adaptive' &&
+        richUi !== 'always'
+      ) {
+        throw new Error('composer.presentation.rich_ui must be one of: off, adaptive, always');
       }
     }
   }

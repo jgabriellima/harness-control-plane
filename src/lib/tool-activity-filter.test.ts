@@ -5,6 +5,8 @@ import {
   collectUniqueToolNames,
   DEFAULT_TOOL_ACTIVITY_FILTER,
   filterAndSortToolActivityEntries,
+  isToolSelected,
+  toggleToolSelection,
   type ToolActivityEntry,
 } from './tool-activity-filter.ts';
 
@@ -63,10 +65,10 @@ describe('filterAndSortToolActivityEntries', () => {
     assert.equal(result[0]?.tool.name, 'glob');
   });
 
-  it('filters by tool name', () => {
+  it('filters by selected tools', () => {
     const result = filterAndSortToolActivityEntries(sampleEntries, {
       ...DEFAULT_TOOL_ACTIVITY_FILTER,
-      toolFilter: 'grep',
+      selectedTools: ['grep'],
     });
 
     assert.equal(result.length, 1);
@@ -88,7 +90,32 @@ describe('filterAndSortToolActivityEntries', () => {
 });
 
 describe('collectUniqueToolNames', () => {
-  it('returns sorted unique tool names', () => {
-    assert.deepEqual(collectUniqueToolNames(sampleEntries), ['glob', 'grep', 'shell']);
+  it('returns sorted unique tool names case-insensitively', () => {
+    const entries: ToolActivityEntry[] = [
+      ...sampleEntries,
+      {
+        id: '4',
+        tool: { name: 'Grep', status: 'completed' },
+      },
+      {
+        id: '5',
+        tool: { name: 'Glob', status: 'completed' },
+      },
+    ];
+
+    assert.deepEqual(collectUniqueToolNames(entries), ['glob', 'grep', 'shell']);
+  });
+});
+
+describe('toggleToolSelection', () => {
+  const toolNames = ['shell', 'grep', 'glob'];
+
+  it('unchecking from all-selected collapses to all except one', () => {
+    assert.deepEqual(toggleToolSelection('grep', toolNames, []), ['shell', 'glob']);
+  });
+
+  it('selecting all tools collapses back to empty (show all)', () => {
+    assert.deepEqual(toggleToolSelection('glob', toolNames, ['shell', 'grep']), []);
+    assert.equal(isToolSelected('glob', toolNames, []), true);
   });
 });

@@ -73,6 +73,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const session = await createComputerUsePreviewSession({
       conversationId,
+      projectId: projectId ?? 'default',
       targetMode: targetMode ?? 'host',
       forceRestart,
       workspaceRoot,

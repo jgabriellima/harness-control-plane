@@ -1,0 +1,85 @@
+import { j as jsonError, a as jsonOk } from './api-json_NZ1Md3KT.mjs';
+import { p as performBrowserClick, n as navigateBrowserSession, r as refreshBrowserSession, s as setBrowserControlMode, a as performBrowserType, b as performBrowserKeyPress, c as performBrowserScroll, e as enableUserBrowserWindow } from './runtime-browser-bridge_DsG8qbJ7.mjs';
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+function parseControlMode(value) {
+  if (value === "user" || value === "agent") {
+    return value;
+  }
+  return null;
+}
+const POST = async ({ request }) => {
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Request body must be valid JSON", 400);
+  }
+  if (!isRecord(body)) {
+    return jsonError("Request body must be a JSON object", 400);
+  }
+  const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+  const action = typeof body.action === "string" ? body.action.trim() : "";
+  const x = typeof body.x === "number" ? body.x : null;
+  const y = typeof body.y === "number" ? body.y : null;
+  const url = typeof body.url === "string" ? body.url.trim() : "";
+  const controlMode = parseControlMode(body.control_mode);
+  const text = typeof body.text === "string" ? body.text : "";
+  const key = typeof body.key === "string" ? body.key.trim() : "";
+  const deltaX = typeof body.delta_x === "number" ? body.delta_x : 0;
+  const deltaY = typeof body.delta_y === "number" ? body.delta_y : 0;
+  if (!sessionId) {
+    return jsonError("session_id is required", 400);
+  }
+  try {
+    if (action === "click" && x !== null && y !== null) {
+      await performBrowserClick(sessionId, x, y);
+      return jsonOk({ ok: true, action: "click" });
+    }
+    if (action === "navigate" && url) {
+      const session = await navigateBrowserSession(sessionId, url);
+      return jsonOk({ ok: true, action: "navigate", session });
+    }
+    if (action === "refresh") {
+      const session = await refreshBrowserSession(sessionId);
+      return jsonOk({ ok: true, action: "refresh", session });
+    }
+    if (action === "set_control_mode" && controlMode) {
+      const session = await setBrowserControlMode(sessionId, controlMode);
+      return jsonOk({ ok: true, action: "set_control_mode", session });
+    }
+    if (action === "type" && text) {
+      await performBrowserType(sessionId, text);
+      return jsonOk({ ok: true, action: "type" });
+    }
+    if (action === "keydown" && key) {
+      await performBrowserKeyPress(sessionId, key);
+      return jsonOk({ ok: true, action: "keydown" });
+    }
+    if (action === "scroll" && (deltaX !== 0 || deltaY !== 0)) {
+      const scrollX = x ?? 0;
+      const scrollY = y ?? 0;
+      await performBrowserScroll(sessionId, scrollX, scrollY, deltaX, deltaY);
+      return jsonOk({ ok: true, action: "scroll" });
+    }
+    if (action === "open_user_browser") {
+      const session = await enableUserBrowserWindow(sessionId);
+      return jsonOk({ ok: true, action: "open_user_browser", session });
+    }
+    return jsonError("Unsupported action", 400);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Browser action failed";
+    return jsonError(message, 500);
+  }
+};
+
+const _page = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  POST
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const page = () => _page;
+
+export { page };

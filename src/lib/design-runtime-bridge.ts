@@ -33,6 +33,7 @@ export interface OrchestratorChatDispatchResult {
   runId: string;
   agentId: string;
   streamUrl: string;
+  conversationId?: string;
 }
 
 interface ChatDispatchResponseBody {
@@ -218,5 +219,6 @@ export async function dispatchOrchestratorChat(
     runId: body.run_id,
     agentId: body.agent_id,
     streamUrl: body.stream_url,
+    conversationId: body.conversation_id,
   };
 }

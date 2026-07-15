@@ -153,6 +153,22 @@ export function sdkDispatchAuthMessage(ctx: RuntimeSdkMessageContext): string {
   return 'Runtime API Key inválida ou rejeitada — verifique app/.env ou Settings → Runtime e reinicie o dev server';
 }
 
+/** Local Cursor IDE session expired — operator should not need manual logout. */
+export function sdkLocalSessionAuthFailedMessage(ctx: RuntimeSdkMessageContext): string {
+  if (useShippableCopy(ctx)) {
+    return sdkRuntimeReconnectingMessage(ctx);
+  }
+  return 'Sessão local do runtime expirou — o servidor está restabelecendo a conexão; reenvie a mensagem em instantes';
+}
+
+/** Shown while server-side credential reconcile + reprobe runs. */
+export function sdkRuntimeReconnectingMessage(ctx: RuntimeSdkMessageContext): string {
+  if (useShippableCopy(ctx)) {
+    return 'Restabelecendo conexão com o assistente. Aguarde um instante e tente novamente.';
+  }
+  return 'Runtime restabelecendo sessão local — reenvie a mensagem após alguns segundos';
+}
+
 export function sdkDispatchNetworkMessage(ctx: RuntimeSdkMessageContext): string {
   if (useShippableCopy(ctx)) {
     return 'Sem conexão com o serviço de IA. Use "Verificar novamente" após restabelecer a rede.';

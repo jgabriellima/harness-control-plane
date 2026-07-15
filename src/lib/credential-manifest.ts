@@ -3,9 +3,9 @@ import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 
-export type SecretStorage = 'keychain' | 'runtime_env' | 'cli_session';
+export type SecretStorage = 'keychain' | 'runtime_env' | 'cli_session' | 'composio_connection';
 
 export interface CredentialManifestEntry {
   env_var: string;
@@ -28,8 +28,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export async function loadCredentialManifest(): Promise<CredentialManifest | null> {
-  const binding = await resolveHarnessBinding();
+export async function loadCredentialManifest(workspaceRoot?: string): Promise<CredentialManifest | null> {
+  const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
   const manifestPath = join(binding.harnessRoot, 'credential-manifest.yaml');
   try {
     const raw = await readFile(manifestPath, 'utf8');
@@ -46,7 +46,9 @@ export async function loadCredentialManifest(): Promise<CredentialManifest | nul
         storage:
           entry.storage === 'runtime_env' || entry.storage === 'cli_session'
             ? entry.storage
-            : 'keychain',
+            : entry.storage === 'composio_connection'
+              ? 'composio_connection'
+              : 'keychain',
         slot_id: typeof entry.slot_id === 'string' ? entry.slot_id : '',
         provider: typeof entry.provider === 'string' ? entry.provider : '',
         integration: typeof entry.integration === 'string' ? entry.integration : '',

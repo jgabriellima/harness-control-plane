@@ -35,19 +35,19 @@ const slices: ContextUsageSlice[] = [
 
 describe('buildContextUsageBarSegments', () => {
   it('maps slices to window-relative segments with legend labels', () => {
-    const snapshot = buildContextUsageBarSegments(slices, 269_800, 87_200);
+    const snapshot = buildContextUsageBarSegments(slices, 200_000, 87_200);
 
     assert.equal(snapshot.segments.length, 3);
     assert.equal(snapshot.segments[0]?.legendLabel, 'Conversation');
     assert.equal(snapshot.segments[1]?.legendLabel, 'Tool definitions (18)');
     assert.equal(snapshot.segments[2]?.legendLabel, 'Rules (8)');
-    assert.ok(snapshot.usedPercent > 30 && snapshot.usedPercent < 33);
+    assert.ok(snapshot.usedPercent > 43 && snapshot.usedPercent < 45);
     assert.ok(snapshot.freeTokens > 0);
-    assert.ok(snapshot.freePercent > 65);
+    assert.ok(snapshot.freePercent > 54 && snapshot.freePercent < 57);
   });
 
   it('computes used share inside occupied portion', () => {
-    const snapshot = buildContextUsageBarSegments(slices, 269_800, 87_200);
+    const snapshot = buildContextUsageBarSegments(slices, 200_000, 87_200);
     const conversation = snapshot.segments.find((segment) => segment.category === 'conversation');
 
     assert.ok(conversation);

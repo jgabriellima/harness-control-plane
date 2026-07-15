@@ -1,4 +1,6 @@
+import { seedUserMessageFromTitle } from './conversation-message-seed';
 import type { ConversationRuntimeState } from './runtime-hub-types';
+import { buildSessionContinueWirePrompt } from './prompt-inject';
 
 export interface ActiveRunRegistryEntry {
   runId: string;
@@ -7,8 +9,33 @@ export interface ActiveRunRegistryEntry {
   startedAt?: string;
 }
 
+export interface ContinuableRunRegistryEntry extends ActiveRunRegistryEntry {
+  resumable: boolean;
+  message: string;
+  resumePrompt: string;
+  reason: 'session_boundary';
+}
+
+export interface RunSessionSnapshotPayload {
+  processSessionId: string;
+  policy: {
+    indexedAtProcessStart: 'continuable' | 'executing';
+    continuable: {
+      resumable: boolean;
+      message: string;
+      resumePrompt: string;
+    };
+  };
+  executing: ActiveRunRegistryEntry[];
+  continuable: ContinuableRunRegistryEntry[];
+  active?: ActiveRunRegistryEntry[];
+}
+
 export interface ActiveRunsIndexPayload {
   active?: ActiveRunRegistryEntry[];
+  executing?: ActiveRunRegistryEntry[];
+  continuable?: ContinuableRunRegistryEntry[];
+  processSessionId?: string;
 }
 
 export interface TurnTrackingIds {
@@ -16,30 +43,87 @@ export interface TurnTrackingIds {
   thinkingMessageId: string;
 }
 
-export async function fetchActiveRunsIndex(): Promise<ActiveRunRegistryEntry[]> {
+export async function fetchRunSessionSnapshot(): Promise<RunSessionSnapshotPayload> {
   const response = await fetch('/api/runtime/active-runs');
   if (!response.ok) {
-    return [];
+    return {
+      processSessionId: '',
+      policy: {
+        indexedAtProcessStart: 'continuable',
+        continuable: {
+          resumable: true,
+          message: 'This run was interrupted when the previous session ended.',
+          resumePrompt: buildSessionContinueWirePrompt(),
+        },
+      },
+      executing: [],
+      continuable: [],
+    };
   }
 
-  const payload = (await response.json()) as ActiveRunsIndexPayload;
-  return payload.active ?? [];
+  const payload = (await response.json()) as RunSessionSnapshotPayload;
+  return {
+    ...payload,
+    executing: payload.executing ?? payload.active ?? [],
+    continuable: payload.continuable ?? [],
+  };
 }
 
-export async function attachActiveRunStream(runId: string): Promise<'attached' | 'stale' | 'failed'> {
+/** @deprecated Prefer fetchRunSessionSnapshot */
+export async function fetchActiveRunsIndex(): Promise<ActiveRunRegistryEntry[]> {
+  const snapshot = await fetchRunSessionSnapshot();
+  return snapshot.executing;
+}
+
+export interface AttachActiveRunResult {
+  outcome: 'attached' | 'completed' | 'stale' | 'failed';
+  status?: string;
+  message?: string;
+}
+
+export interface AttachActiveRunResponse {
+  ok?: boolean;
+  recovered?: 'completed' | 'failed' | 'stale';
+  status?: string;
+  message?: string;
+}
+
+export async function attachActiveRunStream(runId: string): Promise<AttachActiveRunResult> {
   const response = await fetch(`/api/runtime/runs/${encodeURIComponent(runId)}/attach`, {
     method: 'POST',
   }).catch(() => null);
 
   if (!response) {
-    return 'failed';
+    return { outcome: 'failed' };
+  }
+
+  let payload: AttachActiveRunResponse | null = null;
+  try {
+    payload = (await response.json()) as AttachActiveRunResponse;
+  } catch {
+    payload = null;
+  }
+
+  if (response.ok) {
+    if (payload?.recovered === 'completed') {
+      return { outcome: 'completed', status: payload.status };
+    }
+    return { outcome: 'attached' };
   }
 
   if (response.status === 410) {
-    return 'stale';
+    return {
+      outcome: 'stale',
+      status: payload?.status,
+      message: payload?.message,
+    };
   }
 
-  return response.ok ? 'attached' : 'failed';
+  if (response.status === 404) {
+    return { outcome: 'failed' };
+  }
+
+  return { outcome: 'failed', message: payload?.message };
 }
 
 export async function purgeStaleActiveRun(runId: string): Promise<boolean> {
@@ -48,6 +132,28 @@ export async function purgeStaleActiveRun(runId: string): Promise<boolean> {
   }).catch(() => null);
 
   return response?.ok ?? false;
+}
+
+export function applyRecoveredCompletedConversationState(
+  state: ConversationRuntimeState,
+): ConversationRuntimeState {
+  const runId = state.activeRunId ?? 'unknown';
+  const tracking = resolveTurnTrackingForActiveRun(state, runId);
+
+  return {
+    ...state,
+    messages: state.messages.map((entry) =>
+      entry.id === tracking.assistantMessageId || entry.id === tracking.thinkingMessageId
+        ? { ...entry, streaming: false }
+        : entry,
+    ),
+    toolActivity: [],
+    runActivity: 'idle',
+    activeRunId: null,
+    runPhase: 'idle',
+    continuableRun: null,
+    error: null,
+  };
 }
 
 export function applyInterruptedConversationState(
@@ -68,10 +174,42 @@ export function applyInterruptedConversationState(
     runActivity: 'idle' as const,
     activeRunId: null,
     runPhase: 'interrupted' as const,
+    continuableRun: null,
     error: message ?? state.error,
   };
 
   return finalized;
+}
+
+export function applyContinuableRunState(
+  state: ConversationRuntimeState,
+  entry: ContinuableRunRegistryEntry,
+): ConversationRuntimeState {
+  const tracking = resolveTurnTrackingForActiveRun(state, entry.runId);
+  const messages = state.messages.map((message) =>
+    message.id === tracking.assistantMessageId || message.id === tracking.thinkingMessageId
+      ? { ...message, streaming: false }
+      : message,
+  );
+
+  return {
+    ...state,
+    agentId: entry.agentId,
+    activeRunId: entry.runId,
+    runPhase: 'continuable',
+    runActivity: 'idle',
+    toolActivity: [],
+    error: null,
+    continuableRun: {
+      runId: entry.runId,
+      agentId: entry.agentId,
+      message: entry.message,
+      resumePrompt: entry.resumePrompt,
+      resumable: entry.resumable,
+      reason: entry.reason,
+    },
+    messages,
+  };
 }
 
 export function resolveTurnTrackingForActiveRun(
@@ -142,8 +280,9 @@ export function applyActiveRunToConversationState(
     activeRunId: entry.runId,
     runPhase: 'streaming',
     runActivity: state.runActivity === 'idle' ? 'dispatching' : state.runActivity,
+    continuableRun: null,
     error: null,
-    messages,
+    messages: seedUserMessageFromTitle(messages, state.title, state.conversationId),
   };
 }
 
@@ -157,4 +296,11 @@ export function findActiveRunForConversation(
   conversationId: string,
 ): ActiveRunRegistryEntry | undefined {
   return activeRuns.find((entry) => entry.conversationId === conversationId);
+}
+
+export function findContinuableRunForConversation(
+  continuableRuns: ContinuableRunRegistryEntry[],
+  conversationId: string,
+): ContinuableRunRegistryEntry | undefined {
+  return continuableRuns.find((entry) => entry.conversationId === conversationId);
 }

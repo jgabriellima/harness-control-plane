@@ -1,3 +1,9 @@
+import { isRunAuthFailureText } from './runtime-run-failure';
+import {
+  getCachedServerSdkMessageContext,
+  sdkRuntimeReconnectingMessage,
+} from './runtime-sdk-messages';
+
 export function extractErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -108,6 +114,10 @@ export function toUserFacingRuntimeDispatchErrorMessage(error: unknown): string 
 }
 
 export function toUserFacingRuntimeStreamErrorMessage(error: unknown): string {
+  const raw = extractErrorMessage(error).trim();
+  if (raw.length > 0 && isRunAuthFailureText(raw)) {
+    return sdkRuntimeReconnectingMessage(getCachedServerSdkMessageContext());
+  }
   return toUserFacingErrorMessage(error, RUNTIME_STREAM_FAILED);
 }
 

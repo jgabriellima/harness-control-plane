@@ -3,6 +3,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import {
+  keychainServiceCandidates,
+  LEGACY_KEYCHAIN_SERVICE,
+  resolveKeychainService,
+} from './keychain-service';
+
 const execFileAsync = promisify(execFile);
 
 export interface CredentialMetadata {
@@ -15,20 +21,16 @@ interface MetadataStore {
   credentials: Record<string, { saved_at: string; updated_at: string }>;
 }
 
-function keychainService(): string {
-  return (
-    process.env.JAMBU_HOST_BUNDLE_ID?.trim() ||
-    process.env.TAURI_BUNDLE_IDENTIFIER?.trim() ||
-    'ai.jambu.business-runtime'
-  );
+async function primaryKeychainService(): Promise<string> {
+  return resolveKeychainService();
 }
 
-function metadataDir(): string {
+async function metadataDir(): Promise<string> {
   const appData = process.env.TAURI_APP_DATA_DIR?.trim();
   if (appData) {
     return appData;
   }
-  const bundleId = keychainService();
+  const bundleId = await primaryKeychainService();
   const home = process.env.HOME?.trim();
   if (!home) {
     throw new Error('Cannot resolve credential metadata directory');
@@ -36,8 +38,8 @@ function metadataDir(): string {
   return join(home, 'Library', 'Application Support', bundleId);
 }
 
-function metadataPath(): string {
-  return join(metadataDir(), 'credential-metadata.json');
+async function metadataPath(): Promise<string> {
+  return join(await metadataDir(), 'credential-metadata.json');
 }
 
 export function isDesktopKeychainContext(): boolean {
@@ -50,7 +52,7 @@ export function isDesktopKeychainContext(): boolean {
 
 async function readMetadataStore(): Promise<MetadataStore> {
   try {
-    const raw = await readFile(metadataPath(), 'utf8');
+    const raw = await readFile(await metadataPath(), 'utf8');
     const parsed = JSON.parse(raw) as Partial<MetadataStore>;
     if (parsed && typeof parsed === 'object' && parsed.credentials && typeof parsed.credentials === 'object') {
       return { credentials: parsed.credentials };
@@ -78,7 +80,7 @@ export async function readCredentialMetadata(envVar: string): Promise<Credential
 
 export async function writeCredentialMetadata(envVar: string): Promise<CredentialMetadata> {
   const now = new Date().toISOString();
-  const dir = metadataDir();
+  const dir = await metadataDir();
   await mkdir(dir, { recursive: true });
   const store = await readMetadataStore();
   const existing = store.credentials[envVar];
@@ -88,12 +90,11 @@ export async function writeCredentialMetadata(envVar: string): Promise<Credentia
     updated_at: now,
   };
   store.credentials[envVar] = { saved_at: next.saved_at, updated_at: next.updated_at };
-  await writeFile(metadataPath(), `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  await writeFile(await metadataPath(), `${JSON.stringify(store, null, 2)}\n`, 'utf8');
   return next;
 }
 
-export async function desktopKeychainHas(envVar: string): Promise<boolean> {
-  const service = keychainService();
+async function readFromService(envVar: string, service: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('security', [
       'find-generic-password',
@@ -103,18 +104,28 @@ export async function desktopKeychainHas(envVar: string): Promise<boolean> {
       service,
       '-w',
     ]);
-    return stdout.trim().length > 0;
+    const value = stdout.trim();
+    return value.length > 0 ? value : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-export async function desktopKeychainSet(envVar: string, value: string): Promise<void> {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error('value must not be empty');
+async function deleteFromService(envVar: string, service: string): Promise<void> {
+  try {
+    await execFileAsync('security', [
+      'delete-generic-password',
+      '-a',
+      envVar,
+      '-s',
+      service,
+    ]);
+  } catch {
+    // idempotent
   }
-  const service = keychainService();
+}
+
+async function writeToService(envVar: string, value: string, service: string): Promise<void> {
   await execFileAsync('security', [
     'add-generic-password',
     '-a',
@@ -122,7 +133,57 @@ export async function desktopKeychainSet(envVar: string, value: string): Promise
     '-s',
     service,
     '-w',
-    trimmed,
+    value,
     '-U',
   ]);
+}
+
+async function readWithLegacyMigration(envVar: string): Promise<string | null> {
+  const primary = await primaryKeychainService();
+  const value = await readFromService(envVar, primary);
+  if (value) {
+    return value;
+  }
+
+  if (primary === LEGACY_KEYCHAIN_SERVICE) {
+    return null;
+  }
+
+  const legacyValue = await readFromService(envVar, LEGACY_KEYCHAIN_SERVICE);
+  if (!legacyValue) {
+    return null;
+  }
+
+  await writeToService(envVar, legacyValue, primary);
+  await deleteFromService(envVar, LEGACY_KEYCHAIN_SERVICE);
+  return legacyValue;
+}
+
+export async function desktopKeychainGet(envVar: string): Promise<string | null> {
+  return readWithLegacyMigration(envVar);
+}
+
+export async function desktopKeychainDelete(envVar: string): Promise<void> {
+  const primary = await primaryKeychainService();
+  for (const service of keychainServiceCandidates(primary)) {
+    await deleteFromService(envVar, service);
+  }
+}
+
+export async function desktopKeychainHas(envVar: string): Promise<boolean> {
+  const value = await readWithLegacyMigration(envVar);
+  return value !== null;
+}
+
+export async function desktopKeychainSet(envVar: string, value: string): Promise<void> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('value must not be empty');
+  }
+  const primary = await primaryKeychainService();
+  await writeToService(envVar, trimmed, primary);
+
+  if (primary !== LEGACY_KEYCHAIN_SERVICE) {
+    await deleteFromService(envVar, LEGACY_KEYCHAIN_SERVICE);
+  }
 }

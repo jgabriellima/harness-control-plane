@@ -13,6 +13,12 @@ const HOP_BY_HOP = new Set([
   'upgrade',
   'host',
   'content-length',
+  // OD daemon rejects proxied browser Origin as cross-origin.
+  'origin',
+  'referer',
+  'sec-fetch-site',
+  'sec-fetch-mode',
+  'sec-fetch-dest',
 ]);
 
 function buildUpstreamHeaders(request: Request): Headers {

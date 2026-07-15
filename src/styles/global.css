@@ -33,6 +33,13 @@
     color-scheme: light;
   }
 
+  :root {
+    --chat-font-size: 0.9375rem;
+    --chat-line-height: 1.625;
+    --chat-paragraph-spacing: 0.625rem;
+    --chat-list-spacing: 0.625rem;
+  }
+
   body {
     @apply antialiased;
     font-family: system-ui, Inter, sans-serif;
@@ -81,11 +88,50 @@
     word-break: break-word;
   }
 
+  .chat-markdown {
+    font-size: var(--chat-font-size);
+    line-height: var(--chat-line-height);
+  }
+
   .chat-markdown > :first-child {
     margin-top: 0;
   }
 
   .chat-markdown > :last-child {
     margin-bottom: 0;
+  }
+
+  .chat-markdown p {
+    margin-bottom: var(--chat-paragraph-spacing);
+  }
+
+  .chat-markdown ul,
+  .chat-markdown ol {
+    margin-bottom: var(--chat-list-spacing);
+  }
+
+  @keyframes copy-check-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.5) rotate(-12deg);
+    }
+    60% {
+      transform: scale(1.15) rotate(0deg);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  @keyframes copy-text-in {
+    0% {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }

@@ -54,18 +54,22 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    const session = await createBrowserSession({
+    const { session, created } = await createBrowserSession({
       url: urlRaw,
       conversationId,
       interactive,
     });
 
-    if (!interactive) {
+    if (!interactive && created) {
       broadcastBrowserSessionReady({
         conversationId: session.conversationId,
         sessionId: session.sessionId,
         url: session.url,
         interactive: false,
+        controlMode: session.controlMode,
+        viewportWidth: session.viewportWidth,
+        viewportHeight: session.viewportHeight,
+        renderMode: session.renderMode,
       });
     }
 

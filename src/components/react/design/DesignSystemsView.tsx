@@ -91,11 +91,9 @@ export default function DesignSystemsView() {
   }, []);
 
   return (
-    <div className="h-full overflow-auto bg-[var(--bg)] px-8 py-10" data-testid="design-systems-view">
-      <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--text-soft)]">
-        Design systems
-      </p>
-      <h1 className="mt-2 font-serif text-[36px] text-[var(--text)]">Design systems</h1>
+    <div data-testid="design-systems-view">
+      <p className="entry-kicker">Design systems</p>
+      <h1 className="entry-page-title">Design systems</h1>
       <div className="mt-8 flex items-center justify-between gap-4">
         <p className="max-w-2xl text-[15px] text-[var(--text-muted)]">
           Distill your team&apos;s DESIGN.md into a brand contract that shapes every output.

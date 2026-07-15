@@ -3,7 +3,8 @@ import { readdir } from 'node:fs/promises';
 
 import * as Sentry from '@sentry/astro';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
+import { resolveProjectWorkspaceRoot } from './workspace-manager';
 import type {
   BusinessConfig,
   ExecutionDispatchResponse,
@@ -69,7 +70,10 @@ async function resolveWorkflowId(
 }
 
 export async function buildExecutionJob(request: ExecutionRequest): Promise<ExecutionJob> {
-  const binding = await resolveHarnessBinding();
+  const workspaceRoot = request.project_id
+    ? resolveProjectWorkspaceRoot(request.project_id)
+    : undefined;
+  const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
   const config = await loadBusinessConfig(binding.workspaceRoot);
   const workflowId = await resolveWorkflowId(request.workflow_id, config, binding.workflowsDir);
 
@@ -97,7 +101,10 @@ export async function dispatchExecutionJob(job: ExecutionJob): Promise<Execution
       },
     },
     async () => {
-      const binding = await resolveHarnessBinding();
+      const workspaceRoot = job.project_id
+        ? resolveProjectWorkspaceRoot(job.project_id)
+        : undefined;
+      const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
       const workflows = await listWorkflowIds(binding.workflowsDir);
       if (!workflows.includes(job.workflow_id)) {
         throw new Error(`Workflow not found: ${job.workflow_id}`);

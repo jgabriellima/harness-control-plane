@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 
 import { extensionFromPath } from '@/lib/artifact-preview-modes';
+
+type XlsxModule = typeof import('xlsx');
+
+async function loadXlsx(): Promise<XlsxModule> {
+  return import('xlsx');
+}
 
 interface ArtifactSpreadsheetPreviewProps {
   previewUrl: string;
@@ -53,7 +58,8 @@ function parseCsvText(text: string, delimiter: string): SheetTable {
   return { name: 'Sheet1', headers, rows };
 }
 
-function parseWorkbook(buffer: ArrayBuffer): SheetTable[] {
+async function parseWorkbook(buffer: ArrayBuffer): Promise<SheetTable[]> {
+  const XLSX = await loadXlsx();
   const workbook = XLSX.read(buffer, { type: 'array' });
   return workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
@@ -62,7 +68,9 @@ function parseWorkbook(buffer: ArrayBuffer): SheetTable[] {
     return {
       name: sheetName,
       headers: (headerRow ?? []).map((cell) => String(cell ?? '')),
-      rows: dataRows.map((row) => row.map((cell) => String(cell ?? ''))),
+      rows: dataRows
+        .filter((row): row is unknown[] => Array.isArray(row))
+        .map((row) => row.map((cell) => String(cell ?? ''))),
     };
   });
 }
@@ -115,7 +123,7 @@ export default function ArtifactSpreadsheetPreview({
         }
 
         const buffer = await response.arrayBuffer();
-        const parsed = parseWorkbook(buffer);
+        const parsed = await parseWorkbook(buffer);
         if (!cancelled) {
           setSheets(parsed);
           setActiveSheet(0);

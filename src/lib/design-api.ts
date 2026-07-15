@@ -35,6 +35,7 @@ export interface DesignProjectMetadata {
   kind?: string;
   baseDir?: string;
   orchestratorWorkspace?: OrchestratorWorkspaceMetadata;
+  harnessConversationId?: string;
   skipDiscoveryBrief?: boolean;
 }
 
@@ -82,6 +83,8 @@ export interface ProjectFilePreview {
 export interface DesignPluginRecord {
   id: string;
   title: string;
+  sourceKind?: string;
+  installedAt?: number | string | null;
   manifest?: {
     description?: string;
     description_i18n?: Record<string, string>;
@@ -183,10 +186,8 @@ export interface DesignRunStreamHandlers {
 }
 
 function randomProjectId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `proj-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const suffix = Math.random().toString(16).slice(2, 15);
+  return `e2e-${Date.now()}-${suffix}`;
 }
 
 function deriveProjectName(brief: string): string {
@@ -321,19 +322,47 @@ export function buildCreateProjectRequest(
   };
 }
 
+export async function ensureOrchestratorScratchDir(scratchPath: string): Promise<void> {
+  const response = await fetch('/api/workspace/ensure-scratch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scratchPath: scratchPath.trim() }),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? 'Failed to prepare orchestrator scratch directory');
+  }
+}
+
 export async function createDesignProject(
   input: CreateDesignProjectInput,
 ): Promise<CreateDesignProjectResult> {
+  if (input.baseDir?.trim() && input.orchestratorWorkspace) {
+    const baseDir = input.baseDir.trim();
+    await ensureOrchestratorScratchDir(baseDir);
+
+    const payload = await designFetch<CreateDesignProjectResult>('/import/folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseDir,
+        name: input.name ?? deriveProjectName(input.pendingPrompt),
+        skillId: input.skillId,
+        orchestratorWorkspace: input.orchestratorWorkspace,
+      }),
+    });
+
+    if (!payload.project?.id) {
+      throw new Error('Folder import did not return a project');
+    }
+
+    return payload;
+  }
+
   const metadata: DesignProjectMetadata = {
     kind: mapSkillModeToProjectKind(input.skillId),
     skipDiscoveryBrief: true,
   };
-  if (input.baseDir?.trim()) {
-    metadata.baseDir = input.baseDir.trim();
-  }
-  if (input.orchestratorWorkspace) {
-    metadata.orchestratorWorkspace = input.orchestratorWorkspace;
-  }
 
   const request = buildCreateProjectRequest({
     name: input.name ?? deriveProjectName(input.pendingPrompt),
@@ -376,15 +405,21 @@ export function skillsToChips(skills: DesignSkill[]): DesignSkillChip[] {
     return DESIGN_SKILL_CHIPS;
   }
 
-  const preferredIds = new Set(DESIGN_SKILL_CHIPS.map((chip) => chip.id));
-  const matched = skills.filter((skill) => preferredIds.has(skill.id));
-  const source = matched.length > 0 ? matched : skills.slice(0, DESIGN_SKILL_CHIPS.length);
+  const skillById = new Map(skills.map((skill) => [skill.id, skill]));
+  const matched = DESIGN_SKILL_CHIPS.filter((chip) => skillById.has(chip.id));
+  if (matched.length > 0) {
+    return matched.map((chip) => {
+      const skill = skillById.get(chip.id);
+      return {
+        id: chip.id,
+        label: chip.label,
+        mode: chip.mode,
+      };
+    });
+  }
 
-  return source.map((skill) => ({
-    id: skill.id,
-    label: skillLabel(skill),
-    mode: mapSkillMode(skill.mode),
-  }));
+  // Daemon catalog may omit OD entry chips — keep OD labels for home hero fidelity.
+  return DESIGN_SKILL_CHIPS;
 }
 
 export async function listProjectFiles(projectId: string): Promise<DesignProjectFile[]> {

@@ -6,6 +6,8 @@ import { isConnectUnauthenticated } from './runtime-connect-errors';
 import { clearRuntimeAuthGate, markRuntimeAuthUnavailable } from './runtime-sdk-auth-gate';
 import {
   sdkAuthFailedMessage,
+  sdkLocalSessionAuthFailedMessage,
+  sdkRuntimeReconnectingMessage,
   sdkMissingApiKeyMessage,
   sdkNetworkFailedMessage,
   sdkTimeoutMessage,
@@ -13,7 +15,9 @@ import {
   type RuntimeSdkMessageContext,
 } from './runtime-sdk-messages';
 import { loadServerSdkMessageContext } from './runtime-sdk-messages-server';
-import { requireRuntimeApiKey } from './runtime-sdk-local';
+import { requireRuntimeApiKey, ensureRuntimeApiKeyInProcessEnv } from './runtime-sdk-local';
+import { resolveLocalAgentStore } from './runtime-sdk-config';
+import { isRunAuthFailureText } from './runtime-run-failure';
 
 export type SdkHealthErrorCode =
   | 'missing_api_key'
@@ -112,11 +116,100 @@ function mapProbeFailure(
   };
 }
 
+async function probeLocalRuntimeExecution(
+  workspaceCwd: string,
+  timeoutMs: number,
+  ctx: RuntimeSdkMessageContext,
+  startedAt: number,
+): Promise<SdkDispatchHealth | null> {
+  const apiKey = requireRuntimeApiKey();
+  ensureRuntimeApiKeyInProcessEnv();
+  const store = await resolveLocalAgentStore(workspaceCwd);
+
+  const { Agent } = await import('@cursor/sdk');
+  const promptPromise = Agent.prompt('Reply with exactly: OK', {
+    apiKey,
+    model: { id: process.env.CURSOR_RUNTIME_MODEL?.trim() || 'composer-2.5' },
+    local: {
+      cwd: workspaceCwd,
+      settingSources: [],
+      ...(store ? { store } : {}),
+    },
+  });
+
+  try {
+    const result = await Promise.race([
+      promptPromise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Local runtime execution probe timed out')), timeoutMs);
+      }),
+    ]);
+
+    if (result.status !== 'finished') {
+      const failureDetail =
+        result.result?.trim() ||
+        result.error?.message?.trim() ||
+        result.error?.code?.trim() ||
+        'Local runtime execution probe failed';
+      const authFailed = isRunAuthFailureText(failureDetail);
+      return {
+        ready: false,
+        checked_at: new Date().toISOString(),
+        cursor_api_key: 'present',
+        auth: authFailed ? 'failed' : 'skipped',
+        network: 'ok',
+        latency_ms: Date.now() - startedAt,
+        message: authFailed
+          ? sdkRuntimeReconnectingMessage(ctx)
+          : sdkUnknownFailureMessage(ctx, failureDetail),
+        error_code: authFailed ? 'auth_failed' : 'unknown',
+      };
+    }
+
+    return null;
+  } catch (error) {
+    const checked_at = new Date().toISOString();
+    const latency_ms = Date.now() - startedAt;
+    const fields = errorFields(error);
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const authFailed =
+      error instanceof AuthenticationError ||
+      isConnectUnauthenticated(error) ||
+      isRunAuthFailureText(rawMessage);
+
+    if (authFailed) {
+      const message = sdkRuntimeReconnectingMessage(ctx);
+      return {
+        ready: false,
+        checked_at,
+        cursor_api_key: 'present',
+        auth: 'failed',
+        network: 'ok',
+        latency_ms,
+        message,
+        error_name: fields.error_name,
+        error_code: 'auth_failed',
+      };
+    }
+
+    runtimeLogger.warn('runtime.sdk.execution_probe.failed', {
+      workspace_cwd: workspaceCwd,
+      ...fields,
+    });
+    return null;
+  } finally {
+    void promptPromise.catch(() => undefined);
+  }
+}
+
 export async function probeSdkDispatchHealth(options?: {
   cacheKey?: string;
   force?: boolean;
   timeoutMs?: number;
   cacheTtlMs?: number;
+  workspaceCwd?: string;
+  /** When true, runs Agent.prompt against workspaceCwd (slow). Default false. */
+  probeLocalExecution?: boolean;
 }): Promise<SdkDispatchHealth> {
   const cacheKey = options?.cacheKey ?? 'global';
   const now = Date.now();
@@ -135,6 +228,7 @@ export async function probeSdkDispatchHealth(options?: {
 
   try {
     requireRuntimeApiKey();
+    ensureRuntimeApiKeyInProcessEnv();
   } catch {
     const health: SdkDispatchHealth = {
       ready: false,
@@ -174,6 +268,26 @@ export async function probeSdkDispatchHealth(options?: {
       account: { apiKeyName: me.apiKeyName },
       message: null,
     };
+
+    const workspaceCwd =
+      options?.probeLocalExecution === true ? options?.workspaceCwd?.trim() : undefined;
+    if (workspaceCwd) {
+      const localFailure = await probeLocalRuntimeExecution(
+        workspaceCwd,
+        timeoutMs,
+        messageContext,
+        startedAt,
+      );
+      if (localFailure) {
+        markRuntimeAuthUnavailable('probe_local_auth_failed');
+        probeCache.set(cacheKey, { health: localFailure, expiresAt: now + Math.min(cacheTtlMs, 10_000) });
+        runtimeLogger.warn('runtime.sdk.probe.local_auth_failed', {
+          workspace_cwd: workspaceCwd,
+          latency_ms: localFailure.latency_ms,
+        });
+        return localFailure;
+      }
+    }
 
     probeCache.set(cacheKey, { health, expiresAt: now + cacheTtlMs });
     clearRuntimeAuthGate();

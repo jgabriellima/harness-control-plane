@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-import { resolveHarnessBinding } from './harness-binding';
+import { resolveWorkspaceHarnessBinding } from './workspace-harness-binding';
 
 export type WidgetId = 'attention' | 'jobs' | 'activity' | 'health';
 
@@ -76,8 +76,8 @@ function normalizeManifest(raw: unknown): RightPanelManifest {
   };
 }
 
-async function panelPaths() {
-  const binding = await resolveHarnessBinding();
+async function panelPaths(workspaceRoot?: string) {
+  const binding = await resolveWorkspaceHarnessBinding({ workspaceRoot });
   const uiDir = join(binding.harnessRoot, 'ui');
   return {
     uiDir,
@@ -85,19 +85,22 @@ async function panelPaths() {
   };
 }
 
-export async function readRightPanelManifest(): Promise<RightPanelManifest> {
-  const paths = await panelPaths();
+export async function readRightPanelManifest(workspaceRoot?: string): Promise<RightPanelManifest> {
+  const paths = await panelPaths(workspaceRoot);
   try {
     const raw = await readFile(paths.manifestPath, 'utf8');
     return normalizeManifest(parseYaml(raw));
   } catch {
-    await writeRightPanelManifest(DEFAULT_RIGHT_PANEL_MANIFEST);
+    await writeRightPanelManifest(DEFAULT_RIGHT_PANEL_MANIFEST, workspaceRoot);
     return DEFAULT_RIGHT_PANEL_MANIFEST;
   }
 }
 
-export async function writeRightPanelManifest(manifest: RightPanelManifest): Promise<RightPanelManifest> {
-  const paths = await panelPaths();
+export async function writeRightPanelManifest(
+  manifest: RightPanelManifest,
+  workspaceRoot?: string,
+): Promise<RightPanelManifest> {
+  const paths = await panelPaths(workspaceRoot);
   await mkdir(paths.uiDir, { recursive: true });
   const normalized = normalizeManifest(manifest);
   await writeFile(paths.manifestPath, stringifyYaml(normalized), 'utf8');
@@ -108,11 +111,12 @@ export async function patchRightPanelManifest(
   patch: Partial<Pick<RightPanelManifest, 'collapsed'>> & {
     widgets?: WidgetManifestEntry[];
   },
+  workspaceRoot?: string,
 ): Promise<RightPanelManifest> {
-  const current = await readRightPanelManifest();
+  const current = await readRightPanelManifest(workspaceRoot);
   return writeRightPanelManifest({
     ...current,
     collapsed: patch.collapsed ?? current.collapsed,
     widgets: patch.widgets ?? current.widgets,
-  });
+  }, workspaceRoot);
 }
